@@ -306,11 +306,9 @@ def traitement_generate():
         pdf_name = f"{base}_RAPPORT_COMPLET.pdf"
         output_path = os.path.join(job_dir, pdf_name)
         
-        old_cwd = os.getcwd()
-        os.chdir(job_dir)
         generate_full_pdf(emps, output_path, provider_name, provider_info,
-                         client_name, period, logo_path, hp=hp, client_info=client_info)
-        os.chdir(old_cwd)
+                         client_name, period, logo_path, hp=hp, client_info=client_info,
+                         work_dir=job_dir)
         
         if not os.path.exists(output_path):
             flash("Erreur génération PDF", "error")

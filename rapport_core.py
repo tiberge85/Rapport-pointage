@@ -500,7 +500,7 @@ def gen_classement(story, emps, all_stats, S, provider_name, provider_info, clie
 
 # ======================== PRÉPARATION LOGO ========================
 
-def _prepare_logo(logo_path):
+def _prepare_logo(logo_path, work_dir=None):
     """Supprime le fond noir du logo et retourne le chemin du logo nettoyé."""
     try:
         from PIL import Image
@@ -522,12 +522,9 @@ def _prepare_logo(logo_path):
         square = Image.new('RGBA', (size, size), (255, 255, 255, 0))
         square.paste(img_clean, ((size - w) // 2, (size - h) // 2), img_clean)
         
-        clean_path = os.path.splitext(logo_path)[0] + '_clean.png'
-        try:
-            square.save(clean_path)
-        except OSError:
-            clean_path = os.path.join(os.getcwd(), 'logo_clean.png')
-            square.save(clean_path)
+        out_dir = work_dir or os.path.dirname(os.path.abspath(logo_path))
+        clean_path = os.path.join(out_dir, 'logo_clean.png')
+        square.save(clean_path)
         
         return clean_path
     except Exception as e:
@@ -535,7 +532,7 @@ def _prepare_logo(logo_path):
         return None
 
 
-def _generate_chart_image(pct_presence, pct_absence, logo_path=None):
+def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=None):
     """Génère le graphique donut en image PIL avec le logo composité au centre."""
     try:
         from PIL import Image, ImageDraw, ImageFont
@@ -570,7 +567,7 @@ def _generate_chart_image(pct_presence, pct_absence, logo_path=None):
         # Découper le trou central
         if logo_path and os.path.exists(logo_path):
             # Préparer le logo nettoyé
-            clean_path = _prepare_logo(logo_path)
+            clean_path = _prepare_logo(logo_path, work_dir)
             if clean_path:
                 logo = Image.open(clean_path).convert('RGBA')
                 logo_size = inner_r * 2 + 10  # Légèrement plus grand que le trou
@@ -603,7 +600,8 @@ def _generate_chart_image(pct_presence, pct_absence, logo_path=None):
         final = Image.new('RGB', (SIZE, SIZE), (255, 255, 255))
         final.paste(img, mask=img.split()[3])
         
-        chart_path = os.path.join(os.getcwd(), '_chart_donut.png')
+        out_dir = work_dir or os.path.dirname(os.path.abspath(logo_path)) if logo_path else '/tmp'
+        chart_path = os.path.join(out_dir, '_chart_donut.png')
         final.save(chart_path, 'PNG', quality=95)
         return chart_path
         
@@ -613,7 +611,7 @@ def _generate_chart_image(pct_presence, pct_absence, logo_path=None):
 
 # ======================== PAGE : GRAPHIQUE D'ASSIDUITÉ ========================
 
-def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now, logo_path=None):
+def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now, logo_path=None, work_dir=None):
     story.append(PageBreak())
     story.append(make_header(S, provider_name, provider_info, client_name, client_info))
     story.append(Spacer(1, 6*mm))
@@ -633,7 +631,7 @@ def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, clien
         pct_absence = 0
     
     # Générer le graphique en image PIL pour gérer la transparence du logo
-    chart_path = _generate_chart_image(pct_presence, pct_absence, logo_path)
+    chart_path = _generate_chart_image(pct_presence, pct_absence, logo_path, work_dir)
     
     if chart_path:
         from reportlab.platypus import Image as PLImage
@@ -667,7 +665,9 @@ def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, clien
 
 # ======================== GENERATION PDF COMPLETE ========================
 
-def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info=""):
+def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None):
+    if not work_dir:
+        work_dir = os.path.dirname(os.path.abspath(output_path))
     doc = SimpleDocTemplate(output_path, pagesize=A4,
         leftMargin=6*mm, rightMargin=6*mm, topMargin=6*mm, bottomMargin=6*mm)
     S = make_styles()
@@ -687,7 +687,7 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
     gen_classement(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now)
     
     # 4. Graphique d'assiduité
-    gen_graphique(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now, logo_path)
+    gen_graphique(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now, logo_path, work_dir)
     
     doc.build(story)
 
