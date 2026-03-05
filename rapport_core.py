@@ -3,10 +3,10 @@
 """
 =============================================================================
   PROGRAMME DE TRAITEMENT DES RAPPORTS DE POINTAGE
-  Générateur de rapport (heures sup / respect horaire)
+  Générateur de rapport enrichi (heures sup / respect horaire)
 =============================================================================
   Entrée  : Fichier Excel (.xlsx) de présence
-  Sortie  : PDF (portrait) avec :
+  Sortie  : PDF enrichi (portrait) avec :
             - Rapports individuels par employé
             - Rapport de présence global
             - Classement retards & absences
@@ -695,7 +695,7 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
 
 def main():
     print("\n╔══════════════════════════════════════════════════════════════╗")
-    print("║   Générateur de Rapport de Pointage                       ║")
+    print("║   Générateur de Rapport de Pointage Enrichi               ║")
     print("║   (heures sup / respect horaire / classement / graphique) ║")
     print("╚══════════════════════════════════════════════════════════════╝\n")
     

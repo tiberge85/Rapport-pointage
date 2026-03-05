@@ -23,7 +23,8 @@ from models import (init_db, create_user, authenticate_user, get_user_by_id,
                     find_client_by_name, update_client, delete_client,
                     create_job, get_jobs_by_status, get_all_jobs, mark_job_sent,
                     get_dashboard_stats, has_permission, get_role_permissions,
-                    update_role_permissions)
+                    update_role_permissions,
+                    reset_jobs, reset_clients, reset_users, reset_all)
 
 app = Flask(__name__, template_folder=BASE_DIR, static_folder=BASE_DIR, static_url_path='/static')
 app.secret_key = os.environ.get('SECRET_KEY', 'ramya-tech-2026-secret-v3')
@@ -425,8 +426,9 @@ def clients_delete(cid):
 @permission_required('admin')
 def admin_page():
     users = get_all_users()
+    stats = get_dashboard_stats()
     role_perms = {r: get_role_permissions(r) for r in ['admin', 'rh', 'technicien']}
-    return render_template('admin.html', page='admin', users=users,
+    return render_template('admin.html', page='admin', users=users, stats=stats,
                           all_permissions=ALL_PERMISSIONS, role_perms=role_perms)
 
 @app.route('/admin/add', methods=['POST'])
@@ -438,6 +440,39 @@ def admin_add_user():
         request.form.get('role', 'technicien')
     )
     flash(msg, "success" if ok else "error")
+    return redirect(url_for('admin_page'))
+
+@app.route('/admin/reset', methods=['POST'])
+@permission_required('admin')
+def admin_reset():
+    target = request.form.get('target', '')
+    
+    if target == 'jobs':
+        reset_jobs()
+        # Supprimer les fichiers physiques
+        files_dir = app.config['FILES_FOLDER']
+        if os.path.exists(files_dir):
+            shutil.rmtree(files_dir)
+            os.makedirs(files_dir, exist_ok=True)
+        flash("Tous les rapports ont été supprimés", "success")
+    
+    elif target == 'clients':
+        reset_clients()
+        flash("Tous les clients ont été supprimés", "success")
+    
+    elif target == 'users':
+        reset_users()
+        flash("Tous les utilisateurs (sauf admin) ont été supprimés", "success")
+    
+    elif target == 'all':
+        reset_all()
+        # Supprimer tous les fichiers
+        for folder in [app.config['FILES_FOLDER'], app.config['UPLOAD_FOLDER']]:
+            if os.path.exists(folder):
+                shutil.rmtree(folder)
+                os.makedirs(folder, exist_ok=True)
+        flash("Réinitialisation complète effectuée", "success")
+    
     return redirect(url_for('admin_page'))
 
 @app.route('/admin/edit/<int:uid>', methods=['GET', 'POST'])

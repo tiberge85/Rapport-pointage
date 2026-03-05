@@ -348,3 +348,36 @@ def update_role_permissions(role, permissions):
         conn.execute("INSERT INTO permissions (role, permission) VALUES (?, ?)", (role, perm))
     conn.commit()
     conn.close()
+
+
+# ======================== RESET OPERATIONS ========================
+
+def reset_jobs():
+    """Supprime tous les rapports traités."""
+    conn = get_db()
+    conn.execute("DELETE FROM jobs")
+    conn.commit()
+    conn.close()
+
+def reset_clients():
+    """Supprime tous les clients."""
+    conn = get_db()
+    conn.execute("DELETE FROM clients")
+    conn.commit()
+    conn.close()
+
+def reset_users():
+    """Supprime tous les utilisateurs sauf les admins."""
+    conn = get_db()
+    conn.execute("DELETE FROM users WHERE role != 'admin'")
+    conn.commit()
+    conn.close()
+
+def reset_all():
+    """Réinitialisation complète : jobs, clients, utilisateurs non-admin."""
+    conn = get_db()
+    conn.execute("DELETE FROM jobs")
+    conn.execute("DELETE FROM clients")
+    conn.execute("DELETE FROM users WHERE role != 'admin'")
+    conn.commit()
+    conn.close()

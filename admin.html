@@ -110,4 +110,43 @@
         </form>
     </div>
 </div>
+
+<!-- Réinitialisation -->
+<div class="card" style="border:2px solid #feb2b2">
+    <div class="card-header" style="background:#fde8e8">
+        <h3 style="color:#c53030">⚠️ Zone de réinitialisation</h3>
+    </div>
+    <div class="card-body">
+        <p style="color:#666;font-size:14px;margin-bottom:16px">
+            Ces actions sont <strong>irréversibles</strong>. Utilisez-les avec précaution.
+        </p>
+        
+        <div style="display:flex;flex-wrap:wrap;gap:12px">
+            <!-- Réinitialiser les rapports -->
+            <form method="post" action="/admin/reset" style="margin:0" onsubmit="return confirm('⚠️ ATTENTION !\n\nCeci va supprimer TOUS les rapports traités et les fichiers associés.\n\nÊtes-vous sûr ?')">
+                <input type="hidden" name="target" value="jobs">
+                <button type="submit" class="btn btn-danger">🗑️ Supprimer tous les rapports ({{ stats.total_jobs }})</button>
+            </form>
+            
+            <!-- Réinitialiser les clients -->
+            <form method="post" action="/admin/reset" style="margin:0" onsubmit="return confirm('⚠️ ATTENTION !\n\nCeci va supprimer TOUS les clients enregistrés.\n\nÊtes-vous sûr ?')">
+                <input type="hidden" name="target" value="clients">
+                <button type="submit" class="btn btn-danger">🗑️ Supprimer tous les clients ({{ stats.total_clients }})</button>
+            </form>
+            
+            <!-- Réinitialiser les utilisateurs (sauf admin) -->
+            <form method="post" action="/admin/reset" style="margin:0" onsubmit="return confirm('⚠️ ATTENTION !\n\nCeci va supprimer TOUS les utilisateurs sauf le compte admin.\n\nÊtes-vous sûr ?')">
+                <input type="hidden" name="target" value="users">
+                <button type="submit" class="btn btn-danger">🗑️ Supprimer les utilisateurs (sauf admin)</button>
+            </form>
+        </div>
+        
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid #feb2b2">
+            <form method="post" action="/admin/reset" style="margin:0" onsubmit="return confirm('🚨 RÉINITIALISATION COMPLÈTE !\n\nCeci va supprimer :\n- Tous les rapports\n- Tous les clients\n- Tous les utilisateurs (sauf admin)\n- Tous les fichiers\n\nCette action est IRRÉVERSIBLE.\n\nTapez OK pour confirmer.') && prompt('Tapez REINITIALISER pour confirmer') === 'REINITIALISER'">
+                <input type="hidden" name="target" value="all">
+                <button type="submit" class="btn" style="background:#c53030;color:#fff;padding:12px 24px;font-size:14px">🚨 Réinitialisation complète du programme</button>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}
