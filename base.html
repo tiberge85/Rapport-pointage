@@ -45,7 +45,7 @@
         .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px}
         .stat-card{background:#fff;border-radius:12px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,0.06);display:flex;align-items:center;gap:14px}
         .stat-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
-        .stat-icon.teal{background:#e0f0ee}.stat-icon.orange{background:#fff3e0}.stat-icon.red{background:#fde8e8}.stat-icon.blue{background:#e3f2fd}.stat-icon.green{background:#e8f5e9}
+        .stat-icon.teal{background:#e0f0ee}.stat-icon.orange{background:#fff3e0}.stat-icon.red{background:#fde8e8}.stat-icon.blue{background:#e3f2fd}.stat-icon.green{background:#e8f5e9}.stat-icon.purple{background:#f3e5f5}
         .stat-info .stat-num{font-size:26px;font-weight:700;color:#333}
         .stat-info .stat-label{font-size:11px;color:#888;margin-top:1px}
         .table-wrap{overflow-x:auto}
@@ -61,6 +61,8 @@
         .badge-status.technicien{background:#42a5f5;color:#fff}
         .badge-status.commercial{background:#ff9800;color:#fff}
         .badge-status.comptable{background:#66bb6a;color:#fff}
+        .badge-status.moyens_generaux{background:#8d6e63;color:#fff}
+        .badge-status.informatique{background:#5c6bc0;color:#fff}
         .form-row{display:flex;gap:12px;margin-bottom:12px}.form-row .form-group{flex:1}
         .form-group{margin-bottom:12px}
         .form-group label{display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:4px}
@@ -146,7 +148,7 @@
             {% endif %}
             
             {% if 'visites' in permissions or 'proforma' in permissions or 'clients' in permissions %}
-            <!-- Gestion commerciale & CRM -->
+            <!-- Commercial & CRM -->
             <div class="nav-section" id="sec-commercial">
                 <div class="nav-section-title" onclick="toggleSection('sec-commercial')">💼 COMMERCIAL &amp; CRM <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
@@ -155,7 +157,6 @@
                     {% if 'clients' in permissions %}<a href="/prospects" class="{% if page == 'prospects' %}active{% endif %}">Prospects</a>{% endif %}
                     {% if 'clients' in permissions %}<a href="/clients" class="{% if page == 'clients' %}active{% endif %}">Clients</a>{% endif %}
                     {% if 'contrats' in permissions %}<a href="/contrats" class="{% if page == 'contrats' %}active{% endif %}">Contrats</a>{% endif %}
-                    {% if 'clients' in permissions %}<a href="/stock" class="{% if page == 'stock' %}active{% endif %}">Stock</a>{% endif %}
                 </div>
             </div>
             {% endif %}
@@ -189,9 +190,10 @@
             </div>
             {% endif %}
             
-            <!-- Projets & productivité -->
-            <div class="nav-section" id="sec-projets">
-                <div class="nav-section-title" onclick="toggleSection('sec-projets')">📁 PROJETS <span class="arrow">▼</span></div>
+            {% if 'informatique' in permissions or 'projets' in permissions %}
+            <!-- Informatique & Projets -->
+            <div class="nav-section" id="sec-info">
+                <div class="nav-section-title" onclick="toggleSection('sec-info')">💻 INFORMATIQUE <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
                     <a href="/projets" class="{% if page == 'projets' %}active{% endif %}">Projets</a>
                     <a href="/taches" class="{% if page == 'taches' %}active{% endif %}">Tâches</a>
@@ -200,17 +202,21 @@
                     <a href="/todos" class="{% if page == 'todos' %}active{% endif %}">Mes Todos</a>
                 </div>
             </div>
+            {% endif %}
             
+            {% if 'moyens_generaux' in permissions or 'admin' in permissions %}
             <!-- Moyens Généraux -->
             <div class="nav-section" id="sec-moyens">
                 <div class="nav-section-title" onclick="toggleSection('sec-moyens')">🏠 MOYENS GÉNÉRAUX <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
                     <a href="/moyens-generaux" class="{% if page == 'moyens' %}active{% endif %}">Tableau de bord</a>
+                    <a href="/stock" class="{% if page == 'stock' %}active{% endif %}">Stock</a>
                     <a href="/moyens-generaux/vehicules" class="{% if page == 'vehicules' %}active{% endif %}">Parc véhicules</a>
-                    <a href="/moyens-generaux/fournitures" class="{% if page == 'fournitures' %}active{% endif %}">Fournitures</a>
+                    <a href="/moyens-generaux/fournitures" class="{% if page == 'fournitures' %}active{% endif %}">Fournitures bureau</a>
                     <a href="/moyens-generaux/maintenance" class="{% if page == 'maintenance' %}active{% endif %}">Maintenance</a>
                 </div>
             </div>
+            {% endif %}
             
             {% if 'admin' in permissions %}
             <!-- Administration -->

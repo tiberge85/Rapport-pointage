@@ -77,7 +77,7 @@ from models import (init_devis_tables, create_devis, get_all_devis, get_devis_by
 init_devis_tables()
 
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
-ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'admin', 'dashboard', 'envoyer', 'logs', 'contrats', 'comptabilite', 'visites', 'proforma']
+ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'admin', 'dashboard', 'envoyer', 'logs', 'contrats', 'comptabilite', 'visites', 'proforma', 'moyens_generaux', 'informatique', 'projets']
 
 def allowed_file(fn):
     return '.' in fn and fn.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -224,12 +224,16 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    user = get_user_by_id(session['user_id'])
+    role = user['role'] if user else 'technicien'
     stats = get_dashboard_stats()
     inv_stats = get_invoice_stats()
     v_stats = get_visit_stats()
     d_stats = get_devis_stats()
+    emp_stats = get_employee_stats()
     return render_template('dashboard.html', page='dashboard', stats=stats, 
-                          inv_stats=inv_stats, v_stats=v_stats, d_stats=d_stats)
+                          inv_stats=inv_stats, v_stats=v_stats, d_stats=d_stats,
+                          emp_stats=emp_stats, user_role=role)
 
 
 # ======================== TRAITEMENT ========================
