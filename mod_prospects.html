@@ -1,29 +1,39 @@
 {% extends "base.html" %}
 {% block title %}WannyGest - Prospects{% endblock %}
 {% block content %}
-<div class="page-header"><h1>🎯 Pipeline commercial</h1></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<div class="page-header"><h1>🎯 Pipeline CRM</h1></div>
 <div class="stats-grid">
     <div class="stat-card"><div class="stat-icon blue">🆕</div><div class="stat-info"><div class="stat-num">{{ stats.get('nouveau',0) }}</div><div class="stat-label">Nouveaux</div></div></div>
     <div class="stat-card"><div class="stat-icon orange">📞</div><div class="stat-info"><div class="stat-num">{{ stats.get('qualifie',0) }}</div><div class="stat-label">Qualifiés</div></div></div>
     <div class="stat-card"><div class="stat-icon green">🏆</div><div class="stat-info"><div class="stat-num">{{ stats.get('gagne',0) }}</div><div class="stat-label">Gagnés</div></div></div>
     <div class="stat-card"><div class="stat-icon teal">💵</div><div class="stat-info"><div class="stat-num">{{ '{:,.0f}'.format(stats.get('valeur',0)) }}</div><div class="stat-label">CA gagné (F)</div></div></div>
 </div>
+<div class="card" style="margin-bottom:16px"><div class="card-body" style="height:160px"><canvas id="cPipe"></canvas></div></div>
 <div class="card"><div class="card-header"><h3>Prospects</h3><button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Nouveau</button></div><div class="card-body">
 {% if prospects %}<div class="table-wrap"><table>
-<thead><tr><th>Entreprise</th><th>Contact</th><th>Source</th><th>Valeur</th><th>Statut</th><th>Actions</th></tr></thead>
+<thead><tr><th>#</th><th>Nom</th><th>Code</th><th>Email</th><th>Tél</th><th>Lieu</th><th>Attribué à</th><th>Source</th><th>Statut</th><th>Créé le</th><th>Actions</th></tr></thead>
 <tbody>{% for p in prospects %}<tr>
-<td><strong>{{ p.company }}</strong></td><td>{{ p.contact_name or '-' }}<br><span style="font-size:11px;color:#888">{{ p.tel or '' }}</span></td>
-<td>{{ p.source or '-' }}</td><td>{{ '{:,.0f}'.format(p.estimated_value) }} F</td>
+<td>{{ p.id }}</td><td><strong>{{ p.company }}</strong></td><td style="font-size:10px;color:#888">{{ p.notes[:10] if p.notes else '-' }}</td>
+<td style="font-size:11px">{{ p.email or '-' }}</td><td>{{ p.tel or '-' }}</td>
+<td style="font-size:11px">{{ p.source or '-' }}</td><td style="font-size:11px">-</td><td>{{ p.source or '-' }}</td>
 <td><span class="badge-status {% if p.status=='gagne' %}sent{% elif p.status=='perdu' %}{% else %}pending{% endif %}">{{ p.status }}</span></td>
-<td style="display:flex;gap:3px;flex-wrap:wrap">{% for s in ['contacte','qualifie','proposition','gagne'] %}<a href="/prospects/{{ p.id }}/status/{{ s }}" class="btn btn-outline btn-sm" style="font-size:10px">{{ s[:5] }}</a>{% endfor %}</td>
-</tr>{% endfor %}</tbody></table></div>{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun prospect</p>{% endif %}
+<td style="font-size:10px">{{ p.created_at[:10] }}</td>
+<td style="display:flex;gap:3px;flex-wrap:wrap">{% for s in ['contacte','qualifie','proposition','gagne'] %}<a href="/prospects/{{ p.id }}/status/{{ s }}" class="btn btn-outline btn-sm" style="font-size:9px;padding:2px 6px">{{ s[:5] }}</a>{% endfor %}</td>
+</tr>{% endfor %}</tbody></table></div>{% else %}<p style="text-align:center;color:#999;padding:20px">Aucun prospect</p>{% endif %}
 </div></div>
 <div class="modal-bg" id="addM"><div class="modal"><h3>🎯 Nouveau prospect</h3><form method="post" action="/prospects/add">
-<div class="form-group"><label>Entreprise *</label><input type="text" name="company" required></div>
-<div class="form-row"><div class="form-group"><label>Contact</label><input type="text" name="contact_name"></div><div class="form-group"><label>Tél</label><input type="text" name="tel"></div></div>
-<div class="form-row"><div class="form-group"><label>Email</label><input type="email" name="email"></div><div class="form-group"><label>Source</label><select name="source"><option>Site web</option><option>Recommandation</option><option>Salon</option><option>Appel</option><option>Autre</option></select></div></div>
+<div class="form-row"><div class="form-group"><label>Nom / Entreprise *</label><input type="text" name="company" required></div><div class="form-group"><label>Nom de code</label><input type="text" name="notes" placeholder="Code interne"></div></div>
+<div class="form-row"><div class="form-group"><label>Email</label><input type="email" name="email"></div><div class="form-group"><label>Téléphone</label><input type="text" name="tel"></div></div>
+<div class="form-row"><div class="form-group"><label>Situation géographique</label><input type="text" name="contact_name" placeholder="Ville, quartier"></div><div class="form-group"><label>Source</label><select name="source"><option>Site web</option><option>Recommandation</option><option>Salon</option><option>Appel entrant</option><option>Réseaux sociaux</option><option>Autre</option></select></div></div>
 <div class="form-group"><label>Valeur estimée (F)</label><input type="number" name="estimated_value" step="1000" value="0"></div>
-<div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px"></textarea></div>
 <input type="hidden" name="assigned_to" value="">
-<div style="display:flex;gap:10px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Ajouter</button></div></form></div></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Ajouter</button></div></form></div></div>
+<script>
+new Chart(document.getElementById('cPipe'),{type:'bar',data:{
+labels:['Nouveau','Contacté','Qualifié','Proposition','Gagné','Perdu'],
+datasets:[{data:[{{stats.get('nouveau',0)}},{{stats.get('contacte',0)}},{{stats.get('qualifie',0)}},{{stats.get('proposition',0)}},{{stats.get('gagne',0)}},{{stats.get('perdu',0)}}],
+backgroundColor:['#42a5f5','#7986cb','#ff9800','#ab47bc','#2e7d32','#ef5350'],borderRadius:6}]},
+options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+</script>
 {% endblock %}

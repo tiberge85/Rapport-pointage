@@ -70,7 +70,7 @@ from models import init_mg_tables
 init_mg_tables()
 
 from models import (init_chat_tables, get_messages, get_direct_messages, 
-                    send_message, get_unread_count)
+                    send_message, get_unread_count, db_get_all)
 init_chat_tables()
 
 # Register module routes
@@ -231,8 +231,10 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    # Show guide on first visit
-    if not session.get('guide_seen') and not request.args.get('skip_guide'):
+    # Show guide on first visit (only redirect once)
+    if request.args.get('skip_guide'):
+        session['guide_seen'] = True
+    if not session.get('guide_seen'):
         session['guide_seen'] = True
         return redirect(url_for('guide'))
     user = get_user_by_id(session['user_id'])
@@ -242,9 +244,20 @@ def dashboard():
     v_stats = get_visit_stats()
     d_stats = get_devis_stats()
     emp_stats = get_employee_stats()
+    # Notifications for dashboard
+    announcements = db_get_all('rh_announcements', order='created_at DESC', limit=5) if 'rh_announcements' in _get_tables() else []
+    trainings_upcoming = db_get_all('rh_trainings', order='date ASC', limit=5) if 'rh_trainings' in _get_tables() else []
     return render_template('dashboard.html', page='dashboard', stats=stats, 
                           inv_stats=inv_stats, v_stats=v_stats, d_stats=d_stats,
-                          emp_stats=emp_stats, user_role=role)
+                          emp_stats=emp_stats, user_role=role,
+                          announcements=announcements, trainings_upcoming=trainings_upcoming)
+
+def _get_tables():
+    from models import get_db
+    conn = get_db()
+    tables = [r['name'] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+    conn.close()
+    return tables
 
 @app.route('/guide')
 @login_required
