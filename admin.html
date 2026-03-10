@@ -50,13 +50,16 @@
         <form method="post" action="/admin/permissions">
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Permission</th><th>Admin</th><th>RH</th><th>Technicien</th></tr></thead>
+                    <thead><tr><th>Permission</th>
+                    {% for role in ['admin','rh','technicien','commercial','comptable','moyens_generaux','informatique'] %}
+                    <th style="font-size:11px;text-align:center">{{ role }}</th>
+                    {% endfor %}</tr></thead>
                     <tbody>
                     {% for perm in all_permissions %}
                     <tr>
                         <td><strong>{{ perm }}</strong></td>
-                        {% for role in ['admin', 'rh', 'technicien'] %}
-                        <td><input type="checkbox" name="{{ role }}_{{ perm }}" {% if perm in role_perms[role] %}checked{% endif %} {% if role == 'admin' %}disabled checked{% endif %}></td>
+                        {% for role in ['admin','rh','technicien','commercial','comptable','moyens_generaux','informatique'] %}
+                        <td style="text-align:center"><input type="checkbox" name="{{ role }}_{{ perm }}" {% if perm in role_perms.get(role, []) %}checked{% endif %} {% if role == 'admin' %}disabled checked{% endif %}></td>
                         {% endfor %}
                     </tr>
                     {% endfor %}

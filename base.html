@@ -148,14 +148,14 @@
             {% endif %}
             
             {% if 'visites' in permissions or 'proforma' in permissions or 'clients' in permissions %}
-            <!-- Commercial & CRM -->
-            <div class="nav-section" id="sec-commercial">
-                <div class="nav-section-title" onclick="toggleSection('sec-commercial')">💼 COMMERCIAL &amp; CRM <span class="arrow">▼</span></div>
+            <!-- CRM -->
+            <div class="nav-section" id="sec-crm">
+                <div class="nav-section-title" onclick="toggleSection('sec-crm')">🎯 CRM <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
-                    {% if 'visites' in permissions %}<a href="/visites" class="{% if page == 'visites' %}active{% endif %}">Rapports de visite</a>{% endif %}
-                    {% if 'proforma' in permissions %}<a href="/devis" class="{% if page == 'devis' %}active{% endif %}">Devis / Proformas</a>{% endif %}
+                    {% if 'clients' in permissions %}<a href="/clients" class="{% if page == 'clients' %}active{% endif %}">Relation client</a>{% endif %}
                     {% if 'clients' in permissions %}<a href="/prospects" class="{% if page == 'prospects' %}active{% endif %}">Prospects</a>{% endif %}
-                    {% if 'clients' in permissions %}<a href="/clients" class="{% if page == 'clients' %}active{% endif %}">Clients</a>{% endif %}
+                    {% if 'visites' in permissions %}<a href="/visites" class="{% if page == 'visites' %}active{% endif %}">Gestion d'interventions</a>{% endif %}
+                    {% if 'proforma' in permissions %}<a href="/devis" class="{% if page == 'devis' %}active{% endif %}">Devis / Proformas</a>{% endif %}
                     {% if 'contrats' in permissions %}<a href="/contrats" class="{% if page == 'contrats' %}active{% endif %}">Contrats</a>{% endif %}
                 </div>
             </div>
@@ -235,6 +235,7 @@
             {% endif %}
         </div>
         <div class="sidebar-footer">
+            <a href="/guide" style="display:block;margin-bottom:6px">🎓 Guide</a>
             <a href="/chat" style="display:flex;align-items:center;gap:6px">💬 Chat {% if unread_messages %}<span class="badge">{{ unread_messages }}</span>{% endif %}</a>
             <a href="/logout">🚪 Déconnexion</a>
         </div>

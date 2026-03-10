@@ -36,7 +36,7 @@ new Chart(document.getElementById('chartDevis'), {type:'bar',data:{labels:['Brou
 {% endif %}
 
 {# ======================== COMMERCIAL ======================== #}
-{% if user_role == 'commercial' %}
+{% if user_role in ('commercial','crm') %}
 <div class="stats-grid">
     <div class="stat-card" style="border-left:4px solid #e8672a"><div class="stat-icon orange">🔍</div><div class="stat-info"><div class="stat-num">{{ v_stats.en_attente }}</div><div class="stat-label">Visites en attente</div></div></div>
     <div class="stat-card" style="border-left:4px solid #1a3a5c"><div class="stat-icon blue">📝</div><div class="stat-info"><div class="stat-num">{{ d_stats.brouillon if d_stats else 0 }}</div><div class="stat-label">Devis brouillons</div></div></div>

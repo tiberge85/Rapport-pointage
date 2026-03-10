@@ -37,6 +37,10 @@
 <div class="chat-main">
     <div class="chat-header">
         {% if dm_target %}👤 {{ dm_target.full_name }}{% else %}# {{ channel }}{% endif %}
+        <div style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn btn-sm btn-outline" onclick="startCall(false)" title="Appel audio">📞</button>
+            <button class="btn btn-sm btn-primary" onclick="startCall(true)" title="Appel vidéo">📹</button>
+        </div>
     </div>
     <div class="chat-messages" id="chatMsgs">
         {% for m in messages %}
@@ -73,5 +77,17 @@ setInterval(function(){
         c.scrollTop=c.scrollHeight;
     }).catch(function(){});
 }, 5000);
+
+function startCall(withVideo) {
+    var room = 'wannygest-{{ channel }}-' + Date.now();
+    var url = 'https://meet.jit.si/' + room;
+    // Send call link in chat
+    fetch('/chat/send', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'channel={{ channel }}&content=' + encodeURIComponent((withVideo ? '📹' : '📞') + ' Appel en cours — Rejoindre: ' + url)
+    });
+    // Open call
+    var w = window.open('', 'wannygest_call', 'width=800,height=600');
+    w.document.write('<html><head><title>WannyGest Call</title></head><body style="margin:0"><iframe src="'+url+'#config.startWithVideoMuted='+(withVideo?'false':'true')+'" style="width:100%;height:100%;border:none" allow="camera;microphone;display-capture"></iframe></body></html>');
+}
 </script>
 {% endblock %}

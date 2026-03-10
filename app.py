@@ -231,6 +231,10 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    # Show guide on first visit
+    if not session.get('guide_seen') and not request.args.get('skip_guide'):
+        session['guide_seen'] = True
+        return redirect(url_for('guide'))
     user = get_user_by_id(session['user_id'])
     role = user['role'] if user else 'technicien'
     stats = get_dashboard_stats()
@@ -241,6 +245,11 @@ def dashboard():
     return render_template('dashboard.html', page='dashboard', stats=stats, 
                           inv_stats=inv_stats, v_stats=v_stats, d_stats=d_stats,
                           emp_stats=emp_stats, user_role=role)
+
+@app.route('/guide')
+@login_required
+def guide():
+    return render_template('onboarding.html', page='guide')
 
 
 # ======================== TRAITEMENT ========================
@@ -625,7 +634,7 @@ def admin_toggle_user(uid):
 @app.route('/admin/permissions', methods=['POST'])
 @permission_required('admin')
 def admin_permissions():
-    for role in ['rh', 'technicien']:
+    for role in ['rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique']:
         perms = [p for p in ALL_PERMISSIONS if request.form.get(f'{role}_{p}')]
         update_role_permissions(role, perms)
     # Admin always has all
