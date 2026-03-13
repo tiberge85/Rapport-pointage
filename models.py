@@ -1535,3 +1535,47 @@ def get_devis_template(tid):
     t = conn.execute("SELECT * FROM devis_templates WHERE id=?", (tid,)).fetchone()
     conn.close()
     return dict(t) if t else None
+
+
+# ======================== PAYSLIP V2 (CI FORMAT) ========================
+
+def migrate_payslip_v2():
+    conn = get_db()
+    new_cols = [
+        ('prime_transport', 'REAL DEFAULT 0'),
+        ('prime_anciennete', 'REAL DEFAULT 0'),
+        ('prime_logement', 'REAL DEFAULT 0'),
+        ('prime_rendement', 'REAL DEFAULT 0'),
+        ('avantages_nature', 'REAL DEFAULT 0'),
+        ('cnps_employee', 'REAL DEFAULT 0'),
+        ('its', 'REAL DEFAULT 0'),
+        ('autres_retenues', 'REAL DEFAULT 0'),
+        ('avances', 'REAL DEFAULT 0'),
+        ('jours_travailles', 'INTEGER DEFAULT 26'),
+        ('heures_travaillees', 'REAL DEFAULT 0'),
+        ('conges_payes', 'INTEGER DEFAULT 0'),
+        ('jours_absence', 'INTEGER DEFAULT 0'),
+        ('cumul_annuel', 'REAL DEFAULT 0'),
+        ('mode_paiement', "TEXT DEFAULT 'virement'"),
+        ('cnps_employer', 'REAL DEFAULT 0'),
+    ]
+    for col, typ in new_cols:
+        try: conn.execute(f"ALTER TABLE payslips ADD COLUMN {col} {typ}")
+        except: pass
+    conn.commit(); conn.close()
+
+def get_payslip_detail_v2(pid):
+    conn = get_db()
+    p = conn.execute("""SELECT p.*, e.first_name, e.last_name, e.matricule, e.position, 
+        e.department, e.insurance, e.insurance_number, e.hire_date, e.email, e.tel,
+        e.code_rh, e.gender
+        FROM payslips p LEFT JOIN employees e ON p.employee_id=e.id WHERE p.id=?""", (pid,)).fetchone()
+    conn.close()
+    if not p: return None
+    d = dict(p)
+    d['employee_name'] = f"{d.get('first_name','')} {d.get('last_name','')}".strip()
+    # Calculate totals
+    d['total_primes'] = (d.get('bonus',0) or 0) + (d.get('prime_transport',0) or 0) + (d.get('prime_anciennete',0) or 0) + (d.get('prime_logement',0) or 0) + (d.get('prime_rendement',0) or 0) + (d.get('avantages_nature',0) or 0)
+    d['salaire_brut'] = (d.get('base_salary',0) or 0) + (d.get('overtime_amount',0) or 0) + d['total_primes']
+    d['total_retenues'] = (d.get('cnps_employee',0) or 0) + (d.get('insurance_amount',0) or 0) + (d.get('its',0) or 0) + (d.get('deductions',0) or 0) + (d.get('autres_retenues',0) or 0) + (d.get('avances',0) or 0)
+    return d
