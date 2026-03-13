@@ -362,6 +362,7 @@ def traitement_generate():
     client_email = request.form.get('client_email', '').strip()
     client_id_str = request.form.get('client_id', '').strip()
     hp_str = request.form.get('required_hours', '0').strip()
+    hp_we_str = request.form.get('required_hours_weekend', '0').strip()
     
     # Auto-fill from client database
     client_id = int(client_id_str) if client_id_str else None
@@ -381,6 +382,10 @@ def traitement_generate():
         hp = float(hp_str) if hp_str else 0
     except:
         hp = 0
+    try:
+        hp_weekend = float(hp_we_str) if hp_we_str else 0
+    except:
+        hp_weekend = 0
     
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(app.config['UPLOAD_FOLDER'], job_id)
@@ -438,7 +443,7 @@ def traitement_generate():
         
         generate_full_pdf(emps, output_path, provider_name, provider_info,
                          client_name, period, logo_path, hp=hp, client_info=client_info,
-                         work_dir=job_dir)
+                         work_dir=job_dir, hp_weekend=hp_weekend)
         
         if not os.path.exists(output_path):
             flash("Erreur génération PDF", "error")
@@ -458,7 +463,8 @@ def traitement_generate():
                 shutil.copy2(merged_xlsx, os.path.join(files_dir, xlsx_out))
         
         # Enregistrer dans la BDD
-        hp_text = f"{hp}h/jour" if hp > 0 else "Auto"
+        hp_text = f"{hp}h/sem" if hp > 0 else "Auto"
+        if hp_weekend > 0: hp_text += f" | {hp_weekend}h/we"
         create_job(job_id, session['user_id'], client_name, provider_name,
                    filename, pdf_name, xlsx_out, len(emps), period, hp_text, client_id)
         
@@ -500,6 +506,21 @@ def fichiers_download(job_id, ftype):
         if ftype == 'xlsx' and f.endswith('.xlsx'):
             return send_from_directory(files_dir, f, as_attachment=True)
     flash("Fichier non trouvé", "error")
+    return redirect(url_for('fichiers'))
+
+@app.route('/fichiers/preview/<job_id>')
+@login_required
+def fichiers_preview(job_id):
+    """Prévisualisation PDF dans le navigateur avant envoi."""
+    safe_id = secure_filename(job_id)
+    files_dir = os.path.join(app.config['FILES_FOLDER'], safe_id)
+    if not os.path.isdir(files_dir):
+        flash("Fichier non trouvé", "error")
+        return redirect(url_for('fichiers'))
+    for f in os.listdir(files_dir):
+        if f.endswith('.pdf'):
+            return send_from_directory(files_dir, f, as_attachment=False, mimetype='application/pdf')
+    flash("PDF non trouvé", "error")
     return redirect(url_for('fichiers'))
 
 @app.route('/fichiers/marquer/<job_id>')

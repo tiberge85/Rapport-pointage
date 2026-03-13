@@ -147,8 +147,8 @@ def extract_from_excel(xlsx_path):
 
 # ======================== CALCULS ========================
 
-def calc_employee_stats(emp, hp=0):
-    """Calcule les statistiques complètes d'un employé. hp=heures obligatoires/jour (0=auto)."""
+def calc_employee_stats(emp, hp=0, hp_weekend=0):
+    """Calcule les statistiques complètes d'un employé. hp=heures obligatoires semaine, hp_weekend=heures obligatoires weekend (0=auto)."""
     records = emp['records']
     total_required = 0
     total_worked = 0
@@ -160,7 +160,8 @@ def calc_employee_stats(emp, hp=0):
     days_punctual = 0
     days_absent = 0
     days_badge_error = 0
-    hm = hp * 60  # heures obligatoires en minutes
+    hm = hp * 60  # heures obligatoires semaine en minutes
+    hm_we = hp_weekend * 60  # heures obligatoires weekend en minutes
     
     enriched = []
     
@@ -171,7 +172,26 @@ def calc_employee_stats(emp, hp=0):
         ad = t2m(rec['departure'])
         dur = t2m(rec['duration'])
         
-        required = hm if hp > 0 else (se - ss if se > ss else 0)
+        # Déterminer si c'est un week-end
+        is_weekend = False
+        try:
+            from datetime import datetime as _dt
+            d = _dt.strptime(rec['date'][:10], '%Y-%m-%d')
+            is_weekend = d.weekday() >= 5  # 5=samedi, 6=dimanche
+        except:
+            pass
+        
+        # Sélectionner les heures obligatoires selon le jour
+        if is_weekend and hp_weekend > 0:
+            required = hm_we
+        elif not is_weekend and hp > 0:
+            required = hm
+        elif hp > 0 and hp_weekend == 0:
+            # hp fourni mais pas de weekend spécifique → utiliser hp partout
+            required = hm
+        else:
+            required = se - ss if se > ss else 0
+        
         total_required += required
         
         schedule_str = f"({rec['sched_start']}_{rec['sched_end']})"
@@ -739,7 +759,7 @@ def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, clien
 
 # ======================== GENERATION PDF COMPLETE ========================
 
-def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None):
+def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0):
     if not work_dir:
         work_dir = os.path.dirname(os.path.abspath(output_path))
     doc = SimpleDocTemplate(output_path, pagesize=A4,
@@ -749,7 +769,7 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
     now = datetime.now().strftime("%d/%m/%Y à %H:%M")
     
     # Pré-calculer toutes les stats
-    all_stats = [calc_employee_stats(emp, hp) for emp in emps]
+    all_stats = [calc_employee_stats(emp, hp, hp_weekend) for emp in emps]
     
     # 1. Rapports individuels
     gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now)

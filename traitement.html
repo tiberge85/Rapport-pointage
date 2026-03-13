@@ -110,10 +110,17 @@
                     <span class="step-num">5</span>
                     <span class="step-title">Heures obligatoires par jour</span>
                 </div>
-                <div class="form-group">
-                    <input type="number" name="required_hours" min="0" max="24" step="0.5" value="0" style="width:120px">
-                    <div class="hint">Ex: 8 ou 12. Mettez 0 pour utiliser l'emploi du temps du fichier.</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                    <div class="form-group">
+                        <label style="font-size:12px;font-weight:600">Jours ouvrables (Lun-Ven)</label>
+                        <input type="number" name="required_hours" min="0" max="24" step="0.5" value="0" style="width:120px">
+                    </div>
+                    <div class="form-group">
+                        <label style="font-size:12px;font-weight:600">Week-end (Sam-Dim)</label>
+                        <input type="number" name="required_hours_weekend" min="0" max="24" step="0.5" value="0" style="width:120px">
+                    </div>
                 </div>
+                <div class="hint">Ex: 8h en semaine, 4h le week-end. Mettez 0 pour utiliser l'emploi du temps du fichier.</div>
             </div>
             
             <!-- Step 6: Logo -->

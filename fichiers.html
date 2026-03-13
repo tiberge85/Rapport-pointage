@@ -33,6 +33,7 @@
                     <td>{{ job.user_name }}</td>
                     <td style="display:flex;gap:6px;flex-wrap:wrap">
                         {% if job.filename_pdf %}
+                        <a href="/fichiers/preview/{{ job.job_id }}" class="btn btn-outline btn-sm" target="_blank">👁️ Aperçu</a>
                         <a href="/fichiers/download/{{ job.job_id }}/pdf" class="btn btn-primary btn-sm">📥 PDF</a>
                         {% endif %}
                         {% if job.filename_xlsx %}
@@ -71,6 +72,7 @@
                     <td>{{ job.sent_by_name or '-' }}</td>
                     <td>
                         {% if job.filename_pdf %}
+                        <a href="/fichiers/preview/{{ job.job_id }}" class="btn btn-outline btn-sm" target="_blank">👁️</a>
                         <a href="/fichiers/download/{{ job.job_id }}/pdf" class="btn btn-outline btn-sm">📥 PDF</a>
                         {% endif %}
                     </td>
