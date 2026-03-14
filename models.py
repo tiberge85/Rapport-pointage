@@ -1655,3 +1655,18 @@ def get_caisse_stats(month=None):
     s['montant_virement'] = conn.execute(f"SELECT COALESCE(SUM(montant),0) FROM caisse_sorties WHERE status='valide' AND nature='virement'{where}", params).fetchone()[0]
     conn.close()
     return s
+
+
+# ======================== CAISSE SIGNATURES ========================
+
+def migrate_caisse_v2():
+    conn = get_db()
+    for col in ['sig_beneficiaire', 'sig_caisse', 'sig_autorisation']:
+        try: conn.execute(f"ALTER TABLE caisse_sorties ADD COLUMN {col} TEXT DEFAULT ''")
+        except: pass
+    conn.commit(); conn.close()
+
+def delete_caisse(sid):
+    conn = get_db()
+    conn.execute("DELETE FROM caisse_sorties WHERE id=?", (sid,))
+    conn.commit(); conn.close()

@@ -56,7 +56,10 @@
     <a href="/caisse-sortie/{{ s.id }}/refuser" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px;padding:2px 6px" onclick="return confirm('Refuser ?')">❌</a>
     {% endif %}
     {% if s.status == 'valide' and not s.comptabilise %}
-    <a href="/caisse-sortie/{{ s.id }}/comptabiliser" class="btn btn-sm" style="background:#1a3a5c;color:#fff;font-size:10px;padding:2px 6px" title="Comptabiliser">📗</a>
+    <a href="/caisse-sortie/{{ s.id }}/comptabiliser" class="btn btn-sm" style="background:#1e1e2d;color:#fff;font-size:10px;padding:2px 6px" title="Comptabiliser">📗</a>
+    {% endif %}
+    {% if current_user.role in ('admin','dg','directeur') %}
+    <a href="/caisse-sortie/{{ s.id }}/delete" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px;padding:2px 6px" onclick="return confirm('Supprimer ?')" title="Supprimer">🗑️</a>
     {% endif %}
 </td>
 </tr>{% endfor %}</tbody></table></div>

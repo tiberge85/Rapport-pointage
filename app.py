@@ -76,11 +76,13 @@ from models import (init_chat_tables, get_messages, get_direct_messages,
                     get_devis_templates, get_devis_template,
                     migrate_payslip_v2, get_payslip_detail_v2,
                     migrate_caisse, gen_caisse_ref, get_caisse_sorties, get_caisse_stats)
+from models import migrate_caisse_v2, delete_caisse
 init_chat_tables()
 migrate_v4()
 migrate_payslip_v2()
 migrate_v5()
 migrate_caisse()
+migrate_caisse_v2()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -2012,12 +2014,13 @@ def caisse_demande():
         from models import get_db
         conn = get_db()
         conn.execute("""INSERT INTO caisse_sorties (reference, date, beneficiaire, type_beneficiaire,
-            montant, nature, motif, demandeur_id, demandeur_name) VALUES (?,?,?,?,?,?,?,?,?)""",
+            montant, nature, motif, demandeur_id, demandeur_name, sig_beneficiaire) VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (ref, request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
              request.form['beneficiaire'], request.form.get('type_beneficiaire', 'particulier'),
              float(request.form.get('montant', 0) or 0),
              request.form.get('nature', 'espece'), request.form.get('motif', ''),
-             session['user_id'], user['full_name'] if user else '?'))
+             session['user_id'], user['full_name'] if user else '?',
+             request.form.get('sig_beneficiaire', '')))
         conn.commit(); conn.close()
         log_activity(session['user_id'], user['full_name'] if user else '?',
                     'Caisse', f"Demande sortie {ref} — {float(request.form.get('montant',0)):,.0f} F", request.remote_addr)
@@ -2117,22 +2120,28 @@ def caisse_preview(sid):
 @app.route('/caisse-sortie/<int:sid>/signer', methods=['POST'])
 @login_required
 def caisse_signer(sid):
-    """Enregistre la signature (base64 canvas)."""
+    """Enregistre la signature (base64 canvas) dans une colonne dédiée."""
     from models import get_db
-    sig_type = request.form.get('type', 'beneficiaire')  # beneficiaire, caisse, autorisation
+    sig_type = request.form.get('type', 'beneficiaire')
     sig_data = request.form.get('signature', '')
-    conn = get_db()
-    # Store signatures in notes as JSON
-    import json
-    s = conn.execute("SELECT notes FROM caisse_sorties WHERE id=?", (sid,)).fetchone()
-    try: sigs = json.loads(s['notes'] or '{}') if s else {}
-    except: sigs = {}
-    if not isinstance(sigs, dict): sigs = {}
-    sigs[f'sig_{sig_type}'] = sig_data
-    conn.execute("UPDATE caisse_sorties SET notes=? WHERE id=?", (json.dumps(sigs), sid))
-    conn.commit(); conn.close()
-    flash(f"Signature {sig_type} enregistrée", "success")
+    if sig_data and sig_type in ('beneficiaire', 'caisse', 'autorisation'):
+        conn = get_db()
+        conn.execute(f"UPDATE caisse_sorties SET sig_{sig_type}=? WHERE id=?", (sig_data, sid))
+        conn.commit(); conn.close()
+        flash(f"Signature {sig_type} enregistrée ✓", "success")
     return redirect(f'/caisse-sortie/{sid}/preview')
+
+@app.route('/caisse-sortie/<int:sid>/delete')
+@login_required
+def caisse_delete(sid):
+    """Admin supprime une demande de caisse."""
+    user = get_user_by_id(session['user_id'])
+    if not user or user['role'] not in ('admin', 'dg', 'directeur'):
+        flash("Non autorisé", "error"); return redirect(url_for('caisse_sortie'))
+    delete_caisse(sid)
+    log_activity(session['user_id'], user['full_name'], 'Caisse', f"Sortie #{sid} supprimée", request.remote_addr)
+    flash("Demande supprimée", "success")
+    return redirect(url_for('caisse_sortie'))
 
 @app.route('/caisse-sortie/<int:sid>/pdf')
 @login_required
