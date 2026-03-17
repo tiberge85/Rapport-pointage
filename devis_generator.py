@@ -98,26 +98,30 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     remise = devis_data.get('remise', 0)
     
     # === HEADER ===
+    s_svc = ParagraphStyle('services', fontSize=9, textColor=ORANGE, leading=13, alignment=TA_RIGHT)
     header_data = [
         [Paragraph("<b>RAMYA<br/>TECHNOLOGIE &amp; INNOVATION</b>", 
                     ParagraphStyle('co', fontSize=12, fontName='Helvetica-Bold', textColor=TEAL)),
          Paragraph("""<font color='#1a7a6d'>■</font> <i>Caméras de surveillance,</i><br/>
-         <font color='#1a7a6d'>■</font> <i>Clôture électrique,</i><br/>
-         <font color='#1a7a6d'>■</font> <i>Kit visiophone alarme anti-intrusion,</i><br/>
-         <font color='#1a7a6d'>■</font> <i>Domotique, Poignées intelligentes</i>""",
-         ParagraphStyle('services', fontSize=9, textColor=ORANGE, leading=13))]
+<font color='#1a7a6d'>■</font> <i>Clôture électrique,</i><br/>
+<font color='#1a7a6d'>■</font> <i>Kit visiophone alarme anti-intrusion,</i><br/>
+<font color='#1a7a6d'>■</font> <i>Domotique, Poignées intelligentes</i>""", s_svc)]
     ]
     ht = Table(header_data, colWidths=[90*mm, 90*mm])
     ht.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
     story.append(ht)
     story.append(Spacer(1, 8*mm))
     
-    # === DEVIS / PROFORMA title ===
-    story.append(Paragraph(doc_type, s_title))
-    story.append(Paragraph(f"# {ref}", s_ref))
-    story.append(Paragraph(f"Date: {date_str}", s_ref))
-    if contact:
-        story.append(Paragraph(f"Contact commercial: {contact}", s_ref))
+    # === DEVIS / PROFORMA title + info right-aligned ===
+    devis_info = [
+        [Paragraph(f"<b>{doc_type}</b>", s_title),
+         Paragraph(f"<b>{doc_type}#</b> {ref}<br/>Date: {date_str}" + 
+                   (f"<br/>Contact commercial: {contact}" if contact else ""),
+                   ParagraphStyle('dinfo', fontSize=10, alignment=TA_RIGHT, leading=14))]
+    ]
+    dt = Table(devis_info, colWidths=[90*mm, 90*mm])
+    dt.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+    story.append(dt)
     story.append(Spacer(1, 8*mm))
     
     # === CLIENT ===

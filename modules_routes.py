@@ -113,8 +113,12 @@ def prospects_status(pid, status):
         db_update('prospects', pid, status=status)
         if status == 'gagne':
             p = db_get_by_id('prospects', pid)
-            if p: db_insert('clients', name=p['company'], tel=p.get('tel',''), email=p.get('email',''),
-                           contact_name=p.get('contact_name',''), created_by=session['user_id'])
+            if p: 
+                db_insert('clients', name=p['company'], tel=p.get('tel',''), email=p.get('email',''),
+                           contact_name=p.get('contact_name',''), address=p.get('address',''),
+                           city=p.get('city',''), sector=p.get('sector',''),
+                           source='prospect', notes=f"Converti depuis prospect #{pid}",
+                           created_by=session['user_id'])
             flash("Prospect converti en client !", "success")
     return redirect(url_for('modules.prospects'))
 

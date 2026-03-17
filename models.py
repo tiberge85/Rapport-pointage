@@ -1670,3 +1670,51 @@ def delete_caisse(sid):
     conn = get_db()
     conn.execute("DELETE FROM caisse_sorties WHERE id=?", (sid,))
     conn.commit(); conn.close()
+
+
+# ======================== MIGRATION V6 — RAPPORTS JOURNALIERS + CLIENTS ENRICHIS + COMPTA ========================
+
+def migrate_v6():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS rapports_journaliers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, date TEXT,
+            tasks_done TEXT, tasks_planned TEXT,
+            issues TEXT, achievements TEXT,
+            completion_pct INTEGER DEFAULT 0,
+            department TEXT, status TEXT DEFAULT 'soumis',
+            validated_by INTEGER, comments TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS pieces_caisse (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference TEXT, date TEXT,
+            description TEXT, amount REAL DEFAULT 0,
+            category TEXT DEFAULT 'divers',
+            supplier TEXT, file_path TEXT,
+            comptabilise INTEGER DEFAULT 0,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    # Enrich clients table
+    new_cols = [
+        ('sector', 'TEXT'), ('city', 'TEXT'), ('country', 'TEXT DEFAULT \'Côte d\\\'Ivoire\''),
+        ('website', 'TEXT'), ('rc_number', 'TEXT'), ('cnps_number', 'TEXT'),
+        ('contact_title', 'TEXT'), ('contact_tel2', 'TEXT'), ('contact_email2', 'TEXT'),
+        ('payment_terms', 'TEXT'), ('credit_limit', 'REAL DEFAULT 0'),
+        ('source', 'TEXT'), ('status', 'TEXT DEFAULT \'actif\''),
+        ('annual_revenue', 'REAL DEFAULT 0'),
+    ]
+    for col, typ in new_cols:
+        try: conn.execute(f"ALTER TABLE clients ADD COLUMN {col} {typ}")
+        except: pass
+    # Formation: add target_department
+    try: conn.execute("ALTER TABLE rh_trainings ADD COLUMN target TEXT DEFAULT 'tous'")
+    except: pass
+    # Prospects: add more fields for better conversion
+    for col in ['address', 'city', 'sector', 'contact_tel2']:
+        try: conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT DEFAULT ''")
+        except: pass
+    conn.commit(); conn.close()

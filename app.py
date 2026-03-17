@@ -77,12 +77,14 @@ from models import (init_chat_tables, get_messages, get_direct_messages,
                     migrate_payslip_v2, get_payslip_detail_v2,
                     migrate_caisse, gen_caisse_ref, get_caisse_sorties, get_caisse_stats)
 from models import migrate_caisse_v2, delete_caisse
+from models import migrate_v6
 init_chat_tables()
 migrate_v4()
 migrate_payslip_v2()
 migrate_v5()
 migrate_caisse()
 migrate_caisse_v2()
+migrate_v6()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -570,6 +572,20 @@ def clients_add():
         request.form.get('address', ''), request.form.get('notes', ''),
         session['user_id']
     )
+    # Update enriched fields
+    from models import get_db as _gdb2
+    conn = _gdb2()
+    cid = conn.execute("SELECT id FROM clients ORDER BY id DESC LIMIT 1").fetchone()['id']
+    for field in ['sector','city','country','website','rc_number','cnps_number',
+                  'contact_title','contact_tel2','contact_email2','payment_terms',
+                  'source','status']:
+        val = request.form.get(field, '')
+        if val:
+            try: conn.execute(f"UPDATE clients SET {field}=? WHERE id=?", (val, cid))
+            except: pass
+    if request.form.get('credit_limit'):
+        conn.execute("UPDATE clients SET credit_limit=? WHERE id=?", (float(request.form['credit_limit']), cid))
+    conn.commit(); conn.close()
     user = get_user_by_id(session['user_id'])
     log_audit(session['user_id'], user['full_name'] if user else '?', 'clients', 0, 'create', 'name', '', request.form['name'])
     flash("Client ajouté", "success")
@@ -1743,18 +1759,27 @@ def rh_postes_add():
 @permission_required('fichiers')
 def rh_formations():
     from models import db_get_all
-    trainings = db_get_all('rh_trainings', order='date DESC')
+    u = dict(get_user_by_id(session["user_id"]) or {})
+    all_trainings = db_get_all('rh_trainings', order='date DESC')
+    # Filter: show only trainings for user's department or "tous"
+    if u['role'] in ('admin', 'dg', 'rh'):
+        trainings = all_trainings  # Admin/DG/RH see all
+    else:
+        dept = u.get('department', '') or u.get('role', '')
+        trainings = [t for t in all_trainings if not t.get('target') or t.get('target') == 'tous' or t.get('target','').lower() == dept.lower()]
     return render_template('rh_formations.html', page='formations', trainings=trainings)
 
 @app.route('/rh/formations/add', methods=['POST'])
 @permission_required('fichiers')
 def rh_formations_add():
     from models import db_insert
+    target = request.form.get('target', 'tous')
     db_insert('rh_trainings', title=request.form['title'], description=request.form.get('description',''),
         trainer=request.form.get('trainer',''), date=request.form.get('date',''),
         duration=request.form.get('duration',''),
         department=request.form.get('department',''),
-        cost=request.form.get('cost','0'))
+        cost=request.form.get('cost','0'),
+        target=target)
     flash("Formation ajoutée", "success"); return redirect(url_for('rh_formations'))
 
 @app.route('/rh/annonces')
@@ -2372,6 +2397,96 @@ def _cleanup_old(upload_dir, max_age_hours=2):
                 shutil.rmtree(path, ignore_errors=True)
     except:
         pass
+
+
+# ======================== RAPPORTS JOURNALIERS ========================
+from models import get_db as _gdb, db_insert as _dbi
+
+@app.route('/rapports-journaliers')
+@login_required
+def rapports_journaliers():
+    u = dict(get_user_by_id(session['user_id']))
+    conn = _gdb()
+    if u['role'] in ('admin', 'dg'):
+        rapports = [dict(r) for r in conn.execute("""SELECT rj.*, u.full_name FROM rapports_journaliers rj 
+            LEFT JOIN users u ON rj.user_id=u.id ORDER BY rj.date DESC, rj.created_at DESC LIMIT 100""").fetchall()]
+    else:
+        rapports = [dict(r) for r in conn.execute("""SELECT rj.*, u.full_name FROM rapports_journaliers rj 
+            LEFT JOIN users u ON rj.user_id=u.id WHERE rj.user_id=? ORDER BY rj.date DESC LIMIT 50""",
+            (session['user_id'],)).fetchall()]
+    conn.close()
+    return render_template('rapports_journaliers.html', page='rapports_j', rapports=rapports, user=u)
+
+@app.route('/rapports-journaliers/add', methods=['POST'])
+@login_required
+def rapports_journaliers_add():
+    u = dict(get_user_by_id(session['user_id']))
+    _dbi('rapports_journaliers', user_id=session['user_id'],
+        date=request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
+        tasks_done=request.form.get('tasks_done', ''),
+        tasks_planned=request.form.get('tasks_planned', ''),
+        issues=request.form.get('issues', ''),
+        achievements=request.form.get('achievements', ''),
+        completion_pct=int(request.form.get('completion_pct', 0) or 0),
+        department=u.get('department', '') or u.get('role', ''))
+    flash("Rapport journalier soumis", "success")
+    return redirect('/rapports-journaliers')
+
+@app.route('/rapports-journaliers/<int:rid>/validate', methods=['POST'])
+@login_required
+def rapports_journaliers_validate(rid):
+    u = dict(get_user_by_id(session['user_id']))
+    if u['role'] not in ('admin', 'dg'):
+        flash("Seuls les responsables peuvent valider", "error")
+        return redirect('/rapports-journaliers')
+    conn = _gdb()
+    conn.execute("UPDATE rapports_journaliers SET status=?, validated_by=?, comments=? WHERE id=?",
+        (request.form.get('status', 'valide'), session['user_id'], request.form.get('comments', ''), rid))
+    conn.commit(); conn.close()
+    flash("Rapport validé", "success")
+    return redirect('/rapports-journaliers')
+
+
+# ======================== PIÈCES DE CAISSE / DÉPENSES ========================
+
+@app.route('/comptabilite/pieces')
+@permission_required('comptabilite')
+def pieces_caisse():
+    conn = _gdb()
+    pieces = [dict(r) for r in conn.execute("SELECT * FROM pieces_caisse ORDER BY date DESC").fetchall()]
+    total = conn.execute("SELECT COALESCE(SUM(amount),0) FROM pieces_caisse").fetchone()[0]
+    by_cat = [dict(r) for r in conn.execute("SELECT category, SUM(amount) as total, COUNT(*) as count FROM pieces_caisse GROUP BY category ORDER BY total DESC").fetchall()]
+    conn.close()
+    return render_template('pieces_caisse.html', page='pieces', pieces=pieces, total=total, by_cat=by_cat)
+
+@app.route('/comptabilite/pieces/add', methods=['POST'])
+@permission_required('comptabilite')
+def pieces_caisse_add():
+    ref = f"PC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    file_path = ''
+    if 'file' in request.files and request.files['file'].filename:
+        f = request.files['file']
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext in ('.jpg', '.jpeg', '.png', '.pdf', '.webp'):
+            fname = f"piece_{ref}{ext}"
+            fdir = os.path.join(app.config['UPLOAD_FOLDER'], 'pieces')
+            os.makedirs(fdir, exist_ok=True)
+            f.save(os.path.join(fdir, fname))
+            file_path = fname
+    
+    amount = float(request.form.get('amount', 0) or 0)
+    _dbi('pieces_caisse', reference=ref,
+        date=request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
+        description=request.form.get('description', ''),
+        amount=amount, category=request.form.get('category', 'divers'),
+        supplier=request.form.get('supplier', ''),
+        file_path=file_path, created_by=session['user_id'])
+    flash(f"Pièce {ref} — {amount:,.0f} F enregistrée", "success")
+    return redirect('/comptabilite/pieces')
+
+@app.route('/uploads/pieces/<path:filename>')
+def piece_file(filename):
+    return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'pieces'), filename)
 
 
 if __name__ == '__main__':

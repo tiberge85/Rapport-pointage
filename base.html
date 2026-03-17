@@ -134,6 +134,7 @@
         </div>
         <div class="sidebar-nav">
             <a href="/dashboard" class="{% if page == 'dashboard' %}active{% endif %}">📊 Tableau de bord</a>
+            <a href="/rapports-journaliers" class="{% if page == 'rapports_j' %}active{% endif %}">📝 Rapport journalier</a>
             
             {% if 'traitement' in permissions %}
             <!-- Gestion du temps -->
@@ -196,6 +197,7 @@
                         {% if caisse_pending %}<span class="badge">{{ caisse_pending }}</span>{% endif %}
                     </a>
                     <a href="/depenses" class="{% if page == 'depenses' %}active{% endif %}">Dépenses</a>
+                    <a href="/comptabilite/pieces" class="{% if page == 'pieces' %}active{% endif %}">🧾 Pièces de caisse</a>
                 </div>
             </div>
             {% endif %}
