@@ -1323,8 +1323,102 @@ def devis_pdf(did):
 def devis_status(did, status):
     if status in ('brouillon', 'envoye', 'accepte', 'refuse'):
         update_devis_status(did, status)
+        # Stock deduction when devis is accepted
+        if status == 'accepte':
+            devis = get_devis_by_id(did)
+            if devis:
+                items = json.loads(devis.get('items_json', '[]')) if isinstance(devis.get('items_json'), str) else devis.get('items_json', [])
+                conn = _gdb()
+                for item in items:
+                    designation = item.get('designation', '')
+                    qty = int(item.get('qty', 0) or 0)
+                    if designation and qty > 0:
+                        stock_item = conn.execute("SELECT id, quantity FROM stock_items WHERE name=? OR reference=?",
+                            (designation, designation)).fetchone()
+                        if stock_item:
+                            new_qty = max(0, stock_item['quantity'] - qty)
+                            conn.execute("UPDATE stock_items SET quantity=? WHERE id=?", (new_qty, stock_item['id']))
+                            conn.execute("""INSERT INTO stock_movements (item_id, movement_type, quantity, reference, notes, created_by)
+                                VALUES (?, 'sortie', ?, ?, ?, ?)""",
+                                (stock_item['id'], qty, devis.get('reference',''), f"Devis {devis['reference']} accepté", session.get('user_id')))
+                conn.commit(); conn.close()
+                flash(f"Articles déduits du stock", "info")
         flash(f"Statut mis à jour : {status}", "success")
     return redirect(url_for('devis_page'))
+
+@app.route('/devis/edit/<int:did>', methods=['GET', 'POST'])
+@permission_required('proforma')
+def devis_edit(did):
+    devis = get_devis_by_id(did)
+    if not devis: flash("Devis non trouvé", "error"); return redirect(url_for('devis_page'))
+    if request.method == 'POST':
+        items = []
+        i = 1
+        while request.form.get(f'item_{i}_designation'):
+            items.append({
+                'num': i, 'designation': request.form.get(f'item_{i}_designation', ''),
+                'detail': request.form.get(f'item_{i}_detail', ''),
+                'qty': int(request.form.get(f'item_{i}_qty', 1) or 1),
+                'prix': float(request.form.get(f'item_{i}_prix', 0) or 0),
+                'remise': float(request.form.get(f'item_{i}_remise', 0) or 0),
+            })
+            i += 1
+        total_ht = sum(it['qty'] * it['prix'] - it['remise'] for it in items)
+        main_oeuvre = float(request.form.get('main_oeuvre', 0) or 0)
+        petites_fourn = float(request.form.get('petites_fournitures', 0) or 0)
+        remise_glob = float(request.form.get('remise', 0) or 0)
+        total_ttc = total_ht + petites_fourn - remise_glob
+        
+        conn = _gdb()
+        conn.execute("""UPDATE devis SET client_name=?, client_code=?, contact_commercial=?, objet=?,
+            items_json=?, total_ht=?, petites_fournitures=?, total_ttc=?, main_oeuvre=?, remise=?, notes=?
+            WHERE id=?""", (request.form.get('client_name',''), request.form.get('client_code',''),
+            request.form.get('contact_commercial',''), request.form.get('objet',''),
+            json.dumps(items), total_ht, petites_fourn, total_ttc, main_oeuvre, remise_glob,
+            request.form.get('notes',''), did))
+        conn.commit(); conn.close()
+        flash("Devis modifié", "success"); return redirect(url_for('devis_page'))
+    
+    items = json.loads(devis.get('items_json', '[]')) if isinstance(devis.get('items_json'), str) else []
+    clients = get_all_clients()
+    from models import db_get_all
+    stock_items = db_get_all('stock_items', order='name ASC')
+    return render_template('devis_edit.html', page='devis', devis=devis, items=items, clients=clients, stock_items=stock_items)
+
+@app.route('/devis/delete/<int:did>')
+@permission_required('proforma')
+def devis_delete(did):
+    conn = _gdb()
+    conn.execute("DELETE FROM devis WHERE id=?", (did,))
+    conn.commit(); conn.close()
+    flash("Devis supprimé", "success"); return redirect(url_for('devis_page'))
+
+@app.route('/devis/duplicate/<int:did>')
+@permission_required('proforma')
+def devis_duplicate(did):
+    devis = get_devis_by_id(did)
+    if devis:
+        from models import create_devis
+        new_id, new_ref = create_devis(
+            devis.get('client_id'), devis['client_name'], devis.get('client_code',''),
+            devis.get('contact_commercial',''), devis.get('objet',''),
+            devis.get('items_json','[]'), devis['total_ht'], devis.get('petites_fournitures',0),
+            devis['total_ttc'], devis.get('main_oeuvre',0), devis.get('remise',0),
+            devis.get('notes',''), session['user_id'], devis.get('doc_type','devis'))
+        flash(f"Devis dupliqué → {new_ref}", "success")
+    return redirect(url_for('devis_page'))
+
+@app.route('/devis/preview/<int:did>')
+@login_required
+def devis_preview(did):
+    devis = get_devis_by_id(did)
+    if not devis: return "Non trouvé", 404
+    export_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'devis')
+    os.makedirs(export_dir, exist_ok=True)
+    output = os.path.join(export_dir, f"preview_{devis['reference']}.pdf")
+    devis['date'] = devis.get('created_at', '')[:10]
+    generate_devis_pdf(devis, output)
+    return send_file(output, as_attachment=False, download_name=f"{devis['reference']}.pdf")
 
 
 # ======================== RH MODULE ========================
@@ -1525,31 +1619,31 @@ def rh_paie_pdf(pid):
     os.makedirs(os.path.dirname(output), exist_ok=True)
     doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=12*mm, bottomMargin=12*mm)
     
-    NAVY = HexColor('#1a3a5c'); ORANGE = HexColor('#e8672a'); GREY = HexColor('#888'); GREEN = HexColor('#2e7d32')
-    s_t = ParagraphStyle('t', fontSize=16, fontName='Helvetica-Bold', textColor=NAVY, alignment=TA_CENTER)
+    DARK = HexColor('#222222'); GREY = HexColor('#888'); LIGHT = HexColor('#f5f5f5')
+    s_t = ParagraphStyle('t', fontSize=14, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_CENTER)
     s_s = ParagraphStyle('s', fontSize=9, alignment=TA_CENTER, textColor=GREY)
-    s_n = ParagraphStyle('n', fontSize=9, leading=12)
-    s_b = ParagraphStyle('b', fontSize=9, fontName='Helvetica-Bold')
-    s_h = ParagraphStyle('h', fontSize=8, fontName='Helvetica-Bold', textColor=HexColor('#fff'))
-    s_c = ParagraphStyle('c', fontSize=8, leading=10)
-    s_r = ParagraphStyle('r', fontSize=8, alignment=TA_RIGHT)
-    s_rb = ParagraphStyle('rb', fontSize=8, fontName='Helvetica-Bold', alignment=TA_RIGHT)
+    s_n = ParagraphStyle('n', fontSize=9, leading=12, textColor=DARK)
+    s_b = ParagraphStyle('b', fontSize=9, fontName='Helvetica-Bold', textColor=DARK)
+    s_h = ParagraphStyle('h', fontSize=8, fontName='Helvetica-Bold', textColor=DARK)
+    s_c = ParagraphStyle('c', fontSize=8, leading=10, textColor=DARK)
+    s_r = ParagraphStyle('r', fontSize=8, alignment=TA_RIGHT, textColor=DARK)
+    s_rb = ParagraphStyle('rb', fontSize=8, fontName='Helvetica-Bold', alignment=TA_RIGHT, textColor=DARK)
     fmt = lambda x: f"{(x or 0):,.0f}"
     
     story = []
     story.append(Paragraph("BULLETIN DE PAIE", s_t))
     story.append(Spacer(1, 2*mm))
-    story.append(HRFlowable(width="100%", thickness=2, color=NAVY))
+    story.append(HRFlowable(width="100%", thickness=1, color=DARK))
     story.append(Spacer(1, 4*mm))
     
-    # === HEADER: Entreprise + Employé side by side ===
+    # === HEADER ===
     header = [[
-        Paragraph("<b>EMPLOYEUR</b><br/>WannyGest<br/>Abidjan, Côte d'Ivoire<br/>RC: CI-ABJ-XXXX<br/>N° CNPS Employeur: XXXX", s_c),
+        Paragraph("<b>EMPLOYEUR</b><br/>WannyGest<br/>Abidjan, Côte d'Ivoire<br/>RC: CI-ABJ-XXXX<br/>N° CNPS: XXXX", s_c),
         Paragraph(f"<b>EMPLOYÉ</b><br/>{p['employee_name']}<br/>Matricule: {p.get('matricule','') or '-'}<br/>N° CNPS: {p.get('insurance_number','') or '-'}<br/>Poste: {p.get('position','') or '-'}<br/>Embauche: {p.get('hire_date','') or '-'}", s_c),
         Paragraph(f"<b>PÉRIODE</b><br/>{p['period']}<br/>Jours: {p.get('jours_travailles',26)}<br/>Heures: {fmt(p.get('heures_travaillees',0))}<br/>Congés: {p.get('conges_payes',0)}<br/>Absences: {p.get('jours_absence',0)}", s_c),
     ]]
     ht = Table(header, colWidths=[60*mm, 60*mm, 55*mm])
-    ht.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,HexColor('#ccc')),('BACKGROUND',(0,0),(-1,-1),HexColor('#f8faf9')),
+    ht.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,HexColor('#ccc')),('BACKGROUND',(0,0),(-1,-1),LIGHT),
         ('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),('LEFTPADDING',(0,0),(-1,-1),8)]))
     story.append(ht)
     story.append(Spacer(1, 5*mm))
@@ -1569,9 +1663,9 @@ def rh_paie_pdf(pid):
     ]
     cw = [65*mm, 30*mm, 30*mm, 40*mm]
     gt = Table(g_rows, colWidths=cw)
-    gt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),GREEN),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
+    gt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),LIGHT),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
         ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
-        ('BACKGROUND',(0,9),(-1,9),HexColor('#e8f5e9'))]))
+        ('LINEABOVE',(0,9),(-1,9),1,DARK)]))
     story.append(gt)
     story.append(Spacer(1, 3*mm))
     
@@ -1587,18 +1681,20 @@ def rh_paie_pdf(pid):
         [Paragraph('<b>TOTAL RETENUES</b>', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(f"<b>{fmt(p['total_retenues'])}</b>", s_rb)],
     ]
     rt = Table(r_rows, colWidths=cw)
-    rt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),HexColor('#c53030')),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
+    rt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),LIGHT),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
         ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
-        ('BACKGROUND',(0,7),(-1,7),HexColor('#fde8e8'))]))
+        ('LINEABOVE',(0,7),(-1,7),1,DARK)]))
     story.append(rt)
     story.append(Spacer(1, 4*mm))
     
     # === NET À PAYER ===
-    net_row = [[Paragraph('<b>NET À PAYER</b>', ParagraphStyle('net', fontSize=14, fontName='Helvetica-Bold', textColor=HexColor('#fff'))),
-                Paragraph(f'<b>{fmt(p["net_salary"])} FCFA</b>', ParagraphStyle('nv', fontSize=14, fontName='Helvetica-Bold', textColor=HexColor('#fff'), alignment=TA_RIGHT))]]
+    story.append(HRFlowable(width="100%", thickness=2, color=DARK))
+    net_row = [[Paragraph('<b>NET À PAYER</b>', ParagraphStyle('net', fontSize=13, fontName='Helvetica-Bold', textColor=DARK)),
+                Paragraph(f'<b>{fmt(p["net_salary"])} FCFA</b>', ParagraphStyle('nv', fontSize=13, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_RIGHT))]]
     nt = Table(net_row, colWidths=[100*mm, 70*mm])
-    nt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),NAVY),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10),('LEFTPADDING',(0,0),(-1,-1),14),('RIGHTPADDING',(0,0),(-1,-1),14)]))
+    nt.setStyle(TableStyle([('TOPPADDING',(0,0),(-1,-1),8),('BOTTOMPADDING',(0,0),(-1,-1),8)]))
     story.append(nt)
+    story.append(HRFlowable(width="100%", thickness=2, color=DARK))
     story.append(Spacer(1, 4*mm))
     
     # === Infos complémentaires ===

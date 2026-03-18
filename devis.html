@@ -28,9 +28,20 @@
     {% elif d.status=='accepte' %}<span class="badge-status sent">✅ Accepté</span>
     {% elif d.status=='refuse' %}<span class="badge-status" style="background:#fde8e8;color:#c53030">❌ Refusé</span>{% endif %}</td>
 <td style="display:flex;gap:4px;flex-wrap:wrap">
-    <a href="/devis/pdf/{{ d.id }}" class="btn btn-primary btn-sm">📥 PDF</a>
-    {% if d.status=='brouillon' %}<a href="/devis/status/{{ d.id }}/envoye" class="btn btn-sm" style="background:#ff9800;color:#fff">📤</a>{% endif %}
-    {% if d.status=='envoye' %}<a href="/devis/status/{{ d.id }}/accepte" class="btn btn-sm" style="background:#2e7d32;color:#fff">✅</a><a href="/devis/status/{{ d.id }}/refuse" class="btn btn-danger btn-sm">❌</a>{% endif %}
+    <a href="/devis/pdf/{{ d.id }}" class="btn btn-primary btn-sm" title="Télécharger PDF">📥</a>
+    <a href="/devis/preview/{{ d.id }}" class="btn btn-outline btn-sm" title="Prévisualiser" target="_blank">👁️</a>
+    {% if d.status=='brouillon' %}
+    <a href="/devis/edit/{{ d.id }}" class="btn btn-outline btn-sm" title="Modifier">✏️</a>
+    <a href="/devis/status/{{ d.id }}/envoye" class="btn btn-sm" style="background:#ff9800;color:#fff" title="Marquer envoyé">📤</a>
+    <a href="/devis/duplicate/{{ d.id }}" class="btn btn-outline btn-sm" title="Dupliquer">📋</a>
+    {% endif %}
+    {% if d.status=='envoye' %}
+    <a href="/devis/status/{{ d.id }}/accepte" class="btn btn-sm" style="background:#2e7d32;color:#fff" title="Accepter">✅</a>
+    <a href="/devis/status/{{ d.id }}/refuse" class="btn btn-danger btn-sm" title="Refuser">❌</a>
+    {% endif %}
+    {% if d.status in ('brouillon','refuse') %}
+    <a href="/devis/delete/{{ d.id }}" class="btn btn-sm" style="color:#c53030" title="Supprimer" onclick="return confirm('Supprimer ce devis ?')">🗑️</a>
+    {% endif %}
 </td>
 </tr>{% endfor %}</tbody></table></div>
 {% else %}<p style="text-align:center;color:#999;padding:30px">Aucun devis. <a href="/devis/new" style="color:#1a3a5c">Créer le premier →</a></p>{% endif %}

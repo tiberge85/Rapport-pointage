@@ -2,7 +2,7 @@
 """Routes des modules WannyGest — Projets, CRM, Stock, Trésorerie, etc."""
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
-from models import (db_insert, db_get_all, db_get_by_id, db_update, db_delete, db_count, db_sum,
+from models import (db_insert, db_get_all, db_get_by_id, db_update, db_delete, db_count, db_sum, get_db,
                     get_user_by_id, get_all_clients, get_all_users, log_activity,
                     has_permission, get_role_permissions, log_audit)
 from functools import wraps
@@ -128,10 +128,29 @@ def prospects_status(pid, status):
 @modules_bp.route('/stock')
 @perm_required('clients')
 def stock():
+    tab = request.args.get('tab', 'articles')
     items = db_get_all('stock_items', order='name ASC')
     low_stock = [i for i in items if i['quantity'] <= i['min_stock']]
     total_value = sum(i['quantity'] * i['unit_price'] for i in items)
-    return render_template('mod_stock.html', page='stock', items=items, low_stock=low_stock, total_value=total_value)
+    
+    conn = get_db()
+    movements = [dict(r) for r in conn.execute("""SELECT sm.*, si.name as item_name, si.reference as item_ref, u.full_name 
+        FROM stock_movements sm LEFT JOIN stock_items si ON sm.item_id=si.id
+        LEFT JOIN users u ON sm.created_by=u.id ORDER BY sm.created_at DESC LIMIT 100""").fetchall()]
+    
+    # Stats
+    entries = conn.execute("SELECT COALESCE(SUM(quantity),0) FROM stock_movements WHERE movement_type='entree'").fetchone()[0]
+    exits = conn.execute("SELECT COALESCE(SUM(quantity),0) FROM stock_movements WHERE movement_type='sortie'").fetchone()[0]
+    adjustments = conn.execute("SELECT COUNT(*) FROM stock_movements WHERE movement_type='ajustement'").fetchone()[0]
+    
+    # Categories for params
+    categories = [dict(r) for r in conn.execute("SELECT DISTINCT category FROM stock_items WHERE category!='' ORDER BY category").fetchall()]
+    locations = [dict(r) for r in conn.execute("SELECT DISTINCT location FROM stock_items WHERE location!='' ORDER BY location").fetchall()]
+    conn.close()
+    
+    return render_template('mod_stock.html', page='stock', tab=tab, items=items, low_stock=low_stock,
+        total_value=total_value, movements=movements, entries=entries, exits=exits,
+        adjustments=adjustments, categories=categories, locations=locations)
 
 @modules_bp.route('/stock/add', methods=['POST'])
 @perm_required('clients')
@@ -141,6 +160,25 @@ def stock_add():
         unit_price=float(request.form.get('unit_price',0) or 0), min_stock=int(request.form.get('min_stock',0) or 0),
         location=request.form.get('location',''))
     flash("Article ajouté", "success"); return redirect(url_for('modules.stock'))
+
+@modules_bp.route('/stock/edit/<int:sid>', methods=['POST'])
+@perm_required('clients')
+def stock_edit(sid):
+    db_update('stock_items', sid,
+        name=request.form['name'], reference=request.form.get('reference',''),
+        category=request.form.get('category',''),
+        unit_price=float(request.form.get('unit_price',0) or 0),
+        min_stock=int(request.form.get('min_stock',0) or 0),
+        location=request.form.get('location',''))
+    flash("Article modifié", "success"); return redirect(url_for('modules.stock'))
+
+@modules_bp.route('/stock/delete/<int:sid>')
+@perm_required('clients')
+def stock_delete(sid):
+    conn = get_db()
+    conn.execute("DELETE FROM stock_items WHERE id=?", (sid,))
+    conn.commit(); conn.close()
+    flash("Article supprimé", "success"); return redirect(url_for('modules.stock'))
 
 @modules_bp.route('/stock/movement', methods=['POST'])
 @perm_required('clients')
@@ -152,9 +190,16 @@ def stock_movement():
         reference=request.form.get('reference',''), notes=request.form.get('notes',''), created_by=session['user_id'])
     item = db_get_by_id('stock_items', item_id)
     if item:
-        new_qty = item['quantity'] + qty if mtype == 'entree' else item['quantity'] - qty
-        db_update('stock_items', item_id, quantity=max(0, new_qty))
-    flash(f"Mouvement enregistré: {mtype} x{qty}", "success"); return redirect(url_for('modules.stock'))
+        if mtype == 'entree':
+            new_qty = item['quantity'] + qty
+        elif mtype == 'sortie':
+            new_qty = max(0, item['quantity'] - qty)
+        elif mtype == 'ajustement':
+            new_qty = qty  # Set absolute value
+        else:
+            new_qty = item['quantity']
+        db_update('stock_items', item_id, quantity=new_qty)
+    flash(f"Mouvement: {mtype} x{qty}", "success"); return redirect(url_for('modules.stock', tab='historique'))
 
 
 # ======================== TRÉSORERIE ========================
