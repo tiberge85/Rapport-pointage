@@ -988,7 +988,7 @@ def gen_simple_pages(story, emps, all_stats, S, provider_name, provider_info, cl
 
 # ======================== GENERATION PDF COMPLETE ========================
 
-def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0, hourly_cost=0, employee_costs=None, report_type='full'):
+def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0, hourly_cost=0, employee_costs=None):
     if not employee_costs: employee_costs = {}
     if not work_dir:
         work_dir = os.path.dirname(os.path.abspath(output_path))
@@ -1005,20 +1005,16 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
         all_stats.append(calc_employee_stats(emp, hp, hp_weekend, emp_cost))
     
     # 1. Rapports individuels
-    if report_type == 'simple':
-        gen_simple_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now)
-    else:
-        gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now)
+    gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now)
     
-    if report_type == 'full':
-        # 2. Rapport de présence
-        gen_rapport_presence(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now)
-        
-        # 3. Classement retards & absences
-        gen_classement(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now)
-        
-        # 4. Graphique d'assiduité
-        gen_graphique(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now, logo_path, work_dir)
+    # 2. Rapport de présence
+    gen_rapport_presence(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now)
+    
+    # 3. Classement retards & absences
+    gen_classement(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now)
+    
+    # 4. Graphique d'assiduité
+    gen_graphique(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now, logo_path, work_dir)
     
     doc.build(story)
 

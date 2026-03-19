@@ -407,7 +407,7 @@ def traitement_generate():
     hp_we_str = request.form.get('required_hours_weekend', '0').strip()
     hourly_cost_str = request.form.get('hourly_cost', '0').strip()
     employee_costs_json = request.form.get('employee_costs_json', '{}')
-    report_type = request.form.get('report_type', 'full')
+
     
     # Auto-fill from client database
     client_id = int(client_id_str) if client_id_str else None
@@ -499,7 +499,7 @@ def traitement_generate():
         generate_full_pdf(emps, output_path, provider_name, provider_info,
                          client_name, period, logo_path, hp=hp, client_info=client_info,
                          work_dir=job_dir, hp_weekend=hp_weekend, hourly_cost=hourly_cost,
-                         employee_costs=employee_costs, report_type=report_type)
+                         employee_costs=employee_costs)
         
         if not os.path.exists(output_path):
             flash("Erreur génération PDF", "error")
@@ -1199,6 +1199,128 @@ def schedule_correct(aid):
     conn.commit(); conn.close()
     flash("Anomalie corrigée", "success")
     return redirect('/emploi-du-temps')
+
+
+# ======================== CALCUL D'HEURES DPCI ========================
+
+@app.route('/dpci')
+@permission_required('traitement')
+def dpci_page():
+    return render_template('dpci.html', page='dpci')
+
+@app.route('/dpci/preview', methods=['POST'])
+@login_required
+def dpci_preview():
+    if 'excel_file' not in request.files:
+        return jsonify({"error": "Fichier requis"}), 400
+    f = request.files['excel_file']
+    if not f.filename:
+        return jsonify({"error": "Fichier vide"}), 400
+    
+    import tempfile
+    tmp = os.path.join(tempfile.gettempdir(), f'dpci_{uuid.uuid4().hex[:8]}.xlsx')
+    f.save(tmp)
+    try:
+        from dpci import parse_dpci_excel
+        emps, period = parse_dpci_excel(tmp)
+        
+        # Save known employees
+        from models import save_known_employees
+        save_known_employees([e['name'] for e in emps])
+        
+        # Extract client from department (first part before >)
+        client = ''
+        if emps:
+            dept = emps[0].get('department', '')
+            if '>' in dept:
+                client = dept.split('>')[1].strip()
+            else:
+                client = dept
+        
+        return jsonify({
+            "count": len(emps),
+            "period": period,
+            "client": client,
+            "employees": [{"name": e['name'], "id": e['id'], "dept": e['department'], "days": len(e['records'])} for e in emps]
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if os.path.exists(tmp): os.remove(tmp)
+
+@app.route('/dpci/generate', methods=['POST'])
+@permission_required('traitement')
+def dpci_generate():
+    if 'excel_file' not in request.files:
+        flash("Fichier requis", "error")
+        return redirect('/dpci')
+    
+    f = request.files['excel_file']
+    client_name = request.form.get('client_name', '').strip() or 'DPCI'
+    default_cost = float(request.form.get('default_cost', 0) or 0)
+    
+    try:
+        employee_costs = json.loads(request.form.get('employee_costs_json', '{}'))
+    except:
+        employee_costs = {}
+    
+    # Save file
+    job_id = str(uuid.uuid4())[:8]
+    job_dir = os.path.join(app.config['UPLOAD_FOLDER'], f'dpci_{job_id}')
+    os.makedirs(job_dir, exist_ok=True)
+    
+    xlsx_path = os.path.join(job_dir, secure_filename(f.filename))
+    f.save(xlsx_path)
+    
+    try:
+        from dpci import parse_dpci_excel, generate_dpci_pdf
+        emps, period = parse_dpci_excel(xlsx_path)
+        
+        if not emps:
+            flash("Aucun employé trouvé dans le fichier", "error")
+            return redirect('/dpci')
+        
+        # Load schedules from DB
+        conn = _gdb()
+        scheds = [dict(r) for r in conn.execute("SELECT * FROM schedules").fetchall()]
+        conn.close()
+        
+        schedules_map = {}
+        for s in scheds:
+            name = s['employee_name']
+            if name not in schedules_map:
+                schedules_map[name] = s  # Use first found (e.g., Monday schedule)
+        
+        # Generate PDF
+        period_str = period if period else f"Rapport DPCI"
+        pdf_name = f"DPCI_{client_name.replace(' ', '_')}_{job_id}.pdf"
+        output_path = os.path.join(job_dir, pdf_name)
+        
+        generate_dpci_pdf(emps, output_path, client_name, period_str,
+                         schedules_map=schedules_map, employee_costs=employee_costs,
+                         default_cost=default_cost)
+        
+        if not os.path.exists(output_path):
+            flash("Erreur de génération PDF", "error")
+            return redirect('/dpci')
+        
+        # Save to files folder
+        files_dir = os.path.join(app.config['FILES_FOLDER'], f'dpci_{job_id}')
+        os.makedirs(files_dir, exist_ok=True)
+        shutil.copy2(output_path, os.path.join(files_dir, pdf_name))
+        shutil.copy2(xlsx_path, os.path.join(files_dir, os.path.basename(xlsx_path)))
+        
+        # Log
+        user = get_user_by_id(session['user_id'])
+        log_activity(session['user_id'], user['full_name'] if user else '?',
+                    'DPCI', f"Rapport {client_name} — {len(emps)} employés", request.remote_addr)
+        
+        flash(f"Rapport DPCI généré — {len(emps)} employés", "success")
+        return send_file(output_path, as_attachment=True, download_name=pdf_name)
+    
+    except Exception as e:
+        flash(f"Erreur: {e}", "error")
+        return redirect('/dpci')
 
 
 # ======================== ENVOI EMAIL ========================

@@ -1,0 +1,153 @@
+{% extends "base.html" %}{% block title %}WannyGest - Calcul DPCI{% endblock %}{% block content %}
+<style>
+.dpci-drop{border:2.5px dashed #ccc;border-radius:14px;padding:30px;text-align:center;cursor:pointer;transition:all 0.3s;background:#fafbfc}
+.dpci-drop:hover,.dpci-drop.dragover{border-color:#1a7a6d;background:#f0faf8}
+.dpci-drop.has-file{border-color:#2e7d32;background:#e8f5e9}
+.emp-preview{background:#f8faf9;border-radius:10px;padding:12px;margin-top:12px;display:none;max-height:300px;overflow-y:auto}
+.emp-preview.visible{display:block}
+.dept-group{margin-bottom:8px}
+.dept-title{font-size:11px;font-weight:700;color:#1a7a6d;padding:4px 8px;background:#e8f5e9;border-radius:5px;margin-bottom:4px}
+.emp-cost-row{display:flex;gap:6px;align-items:center;padding:3px 8px;font-size:11px}
+.emp-cost-row:nth-child(even){background:#f5f6fa}
+</style>
+
+<div class="page-header"><h1>🏢 Calcul d'heures DPCI</h1>
+<p>Traitement des fiches de présence avec 4 temps (arrivée, pause début, pause fin, départ)</p></div>
+
+<div class="card"><div class="card-body">
+<form method="post" action="/dpci/generate" enctype="multipart/form-data" id="dpciForm">
+    
+    <!-- Step 1: Upload -->
+    <div class="step" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="background:#1a7a6d;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">1</span><strong>Fichier Excel DPCI</strong></div>
+        <div class="dpci-drop" id="dropZone" onclick="document.getElementById('xlsFile').click()">
+            <div style="font-size:32px;margin-bottom:6px">📂</div>
+            <div id="dropText"><strong>Cliquez</strong> ou glissez le fichier .xlsx</div>
+        </div>
+        <input type="file" name="excel_file" id="xlsFile" accept=".xlsx,.xls" style="display:none" required>
+    </div>
+    
+    <!-- Preview -->
+    <div class="emp-preview" id="preview">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong id="previewTitle" style="font-size:13px;color:#1a3a5c"></strong>
+            <span id="previewPeriod" style="font-size:11px;color:#888"></span>
+        </div>
+        <div id="deptList"></div>
+    </div>
+    
+    <!-- Step 2: Client -->
+    <div class="step" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="background:#1a7a6d;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">2</span><strong>Informations client</strong></div>
+        <div class="form-row">
+            <div class="form-group"><label>Nom du client / site</label><input type="text" name="client_name" id="clientName" placeholder="DPCI BOUAKE"></div>
+        </div>
+    </div>
+    
+    <!-- Step 3: Coût horaire -->
+    <div class="step" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="background:#1a7a6d;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">3</span><strong>Coût horaire (FCFA)</strong></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+            <input type="number" name="default_cost" id="defaultCost" min="0" step="100" value="0" style="width:140px" placeholder="Ex: 1500">
+            <button type="button" class="btn btn-outline btn-sm" onclick="applyAll()">Appliquer à tous</button>
+        </div>
+        <div id="costInputs" style="display:none;background:#f8faf9;padding:10px;border-radius:8px;max-height:250px;overflow-y:auto"></div>
+        <input type="hidden" name="employee_costs_json" id="costsJson" value="{}">
+        <div class="hint">Mettez 0 pour désactiver. Le coût peut être personnalisé par personne.</div>
+    </div>
+    
+    <!-- Submit -->
+    <div style="margin-top:16px">
+        <button type="submit" class="btn btn-orange btn-block" id="submitBtn" disabled style="padding:14px;font-size:16px">
+            📄 Générer le rapport DPCI
+        </button>
+    </div>
+</form>
+</div></div>
+
+<script>
+var dropZone = document.getElementById('dropZone');
+var fileInput = document.getElementById('xlsFile');
+var allEmps = [];
+
+['dragenter','dragover'].forEach(e => dropZone.addEventListener(e, ev => {ev.preventDefault();dropZone.classList.add('dragover')}));
+['dragleave','drop'].forEach(e => dropZone.addEventListener(e, ev => {ev.preventDefault();dropZone.classList.remove('dragover')}));
+dropZone.addEventListener('drop', e => {
+    if(e.dataTransfer.files.length){fileInput.files=e.dataTransfer.files;handleFile(e.dataTransfer.files[0])}
+});
+fileInput.addEventListener('change', e => { if(e.target.files.length) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+    document.getElementById('dropText').innerHTML = '✅ <strong>' + file.name + '</strong>';
+    dropZone.classList.add('has-file');
+    document.getElementById('submitBtn').disabled = false;
+    
+    var fd = new FormData();
+    fd.append('excel_file', file);
+    fetch('/dpci/preview', {method:'POST', body:fd})
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) return;
+            document.getElementById('previewTitle').textContent = data.count + ' employés détectés';
+            document.getElementById('previewPeriod').textContent = data.period;
+            if (data.client) document.getElementById('clientName').value = data.client;
+            
+            allEmps = data.employees;
+            var html = '';
+            var depts = {};
+            data.employees.forEach(function(e) {
+                var d = e.dept || 'Non assigné';
+                if (!depts[d]) depts[d] = [];
+                depts[d].push(e);
+            });
+            
+            for (var dept in depts) {
+                html += '<div class="dept-group"><div class="dept-title">📁 ' + dept + ' (' + depts[dept].length + ')</div>';
+                depts[dept].forEach(function(e, i) {
+                    html += '<div style="font-size:11px;padding:2px 8px">' + e.name + ' <span style="color:#888">(' + e.id + ') — ' + e.days + 'j</span></div>';
+                });
+                html += '</div>';
+            }
+            document.getElementById('deptList').innerHTML = html;
+            document.getElementById('preview').classList.add('visible');
+            buildCosts(data.employees);
+        }).catch(function(){});
+}
+
+function buildCosts(employees) {
+    var box = document.getElementById('costInputs');
+    var depts = {};
+    employees.forEach(function(e) {
+        var d = e.dept || 'Non assigné';
+        if (!depts[d]) depts[d] = [];
+        depts[d].push(e);
+    });
+    var html = '';
+    for (var dept in depts) {
+        html += '<div style="font-size:10px;font-weight:700;color:#1a7a6d;margin:6px 0 2px;border-bottom:1px solid #ddd;padding-bottom:2px">📁 ' + dept + '</div>';
+        depts[dept].forEach(function(e) {
+            html += '<div class="emp-cost-row"><span style="flex:1">' + e.name + '</span>' +
+                '<input type="number" class="ecost" data-name="' + e.name + '" min="0" step="100" value="0" style="width:90px;padding:3px 5px;border:1px solid #ddd;border-radius:4px;font-size:11px"> FCFA/h</div>';
+        });
+    }
+    box.innerHTML = html;
+    box.style.display = 'block';
+}
+
+function applyAll() {
+    var val = document.getElementById('defaultCost').value || '0';
+    document.querySelectorAll('.ecost').forEach(function(inp) { inp.value = val; });
+}
+
+document.getElementById('dpciForm').addEventListener('submit', function() {
+    var costs = {};
+    document.querySelectorAll('.ecost').forEach(function(inp) {
+        var v = parseFloat(inp.value) || 0;
+        if (v > 0) costs[inp.dataset.name] = v;
+    });
+    document.getElementById('costsJson').value = JSON.stringify(costs);
+    document.getElementById('submitBtn').textContent = '⏳ Génération en cours...';
+    document.getElementById('submitBtn').disabled = true;
+});
+</script>
+{% endblock %}
