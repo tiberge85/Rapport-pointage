@@ -247,40 +247,34 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
     doc = SimpleDocTemplate(output_path, pagesize=A4,
                             leftMargin=12 * mm, rightMargin=12 * mm, topMargin=10 * mm, bottomMargin=10 * mm)
 
-    # Couleurs identiques à l'image
-    HEADER_BLUE = HexColor('#4472C4')
-    HEADER_DARK = HexColor('#305496')
-    LIGHT_BLUE = HexColor('#D6E4F0')
-    WHITE = white
-    BLK = HexColor('#222222')
-    LGREY = HexColor('#F2F2F2')
+    # Couleurs exactes de l'image
+    HEADER_BG = HexColor('#44546A')   # Barre en-tête gris-bleu foncé
+    BLUE_HDR  = HexColor('#4472C4')   # En-têtes tableaux résumé + détail
+    BLUE_DARK = HexColor('#305496')   # Sous-en-tête résumé 2
+    BORDER_BL = HexColor('#8EAADB')   # Bordures bleu clair
+    WHITE     = white
+    BLK       = HexColor('#333333')
+    LGREY     = HexColor('#F2F2F2')
 
-    # Styles
-    hw = ParagraphStyle('hw', fontName='Helvetica-Bold', fontSize=9, textColor=WHITE, alignment=TA_CENTER)
-    hv = ParagraphStyle('hv', fontSize=9, alignment=TA_CENTER, textColor=BLK)
-    hvb = ParagraphStyle('hvb', fontName='Helvetica-Bold', fontSize=9, alignment=TA_CENTER, textColor=BLK)
-    th = ParagraphStyle('th', fontName='Helvetica-Bold', fontSize=8, textColor=WHITE, alignment=TA_CENTER, leading=10)
-    tc = ParagraphStyle('tc', fontSize=8, alignment=TA_CENTER, textColor=BLK, leading=10)
+    hw  = ParagraphStyle('hw', fontName='Helvetica-Bold', fontSize=9, textColor=WHITE, alignment=TA_CENTER)
+    hv  = ParagraphStyle('hv', fontSize=9, alignment=TA_CENTER, textColor=BLK)
+    th  = ParagraphStyle('th', fontName='Helvetica-Bold', fontSize=7.5, textColor=WHITE, alignment=TA_CENTER, leading=9)
+    tc  = ParagraphStyle('tc', fontSize=8, alignment=TA_CENTER, textColor=BLK, leading=10)
     tcb = ParagraphStyle('tcb', fontName='Helvetica-Bold', fontSize=8, alignment=TA_CENTER, textColor=BLK, leading=10)
-    title_s = ParagraphStyle('tit', fontName='Helvetica-Bold', fontSize=16, textColor=BLK, alignment=TA_CENTER)
-    sub_s = ParagraphStyle('sub', fontSize=9, textColor=HexColor('#555'), alignment=TA_CENTER)
-    emp_s = ParagraphStyle('emp', fontName='Helvetica-Bold', fontSize=10, textColor=BLK, spaceBefore=2)
-    ref_s = ParagraphStyle('ref', fontSize=9, textColor=HexColor('#555'))
-    ft_s = ParagraphStyle('ft', fontSize=7, textColor=HexColor('#999'), alignment=TA_LEFT)
+    ft_s = ParagraphStyle('ft', fontSize=7, textColor=HexColor('#888'), alignment=TA_LEFT)
 
     story = []
-    now = datetime.now().strftime("%d/%m/%Y à %H:%M")
+    now = datetime.now().strftime("%d/%m/%Y \u00e0 %H:%M")
 
-    # Group by department
     depts = OrderedDict()
     for emp in emps:
-        dept = emp.get('department', 'Non assigné')
+        dept = emp.get('department', 'Non assign\u00e9')
         if dept not in depts:
             depts[dept] = []
         depts[dept].append(emp)
 
     first_page = True
-    pw = 186 * mm  # page width usable
+    pw = 186 * mm
 
     for dept_name, dept_emps in depts.items():
         for emp in dept_emps:
@@ -292,32 +286,36 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
             cost = employee_costs.get(emp['name'], default_cost)
             enriched, stats = calc_dpci_stats(emp, schedule=sched, hourly_cost=cost, hp=hp, hp_weekend=hp_weekend)
 
-            # ===================== HEADER BAR =====================
+            # BARRE EN-TETE
             prov = provider_name or 'RAMYA TECHNOLOGIE & INNOVATION'
             hbar = Table([[
                 Paragraph(f"<b>{prov}</b>", ParagraphStyle('hl', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE)),
                 Paragraph(f"<b>{client_name}</b>", ParagraphStyle('hr', fontName='Helvetica-Bold', fontSize=10, textColor=WHITE, alignment=TA_RIGHT)),
             ]], colWidths=[pw * 0.55, pw * 0.45])
             hbar.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), HEADER_DARK),
+                ('BACKGROUND', (0, 0), (-1, -1), HEADER_BG),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-                ('LEFTPADDING', (0, 0), (-1, -1), 12), ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 10), ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                ('LEFTPADDING', (0, 0), (-1, -1), 14), ('RIGHTPADDING', (0, 0), (-1, -1), 14),
             ]))
-            story.extend([hbar, Spacer(1, 6 * mm)])
+            story.extend([hbar, Spacer(1, 8 * mm)])
 
-            # ===================== TITRE =====================
-            story.append(Paragraph("<b>RAPPORT INDIVIDUEL</b>", title_s))
-            story.append(Paragraph(period, sub_s))
+            # TITRE + PERIODE (s\u00e9par\u00e9s)
+            story.append(Paragraph("<b>RAPPORT INDIVIDUEL</b>",
+                ParagraphStyle('tit', fontName='Helvetica-Bold', fontSize=18, textColor=BLK, alignment=TA_CENTER)))
+            story.append(Paragraph(period,
+                ParagraphStyle('sub', fontSize=9, textColor=HexColor('#555'), alignment=TA_CENTER)))
+            story.append(Spacer(1, 5 * mm))
+
+            # EMPLOYE
+            story.append(Paragraph(f"<b>Employ\u00e9 : {emp['name']}</b>",
+                ParagraphStyle('emp', fontName='Helvetica-Bold', fontSize=11, textColor=BLK)))
+            story.append(Paragraph(f"R\u00e9f\u00e9rence : {emp['id']}",
+                ParagraphStyle('ref', fontSize=9, textColor=HexColor('#555'))))
             story.append(Spacer(1, 4 * mm))
 
-            # ===================== EMPLOYÉ =====================
-            story.append(Paragraph(f"<b>Employé : {emp['name']}</b>", emp_s))
-            story.append(Paragraph(f"Référence : {emp['id']}", ref_s))
-            story.append(Spacer(1, 4 * mm))
-
-            # ===================== TABLEAU RÉSUMÉ 1 : JOURS =====================
-            s1_h = ["Nbre de jours à Effectuer", "Ponctuel", "Absent"]
+            # RESUME 1 : JOURS
+            s1_h = ["Nbre de jours \u00e0 Effectuer", "Ponctuel", "Absent"]
             s1_v = [f"{stats['days_required']} jours", f"{stats['days_punctual']} jours", f"{stats['days_absent']} jours"]
             cw1 = [pw * 0.40, pw * 0.30, pw * 0.30]
             t1 = Table([
@@ -325,15 +323,16 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
                 [Paragraph(x, hv) for x in s1_v],
             ], colWidths=cw1)
             t1.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), HEADER_BLUE),
-                ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#B4C6E7')),
+                ('BACKGROUND', (0, 0), (-1, 0), BLUE_HDR),
+                ('BOX', (0, 0), (-1, -1), 0.6, BORDER_BL),
+                ('INNERGRID', (0, 0), (-1, -1), 0.4, BORDER_BL),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('TOPPADDING', (0, 0), (-1, -1), 6), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
             story.extend([t1, Spacer(1, 2 * mm)])
 
-            # ===================== TABLEAU RÉSUMÉ 2 : HEURES =====================
-            s2_h = ["Total heure obligatoire", "Présence", "Absent"]
+            # RESUME 2 : HEURES
+            s2_h = ["Total heure obligatoire", "Pr\u00e9sence", "Absent"]
             abs_hrs = m2h(stats['days_absent'] * (stats['total_required'] // max(stats['days_required'], 1)))
             s2_v = [f"{m2h(stats['total_required'])} heures", f"{m2h(stats['total_worked'])} heures", f"{abs_hrs} heures"]
             t2 = Table([
@@ -341,19 +340,20 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
                 [Paragraph(x, hv) for x in s2_v],
             ], colWidths=cw1)
             t2.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), HEADER_BLUE),
-                ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#B4C6E7')),
+                ('BACKGROUND', (0, 0), (-1, 0), BLUE_DARK),
+                ('BOX', (0, 0), (-1, -1), 0.6, BORDER_BL),
+                ('INNERGRID', (0, 0), (-1, -1), 0.4, BORDER_BL),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('TOPPADDING', (0, 0), (-1, -1), 6), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
             story.extend([t2, Spacer(1, 4 * mm)])
 
-            # ===================== TABLEAU DÉTAIL =====================
-            hdrs = ["N°", "Date", "Emploi du temps", "Arrivée", "Début\npause",
-                    "Retour\npause", "Départ", "H.\nobligatoire", "H.\ntravaillées", "Respect"]
+            # TABLEAU DETAIL
+            hdrs = ["N\u00b0", "Date", "Emploi du temps", "Arriv\u00e9e", "D\u00e9but\npause",
+                    "Retour\npause", "D\u00e9part", "H.\nobligatoire", "H.\ntravaill\u00e9es", "Respect"]
             cw_d = [8*mm, 18*mm, 22*mm, 17*mm, 17*mm, 17*mm, 17*mm, 18*mm, 18*mm, 16*mm]
 
-            td = [[Paragraph(x.replace('\n','<br/>'), th) for x in hdrs]]
+            td = [[Paragraph(x.replace("\n", "<br/>"), th) for x in hdrs]]
 
             for i, rec in enumerate(enriched, 1):
                 sched_str = stats['sched_str']
@@ -365,13 +365,12 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
                 else:
                     rp = Paragraph("NON", ParagraphStyle('r', fontName='Helvetica-Bold', fontSize=8, textColor=HexColor('#c53030'), alignment=TA_CENTER))
 
-                # Calculate required for this day
                 req_display = rec.get('required', '') or m2h(stats['total_required'] // max(stats['days_required'], 1))
 
                 td.append([
                     Paragraph(str(i), tc),
                     Paragraph(rec['date'], tc),
-                    Paragraph(f"({sched_str.replace('-','_')})", tc),
+                    Paragraph(f"({sched_str.replace('-', '_')})", tc),
                     Paragraph(rec['arrival'] if rec['arrival'] != '-' else '-', tcb),
                     Paragraph(rec['pause_start'] if rec['pause_start'] != '-' else '-', tc),
                     Paragraph(rec['pause_end'] if rec['pause_end'] != '-' else '-', tc),
@@ -383,9 +382,10 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
 
             dt = Table(td, colWidths=cw_d, repeatRows=1)
             sc = [
-                ('BACKGROUND', (0, 0), (-1, 0), HEADER_BLUE),
+                ('BACKGROUND', (0, 0), (-1, 0), BLUE_HDR),
                 ('TEXTCOLOR', (0, 0), (-1, 0), WHITE),
-                ('GRID', (0, 0), (-1, -1), 0.4, HexColor('#B4C6E7')),
+                ('BOX', (0, 0), (-1, -1), 0.6, BORDER_BL),
+                ('INNERGRID', (0, 0), (-1, -1), 0.3, BORDER_BL),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('TOPPADDING', (0, 0), (-1, -1), 4),
@@ -393,41 +393,37 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
                 ('LEFTPADDING', (0, 0), (-1, -1), 2),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 2),
             ]
-            # Alternate row colors
             for i in range(2, len(td), 2):
                 sc.append(('BACKGROUND', (0, i), (-1, i), LGREY))
             dt.setStyle(TableStyle(sc))
             story.append(dt)
 
-            # ===================== IMPACT FINANCIER =====================
-            if cost > 0:
+            # IMPACT FINANCIER (absences uniquement)
+            if cost > 0 and stats['cost_absent'] > 0:
                 story.append(Spacer(1, 3 * mm))
                 fmt = lambda x: f"{x:,.0f} FCFA"
-                total_lost = stats['cost_late'] + stats['cost_absent']
                 cd = [
-                    [Paragraph("<b>IMPACT FINANCIER</b>", ParagraphStyle('x', fontName='Helvetica-Bold', fontSize=8, textColor=WHITE)),
-                     Paragraph(f"<b>Coût : {fmt(cost)}/h</b>", ParagraphStyle('x2', fontName='Helvetica-Bold', fontSize=8, textColor=WHITE, alignment=TA_RIGHT))],
-                    [Paragraph(f"Perte retards ({m2h(stats['total_late'])})", ParagraphStyle('x3', fontSize=8, textColor=BLK)),
-                     Paragraph(f"<b>{fmt(stats['cost_late'])}</b>", ParagraphStyle('x4', fontSize=9, fontName='Helvetica-Bold', textColor=HexColor('#c53030'), alignment=TA_RIGHT))],
-                    [Paragraph(f"Perte absences ({stats['days_absent']} jour(s))", ParagraphStyle('x3b', fontSize=8, textColor=BLK)),
-                     Paragraph(f"<b>{fmt(stats['cost_absent'])}</b>", ParagraphStyle('x4b', fontSize=9, fontName='Helvetica-Bold', textColor=HexColor('#c53030'), alignment=TA_RIGHT))],
+                    [Paragraph("<b>IMPACT FINANCIER</b>", ParagraphStyle('x', fontName='Helvetica-Bold', fontSize=9, textColor=WHITE)),
+                     Paragraph(f"<b>Co\u00fbt : {fmt(cost)}/h</b>", ParagraphStyle('x2', fontName='Helvetica-Bold', fontSize=9, textColor=WHITE, alignment=TA_RIGHT))],
+                    [Paragraph(f"Perte absences ({stats['days_absent']} jour(s))", ParagraphStyle('x3', fontSize=8, textColor=BLK)),
+                     Paragraph(f"<b>{fmt(stats['cost_absent'])}</b>", ParagraphStyle('x4', fontSize=9, fontName='Helvetica-Bold', textColor=HexColor('#c53030'), alignment=TA_RIGHT))],
                     [Paragraph("<b>TOTAL GAIN PERDU</b>", ParagraphStyle('x5', fontName='Helvetica-Bold', fontSize=9, textColor=HexColor('#c53030'))),
-                     Paragraph(f"<b>{fmt(total_lost)}</b>", ParagraphStyle('x6', fontName='Helvetica-Bold', fontSize=10, textColor=HexColor('#c53030'), alignment=TA_RIGHT))],
+                     Paragraph(f"<b>{fmt(stats['cost_absent'])}</b>", ParagraphStyle('x6', fontName='Helvetica-Bold', fontSize=10, textColor=HexColor('#c53030'), alignment=TA_RIGHT))],
                 ]
                 ct = Table(cd, colWidths=[pw * 0.65, pw * 0.35])
                 ct.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), HEADER_DARK),
+                    ('BACKGROUND', (0, 0), (-1, 0), HEADER_BG),
                     ('BACKGROUND', (0, -1), (-1, -1), HexColor('#FFF2CC')),
-                    ('BOX', (0, 0), (-1, -1), 0.8, HEADER_BLUE),
-                    ('INNERGRID', (0, 0), (-1, -1), 0.3, HexColor('#B4C6E7')),
+                    ('BOX', (0, 0), (-1, -1), 0.6, BORDER_BL),
+                    ('INNERGRID', (0, 0), (-1, -1), 0.3, BORDER_BL),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                     ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
                     ('LEFTPADDING', (0, 0), (-1, -1), 8), ('RIGHTPADDING', (0, 0), (-1, -1), 8),
                 ]))
                 story.append(ct)
 
-            # ===================== FOOTER =====================
+            # FOOTER
             story.append(Spacer(1, 6 * mm))
-            story.append(Paragraph(f"Imprimé par : RH, le {now}", ft_s))
+            story.append(Paragraph(f"Imprim\u00e9 par : RH, le {now}", ft_s))
 
     doc.build(story)
