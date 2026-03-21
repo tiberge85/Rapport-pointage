@@ -3345,8 +3345,18 @@ def rapports_journaliers():
         rapports = [dict(r) for r in conn.execute("""SELECT rj.*, u.full_name FROM rapports_journaliers rj 
             LEFT JOIN users u ON rj.user_id=u.id WHERE rj.user_id=? ORDER BY rj.date DESC LIMIT 50""",
             (session['user_id'],)).fetchall()]
+    
+    # My counter this week
+    from datetime import timedelta
+    today = datetime.now().date()
+    week_start = today - timedelta(days=today.weekday())
+    my_week = conn.execute("SELECT COUNT(DISTINCT date) FROM rapports_journaliers WHERE user_id=? AND date>=?",
+        (session['user_id'], week_start.strftime('%Y-%m-%d'))).fetchone()[0]
+    my_total = conn.execute("SELECT COUNT(*) FROM rapports_journaliers WHERE user_id=?",
+        (session['user_id'],)).fetchone()[0]
     conn.close()
-    return render_template('rapports_journaliers.html', page='rapports_j', rapports=rapports, user=u)
+    return render_template('rapports_journaliers.html', page='rapports_j', rapports=rapports, user=u,
+        my_week=my_week, my_total=my_total)
 
 @app.route('/rapports-journaliers/add', methods=['POST'])
 @login_required
@@ -3376,6 +3386,103 @@ def rapports_journaliers_validate(rid):
     conn.commit(); conn.close()
     flash("Rapport validé", "success")
     return redirect('/rapports-journaliers')
+
+@app.route('/rapports-journaliers/assiduite')
+@permission_required('rapports_j')
+def rapports_assiduite():
+    """Tableau d'assiduité — suivi des dépôts de rapports."""
+    from datetime import datetime as dt2, timedelta
+    conn = _gdb()
+    u = dict(get_user_by_id(session['user_id']))
+    
+    # Current week boundaries (Mon→Sun)
+    today = dt2.now().date()
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
+    
+    # Previous weeks for history
+    prev_week_start = week_start - timedelta(days=7)
+    prev_week_end = week_start - timedelta(days=1)
+    
+    # Period filter
+    period = request.args.get('period', 'semaine')
+    if period == 'mois':
+        p_start = today.replace(day=1).strftime('%Y-%m-%d')
+        p_end = today.strftime('%Y-%m-%d')
+        p_label = f"Mois de {today.strftime('%B %Y')}"
+        expected_days = sum(1 for d in range((today - today.replace(day=1)).days + 1)
+                          if (today.replace(day=1) + timedelta(days=d)).weekday() < 5)
+    elif period == 'semaine_prec':
+        p_start = prev_week_start.strftime('%Y-%m-%d')
+        p_end = prev_week_end.strftime('%Y-%m-%d')
+        p_label = f"Semaine du {prev_week_start.strftime('%d/%m')} au {prev_week_end.strftime('%d/%m/%Y')}"
+        expected_days = 5
+    else:
+        p_start = week_start.strftime('%Y-%m-%d')
+        p_end = week_end.strftime('%Y-%m-%d')
+        p_label = f"Semaine du {week_start.strftime('%d/%m')} au {week_end.strftime('%d/%m/%Y')}"
+        expected_days = min(5, (today - week_start).days + 1)  # Only count past days
+    
+    # Get all reports in period grouped by user
+    rows = conn.execute("""
+        SELECT rj.user_id, u.full_name, u.role, COUNT(DISTINCT rj.date) as nb_rapports,
+               AVG(rj.completion_pct) as avg_completion,
+               GROUP_CONCAT(DISTINCT rj.date) as dates
+        FROM rapports_journaliers rj
+        LEFT JOIN users u ON rj.user_id=u.id
+        WHERE rj.date >= ? AND rj.date <= ?
+        GROUP BY rj.user_id
+        ORDER BY nb_rapports DESC, avg_completion DESC
+    """, (p_start, p_end)).fetchall()
+    
+    ranking = []
+    for r in rows:
+        d = dict(r)
+        d['expected'] = expected_days
+        d['taux'] = round((d['nb_rapports'] / max(expected_days, 1)) * 100)
+        d['avg_completion'] = round(d['avg_completion'] or 0)
+        # Badges
+        if d['taux'] >= 100:
+            d['badge'] = '🏆 Assidu'
+            d['badge_color'] = '#B8860B'
+        elif d['taux'] >= 80:
+            d['badge'] = '⭐ Régulier'
+            d['badge_color'] = '#2e7d32'
+        elif d['taux'] >= 60:
+            d['badge'] = '👍 Correct'
+            d['badge_color'] = '#1565c0'
+        elif d['taux'] >= 40:
+            d['badge'] = '⚠️ À améliorer'
+            d['badge_color'] = '#e8672a'
+        else:
+            d['badge'] = '🔴 Insuffisant'
+            d['badge_color'] = '#c53030'
+        ranking.append(d)
+    
+    # All users for comparison
+    all_users = [dict(r) for r in conn.execute("SELECT id, full_name, role FROM users WHERE is_active=1").fetchall()]
+    active_ids = {r['user_id'] for r in ranking}
+    for usr in all_users:
+        if usr['id'] not in active_ids:
+            ranking.append({
+                'user_id': usr['id'], 'full_name': usr['full_name'], 'role': usr['role'],
+                'nb_rapports': 0, 'expected': expected_days, 'taux': 0, 'avg_completion': 0,
+                'dates': '', 'badge': '❌ Aucun rapport', 'badge_color': '#c53030'
+            })
+    
+    # Global stats
+    total_reports = sum(r['nb_rapports'] for r in ranking)
+    total_users = len([r for r in ranking if r['nb_rapports'] > 0])
+    assidus = len([r for r in ranking if r['taux'] >= 100])
+    
+    # Best employee
+    best = ranking[0] if ranking and ranking[0]['nb_rapports'] > 0 else None
+    
+    conn.close()
+    return render_template('rapports_assiduite.html', page='rapports_j',
+        ranking=ranking, period=period, p_label=p_label, expected_days=expected_days,
+        total_reports=total_reports, total_users=total_users, assidus=assidus,
+        best=best, user=u, today=today.strftime('%Y-%m-%d'))
 
 
 # ======================== PIÈCES DE CAISSE / DÉPENSES ========================
