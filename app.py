@@ -91,6 +91,8 @@ from models import migrate_v8
 migrate_v8()
 from models import migrate_v9
 migrate_v9()
+from models import migrate_v10
+migrate_v10()
 
 # Register module routes
 from modules_routes import modules_bp

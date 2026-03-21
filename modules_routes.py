@@ -219,21 +219,83 @@ def stock_movement():
 @modules_bp.route('/tresorerie')
 @perm_required('comptabilite')
 def tresorerie():
-    movements = db_get_all('treasury', limit=100)
-    recettes = db_sum('treasury', 'amount', {'movement_type': 'recette'})
-    depenses = db_sum('treasury', 'amount', {'movement_type': 'depense'})
-    solde = recettes - depenses
-    return render_template('mod_tresorerie.html', page='tresorerie', movements=movements,
-                          recettes=recettes, depenses=depenses, solde=solde)
+    tab = request.args.get('tab', 'liste')
+    conn = get_db()
+    
+    movements = [dict(r) for r in conn.execute("""SELECT t.*, ba.name as account_name FROM treasury t 
+        LEFT JOIN bank_accounts ba ON t.account_id=ba.id ORDER BY t.created_at DESC LIMIT 100""").fetchall()]
+    accounts = [dict(r) for r in conn.execute("SELECT * FROM bank_accounts ORDER BY name").fetchall()]
+    transfers = [dict(r) for r in conn.execute("""SELECT bt.*, a1.name as from_name, a2.name as to_name 
+        FROM bank_transfers bt LEFT JOIN bank_accounts a1 ON bt.from_account_id=a1.id 
+        LEFT JOIN bank_accounts a2 ON bt.to_account_id=a2.id ORDER BY bt.created_at DESC LIMIT 50""").fetchall()]
+    
+    recettes = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='recette'").fetchone()[0]
+    depenses = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='depense'").fetchone()[0]
+    total_initial = conn.execute("SELECT COALESCE(SUM(initial_balance),0) FROM bank_accounts").fetchone()[0]
+    solde = total_initial + recettes - depenses
+    conn.close()
+    
+    return render_template('mod_tresorerie.html', page='tresorerie', tab=tab,
+        movements=movements, accounts=accounts, transfers=transfers,
+        recettes=recettes, depenses=depenses, solde=solde, total_initial=total_initial)
 
 @modules_bp.route('/tresorerie/add', methods=['POST'])
 @perm_required('comptabilite')
 def tresorerie_add():
-    db_insert('treasury', movement_type=request.form['movement_type'], category=request.form.get('category',''),
-        amount=float(request.form['amount']), description=request.form.get('description',''),
+    account_id = int(request.form.get('account_id', 0) or 0)
+    amount = float(request.form['amount'])
+    mtype = request.form['movement_type']
+    db_insert('treasury', movement_type=mtype, category=request.form.get('category',''),
+        amount=amount, description=request.form.get('description',''),
         reference=request.form.get('reference',''), payment_method=request.form.get('payment_method',''),
-        created_by=session['user_id'])
-    flash("Mouvement enregistré", "success"); return redirect(url_for('modules.tresorerie'))
+        account_id=account_id, created_by=session['user_id'])
+    # Update account balance
+    if account_id:
+        conn = get_db()
+        if mtype == 'recette':
+            conn.execute("UPDATE bank_accounts SET current_balance=current_balance+? WHERE id=?", (amount, account_id))
+        else:
+            conn.execute("UPDATE bank_accounts SET current_balance=current_balance-? WHERE id=?", (amount, account_id))
+        conn.commit(); conn.close()
+    flash("Mouvement enregistré", "success")
+    return redirect(url_for('modules.tresorerie', tab='revenu' if mtype == 'recette' else 'retrait'))
+
+@modules_bp.route('/tresorerie/account/add', methods=['POST'])
+@perm_required('comptabilite')
+def tresorerie_account_add():
+    initial = float(request.form.get('initial_balance', 0) or 0)
+    db_insert('bank_accounts', name=request.form['name'], type=request.form.get('type', 'caisse'),
+        bank_name=request.form.get('bank_name', ''), account_number=request.form.get('account_number', ''),
+        initial_balance=initial, current_balance=initial, notes=request.form.get('notes', ''))
+    flash("Compte ajouté", "success")
+    return redirect(url_for('modules.tresorerie', tab='solde_initial'))
+
+@modules_bp.route('/tresorerie/account/delete/<int:aid>')
+@perm_required('comptabilite')
+def tresorerie_account_delete(aid):
+    conn = get_db(); conn.execute("DELETE FROM bank_accounts WHERE id=?", (aid,)); conn.commit(); conn.close()
+    flash("Compte supprimé", "success")
+    return redirect(url_for('modules.tresorerie', tab='solde_initial'))
+
+@modules_bp.route('/tresorerie/transfer/add', methods=['POST'])
+@perm_required('comptabilite')
+def tresorerie_transfer_add():
+    from_id = int(request.form['from_account_id'])
+    to_id = int(request.form['to_account_id'])
+    amount = float(request.form['amount'])
+    if from_id == to_id:
+        flash("Les comptes source et destination doivent être différents", "error")
+        return redirect(url_for('modules.tresorerie', tab='transfert'))
+    db_insert('bank_transfers', from_account_id=from_id, to_account_id=to_id,
+        amount=amount, description=request.form.get('description', ''),
+        reference=request.form.get('reference', ''),
+        date=request.form.get('date', ''), created_by=session['user_id'])
+    conn = get_db()
+    conn.execute("UPDATE bank_accounts SET current_balance=current_balance-? WHERE id=?", (amount, from_id))
+    conn.execute("UPDATE bank_accounts SET current_balance=current_balance+? WHERE id=?", (amount, to_id))
+    conn.commit(); conn.close()
+    flash(f"Transfert de {amount:,.0f} F effectué", "success")
+    return redirect(url_for('modules.tresorerie', tab='transfert'))
 
 
 # ======================== CALENDRIER ========================

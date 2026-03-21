@@ -1,26 +1,146 @@
-{% extends "base.html" %}
-{% block title %}WannyGest - Trésorerie{% endblock %}
-{% block content %}
+{% extends "base.html" %}{% block title %}WannyGest - Caisse / Banque{% endblock %}{% block content %}
 <div class="page-header"><h1>🏦 Caisse / Banque</h1></div>
+
+<!-- Stats -->
 <div class="stats-grid">
-    <div class="stat-card"><div class="stat-icon green">📈</div><div class="stat-info"><div class="stat-num">{{ '{:,.0f}'.format(recettes) }}</div><div class="stat-label">Recettes (F)</div></div></div>
-    <div class="stat-card"><div class="stat-icon red">📉</div><div class="stat-info"><div class="stat-num">{{ '{:,.0f}'.format(depenses) }}</div><div class="stat-label">Dépenses (F)</div></div></div>
-    <div class="stat-card"><div class="stat-icon {% if solde >= 0 %}teal{% else %}red{% endif %}">💰</div><div class="stat-info"><div class="stat-num">{{ '{:,.0f}'.format(solde) }}</div><div class="stat-label">Solde (F)</div></div></div>
+    <div class="stat-card"><div class="stat-icon green">📈</div><div class="stat-info"><div class="stat-num" style="color:#2e7d32">{{ '{:,.0f}'.format(recettes) }}</div><div class="stat-label">Recettes (F)</div></div></div>
+    <div class="stat-card"><div class="stat-icon" style="background:#fde8e8;color:#c53030">📉</div><div class="stat-info"><div class="stat-num" style="color:#c53030">{{ '{:,.0f}'.format(depenses) }}</div><div class="stat-label">Dépenses (F)</div></div></div>
+    <div class="stat-card"><div class="stat-icon {% if solde >= 0 %}green{% else %}orange{% endif %}">💰</div><div class="stat-info"><div class="stat-num" style="color:{% if solde >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(solde) }}</div><div class="stat-label">Solde (F)</div></div></div>
+    <div class="stat-card"><div class="stat-icon blue">🏛️</div><div class="stat-info"><div class="stat-num">{{ accounts|length }}</div><div class="stat-label">Comptes</div></div></div>
 </div>
-<div class="card"><div class="card-header"><h3>Mouvements</h3><button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Mouvement</button></div><div class="card-body">
+
+<!-- Tabs -->
+<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+{% for t,icon,label in [('liste','📋','Liste Caisse / Banque'),('transfert','🔄','Transfert'),('revenu','📈','Revenu du compte'),('retrait','📉','Retrait de compte'),('solde_initial','💰','Solde Initial du Compte')] %}
+    <a href="/tresorerie?tab={{ t }}" class="btn {% if tab==t %}btn-primary{% else %}btn-outline{% endif %} btn-sm">{{ icon }} {{ label }}</a>
+{% endfor %}
+</div>
+
+<!-- TAB: Liste -->
+{% if tab == 'liste' %}
+<div class="card"><div class="card-header"><h3>📋 Tous les mouvements</h3></div><div class="card-body">
 {% if movements %}<div class="table-wrap"><table>
-<thead><tr><th>Date</th><th>Type</th><th>Catégorie</th><th>Montant</th><th>Description</th><th>Moyen</th></tr></thead>
+<thead><tr><th>Date</th><th>Type</th><th>Compte</th><th>Catégorie</th><th style="text-align:right">Montant</th><th>Description</th><th>Réf</th><th>Moyen</th></tr></thead>
 <tbody>{% for m in movements %}<tr>
-<td>{{ m.created_at[:10] }}</td>
+<td style="font-size:11px">{{ m.created_at[:10] if m.created_at else '-' }}</td>
 <td>{% if m.movement_type=='recette' %}<span class="badge-status sent">📈 Recette</span>{% else %}<span class="badge-status" style="background:#fde8e8;color:#c53030">📉 Dépense</span>{% endif %}</td>
-<td>{{ m.category or '-' }}</td><td><strong>{{ '{:,.0f}'.format(m.amount) }} F</strong></td>
-<td style="font-size:12px">{{ m.description or '-' }}</td><td>{{ m.payment_method or '-' }}</td>
-</tr>{% endfor %}</tbody></table></div>{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun mouvement</p>{% endif %}
+<td style="font-size:11px">{{ m.account_name or 'Principal' }}</td>
+<td style="font-size:11px">{{ m.category or '-' }}</td>
+<td style="text-align:right;font-weight:700;color:{% if m.movement_type=='recette' %}#2e7d32{% else %}#c53030{% endif %}">{% if m.movement_type=='recette' %}+{% else %}-{% endif %}{{ '{:,.0f}'.format(m.amount) }} F</td>
+<td style="font-size:11px">{{ m.description or '-' }}</td>
+<td style="font-size:10px">{{ m.reference or '-' }}</td>
+<td style="font-size:11px">{{ m.payment_method or '-' }}</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun mouvement enregistré</p>{% endif %}
 </div></div>
-<div class="modal-bg" id="addM"><div class="modal"><h3>🏦 Nouveau mouvement</h3><form method="post" action="/tresorerie/add">
-<div class="form-row"><div class="form-group"><label>Type *</label><select name="movement_type"><option value="recette">📈 Recette</option><option value="depense">📉 Dépense</option></select></div><div class="form-group"><label>Montant *</label><input type="number" name="amount" step="100" required></div></div>
-<div class="form-row"><div class="form-group"><label>Catégorie</label><input type="text" name="category" placeholder="Vente, Loyer..."></div><div class="form-group"><label>Moyen paiement</label><select name="payment_method"><option>Espèce</option><option>Virement</option><option>Chèque</option><option>Mobile Money</option></select></div></div>
-<div class="form-group"><label>Description</label><input type="text" name="description"></div>
-<div class="form-group"><label>Référence</label><input type="text" name="reference"></div>
-<div style="display:flex;gap:10px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Enregistrer</button></div></form></div></div>
+
+<!-- TAB: Transfert -->
+{% elif tab == 'transfert' %}
+<div class="card"><div class="card-header"><h3>🔄 Transfert entre comptes</h3></div><div class="card-body">
+{% if accounts|length >= 2 %}
+<form method="post" action="/tresorerie/transfer/add">
+    <div class="form-row">
+        <div class="form-group"><label>Compte source *</label><select name="from_account_id" required>{% for a in accounts %}<option value="{{ a.id }}">{{ a.name }} ({{ '{:,.0f}'.format(a.current_balance) }} F)</option>{% endfor %}</select></div>
+        <div class="form-group"><label>Compte destination *</label><select name="to_account_id" required>{% for a in accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="form-row">
+        <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="amount" step="100" required min="1"></div>
+        <div class="form-group"><label>Date</label><input type="date" name="date"></div>
+    </div>
+    <div class="form-row">
+        <div class="form-group"><label>Description</label><input type="text" name="description" placeholder="Motif du transfert"></div>
+        <div class="form-group"><label>Référence</label><input type="text" name="reference" placeholder="N° opération"></div>
+    </div>
+    <button type="submit" class="btn btn-primary">🔄 Effectuer le transfert</button>
+</form>
+{% else %}<p style="text-align:center;color:#e8672a;padding:20px">⚠️ Créez au moins 2 comptes dans "Solde Initial" pour effectuer un transfert.</p>{% endif %}
+
+{% if transfers %}
+<h4 style="margin-top:20px;font-size:13px">Historique des transferts</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>Date</th><th>De</th><th>Vers</th><th style="text-align:right">Montant</th><th>Description</th></tr></thead>
+<tbody>{% for t in transfers %}<tr>
+<td style="font-size:11px">{{ t.created_at[:10] if t.created_at else '-' }}</td>
+<td>{{ t.from_name or '-' }}</td><td>{{ t.to_name or '-' }}</td>
+<td style="text-align:right;font-weight:700">{{ '{:,.0f}'.format(t.amount) }} F</td>
+<td style="font-size:11px">{{ t.description or '-' }}</td>
+</tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div></div>
+
+<!-- TAB: Revenu -->
+{% elif tab == 'revenu' %}
+<div class="card"><div class="card-header"><h3>📈 Revenu du compte</h3></div><div class="card-body">
+<form method="post" action="/tresorerie/add">
+    <input type="hidden" name="movement_type" value="recette">
+    <div class="form-row">
+        <div class="form-group"><label>Compte</label><select name="account_id"><option value="0">— Caisse principale —</option>{% for a in accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></div>
+        <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="amount" step="100" required min="1"></div>
+    </div>
+    <div class="form-row">
+        <div class="form-group"><label>Catégorie</label><select name="category"><option>Vente</option><option>Service</option><option>Encaissement facture</option><option>Remboursement</option><option>Autre</option></select></div>
+        <div class="form-group"><label>Moyen de paiement</label><select name="payment_method"><option>Espèces</option><option>Virement</option><option>Chèque</option><option>Mobile Money</option><option>Carte bancaire</option></select></div>
+    </div>
+    <div class="form-row">
+        <div class="form-group"><label>Description</label><input type="text" name="description" placeholder="Détail du revenu"></div>
+        <div class="form-group"><label>Référence</label><input type="text" name="reference" placeholder="N° facture, reçu..."></div>
+    </div>
+    <button type="submit" class="btn btn-primary" style="background:#2e7d32">📈 Enregistrer le revenu</button>
+</form>
+</div></div>
+
+<!-- TAB: Retrait -->
+{% elif tab == 'retrait' %}
+<div class="card"><div class="card-header"><h3>📉 Retrait de compte</h3></div><div class="card-body">
+<form method="post" action="/tresorerie/add">
+    <input type="hidden" name="movement_type" value="depense">
+    <div class="form-row">
+        <div class="form-group"><label>Compte</label><select name="account_id"><option value="0">— Caisse principale —</option>{% for a in accounts %}<option value="{{ a.id }}">{{ a.name }} ({{ '{:,.0f}'.format(a.current_balance) }} F)</option>{% endfor %}</select></div>
+        <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="amount" step="100" required min="1"></div>
+    </div>
+    <div class="form-row">
+        <div class="form-group"><label>Catégorie</label><select name="category"><option>Achat fourniture</option><option>Salaire</option><option>Loyer</option><option>Transport</option><option>Frais divers</option><option>Autre</option></select></div>
+        <div class="form-group"><label>Moyen de paiement</label><select name="payment_method"><option>Espèces</option><option>Virement</option><option>Chèque</option><option>Mobile Money</option></select></div>
+    </div>
+    <div class="form-row">
+        <div class="form-group"><label>Description</label><input type="text" name="description" placeholder="Motif du retrait"></div>
+        <div class="form-group"><label>Référence</label><input type="text" name="reference" placeholder="N° reçu..."></div>
+    </div>
+    <button type="submit" class="btn btn-orange">📉 Enregistrer le retrait</button>
+</form>
+</div></div>
+
+<!-- TAB: Solde Initial -->
+{% elif tab == 'solde_initial' %}
+<div class="card"><div class="card-header"><h3>💰 Solde Initial du Compte</h3>
+    <button class="btn btn-orange btn-sm" onclick="document.getElementById('addAccM').classList.add('active')">+ Nouveau compte</button>
+</div><div class="card-body">
+{% if accounts %}<div class="table-wrap"><table>
+<thead><tr><th>Nom du compte</th><th>Type</th><th>Banque</th><th>N° compte</th><th style="text-align:right">Solde initial</th><th style="text-align:right">Solde actuel</th><th>Statut</th><th>Actions</th></tr></thead>
+<tbody>{% for a in accounts %}<tr>
+<td><strong>{{ a.name }}</strong></td>
+<td><span class="badge-status {% if a.type=='banque' %}sent{% else %}pending{% endif %}">{{ a.type }}</span></td>
+<td>{{ a.bank_name or '-' }}</td>
+<td style="font-size:11px">{{ a.account_number or '-' }}</td>
+<td style="text-align:right">{{ '{:,.0f}'.format(a.initial_balance) }} F</td>
+<td style="text-align:right;font-weight:700;color:{% if a.current_balance >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(a.current_balance) }} F</td>
+<td>{% if a.status=='actif' %}<span style="color:#2e7d32">● Actif</span>{% else %}<span style="color:#c53030">● Inactif</span>{% endif %}</td>
+<td><a href="/tresorerie/account/delete/{{ a.id }}" class="btn btn-sm" style="color:#c53030" onclick="return confirm('Supprimer ce compte ?')">🗑️</a></td>
+</tr>{% endfor %}</tbody></table></div>
+<div style="margin-top:12px;padding:12px;background:#e8f5e9;border-radius:8px;text-align:center">
+    <strong>Total soldes initiaux : {{ '{:,.0f}'.format(total_initial) }} FCFA</strong>
+</div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun compte. Créez votre premier compte caisse ou banque.</p>{% endif %}
+</div></div>
+
+<!-- Modal: Ajouter un compte -->
+<div class="modal-bg" id="addAccM"><div class="modal"><h3>🏛️ Nouveau compte</h3><form method="post" action="/tresorerie/account/add">
+<div class="form-group"><label>Nom du compte *</label><input type="text" name="name" required placeholder="Ex: Caisse principale, SGBCI, BICICI..."></div>
+<div class="form-row"><div class="form-group"><label>Type</label><select name="type"><option value="caisse">Caisse</option><option value="banque">Banque</option><option value="mobile_money">Mobile Money</option></select></div>
+<div class="form-group"><label>Nom de la banque</label><input type="text" name="bank_name" placeholder="SGBCI, BICICI..."></div></div>
+<div class="form-row"><div class="form-group"><label>N° de compte</label><input type="text" name="account_number" placeholder="CI..."></div>
+<div class="form-group"><label>Solde initial (FCFA) *</label><input type="number" name="initial_balance" step="1000" value="0" required></div></div>
+<div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">💰 Créer le compte</button></div></form></div></div>
+{% endif %}
 {% endblock %}

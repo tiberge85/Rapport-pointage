@@ -1917,3 +1917,28 @@ def migrate_v9():
         try: conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT DEFAULT ''")
         except: pass
     conn.commit(); conn.close()
+
+def migrate_v10():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS bank_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, type TEXT DEFAULT 'caisse',
+            bank_name TEXT, account_number TEXT,
+            initial_balance REAL DEFAULT 0,
+            current_balance REAL DEFAULT 0,
+            status TEXT DEFAULT 'actif',
+            notes TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS bank_transfers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_account_id INTEGER, to_account_id INTEGER,
+            amount REAL NOT NULL, description TEXT,
+            reference TEXT, date TEXT,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    # Add account_id to treasury
+    try: conn.execute("ALTER TABLE treasury ADD COLUMN account_id INTEGER DEFAULT 0")
+    except: pass
+    conn.commit(); conn.close()
