@@ -1,0 +1,80 @@
+{% extends "base.html" %}{% block title %}WannyGest - {{ prospect.contact_name or prospect.company }}{% endblock %}{% block content %}
+<style>
+.pv-tabs{display:flex;gap:0;border-bottom:2px solid #eee;margin-bottom:16px}
+.pv-tab{padding:10px 18px;font-size:12px;font-weight:600;color:#888;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
+.pv-tab:hover{color:#1a7a6d}.pv-tab.active{color:#1a7a6d;border-bottom-color:#1a7a6d}
+.pv-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 40px}
+.pv-section-title{font-weight:700;font-size:13px;color:#1a3a5c;border-bottom:1px solid #eee;padding-bottom:4px;margin:12px 0 8px}
+.pv-field{margin-bottom:8px}.pv-field .lbl{font-size:11px;color:#888}.pv-field .val{font-size:13px;color:#222;font-weight:500}
+</style>
+
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+    <a href="/prospects" class="btn btn-outline btn-sm">← Retour</a>
+    <h2 style="margin:0;font-size:16px">#{{ prospect.id }} — {{ prospect.contact_name or prospect.company }}</h2>
+    <span class="badge-status {% if prospect.status=='gagne' %}sent{% elif prospect.status=='perdu' %}{% elif prospect.status=='nouveau' %}{% else %}pending{% endif %}">{{ prospect.status }}</span>
+    <div style="margin-left:auto;display:flex;gap:6px">
+        {% if prospect.status != 'gagne' %}<a href="/prospects/convert/{{ prospect.id }}" class="btn btn-primary btn-sm" onclick="return confirm('Convertir en client ?')">🔄 Convertir en client</a>{% endif %}
+    </div>
+</div>
+
+<div class="card"><div class="card-body">
+<!-- Tabs -->
+<div class="pv-tabs">
+    <div class="pv-tab active" onclick="showPvTab('profil',this)">👤 Profil</div>
+    <div class="pv-tab" onclick="showPvTab('notes',this)">📝 Notes</div>
+    <div class="pv-tab" onclick="showPvTab('historique',this)">📜 Historique</div>
+</div>
+
+<!-- PROFIL -->
+<div id="pvt-profil">
+<div class="pv-grid">
+    <div>
+        <div class="pv-section-title">Informations du Lead</div>
+        <div class="pv-field"><div class="lbl">Nom</div><div class="val">{{ prospect.contact_name or prospect.company }}</div></div>
+        <div class="pv-field"><div class="lbl">Position</div><div class="val">{{ prospect.position or '-' }}</div></div>
+        <div class="pv-field"><div class="lbl">Email</div><div class="val">{{ prospect.email or '-' }}</div></div>
+        <div class="pv-field"><div class="lbl">Entreprise</div><div class="val">{{ prospect.company or '-' }}</div></div>
+        <div class="pv-field"><div class="lbl">Téléphone</div><div class="val" style="color:#1a7a6d">{{ prospect.tel or '-' }}</div></div>
+        <div class="pv-field"><div class="lbl">Valeur estimée</div><div class="val">{% if prospect.estimated_value %}{{ '{:,.0f}'.format(prospect.estimated_value) }} FCFA{% else %}-{% endif %}</div></div>
+        <div class="pv-field"><div class="lbl">Adresse</div><div class="val">{{ prospect.address or '-' }}</div></div>
+    </div>
+    <div>
+        <div class="pv-section-title">Informations Générales</div>
+        <div class="pv-field"><div class="lbl">Statut du prospect</div><div class="val"><span class="badge-status {% if prospect.status=='gagne' %}sent{% elif prospect.status=='perdu' %}{% else %}pending{% endif %}">{{ prospect.status }}</span></div></div>
+        <div class="pv-field"><div class="lbl">Source</div><div class="val">{{ prospect.source or '-' }}</div></div>
+        <div class="pv-field"><div class="lbl">Attribuer à</div><div class="val">{{ prospect.assigned_to or '-' }}</div></div>
+        <div class="pv-field"><div class="lbl">Créé le</div><div class="val">{{ prospect.created_at or '-' }}</div></div>
+        <div class="pv-field"><div class="lbl">Dernier contact</div><div class="val">{{ prospect.last_contact or '-' }}</div></div>
+        <div class="pv-field"><div class="lbl">Ville</div><div class="val">{{ prospect.city or '-' }}</div></div>
+        <div class="pv-field"><div class="lbl">Région</div><div class="val">{{ prospect.region or '-' }}</div></div>
+        <div class="pv-field"><div class="lbl">Pays</div><div class="val">{{ prospect.country or "Côte d'Ivoire" }}</div></div>
+    </div>
+</div>
+{% if prospect.description %}
+<div style="margin-top:12px;padding:12px;background:#f8faf9;border-radius:8px">
+    <div style="font-size:11px;color:#888;margin-bottom:4px">Description</div>
+    <div style="font-size:13px">{{ prospect.description }}</div>
+</div>
+{% endif %}
+</div>
+
+<!-- NOTES -->
+<div id="pvt-notes" style="display:none">
+    <div style="background:#f8faf9;border-radius:8px;padding:14px;min-height:100px;font-size:13px">{{ prospect.notes or 'Aucune note.' }}</div>
+</div>
+
+<!-- HISTORIQUE -->
+<div id="pvt-historique" style="display:none">
+    <div style="font-size:12px;color:#888;padding:20px;text-align:center">Historique des activités à venir dans une prochaine version.</div>
+</div>
+</div></div>
+
+<script>
+function showPvTab(name, el) {
+    document.querySelectorAll('[id^="pvt-"]').forEach(t => t.style.display = 'none');
+    document.getElementById('pvt-' + name).style.display = 'block';
+    document.querySelectorAll('.pv-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+}
+</script>
+{% endblock %}

@@ -237,7 +237,7 @@ def calc_dpci_stats(emp, schedule=None, hourly_cost=0, hp=0, hp_weekend=0):
     return enriched, stats
 
 
-def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None, employee_costs=None, default_cost=0, hp=0, hp_weekend=0, provider_name='', treated_by=''):
+def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None, employee_costs=None, default_cost=0, hp=0, hp_weekend=0, provider_name='', treated_by='', period_mode='all'):
     """Génère le rapport PDF DPCI — design identique à la fiche de présence."""
     if not schedules_map:
         schedules_map = {}
@@ -264,6 +264,8 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
     ft_s = ParagraphStyle('ft', fontSize=7, textColor=HexColor('#888'), alignment=TA_LEFT)
 
     story = []
+    period_labels = {'all': 'mois', 'week': 'semaine', 'day': 'jour', 'custom': 'période'}
+    period_label = period_labels.get(period_mode, 'période')
     now = datetime.now().strftime("%d/%m/%Y \u00e0 %H:%M")
 
     depts = OrderedDict()
@@ -407,7 +409,7 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
 
             # RÉSUMÉ CUMULS EN BAS
             story.append(Spacer(1, 3 * mm))
-            cum_h = ["Cumul pause effectu\u00e9e", "Cumul H. travaill\u00e9es", "Cumul H. obligatoire", "Taux pr\u00e9sence"]
+            cum_h = [f"Cumul pause ({period_label})", f"Cumul H. travaill\u00e9es ({period_label})", f"Cumul H. obligatoire ({period_label})", "Taux pr\u00e9sence"]
             cum_v = [f"{m2h(total_pause_mins)}", f"{m2h(stats['total_worked'])}", f"{m2h(stats['total_required'])}", f"{stats['presence_rate']}%"]
             ct_cum = Table([
                 [Paragraph(x, hw) for x in cum_h],

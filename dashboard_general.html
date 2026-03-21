@@ -1,97 +1,114 @@
 {% extends "base.html" %}{% block title %}WannyGest - Tableau de bord général{% endblock %}{% block content %}
-<div class="page-header"><h1>📊 Tableau de bord général</h1><p>Vue consolidée de toutes les activités</p></div>
+<style>
+.db-top{display:flex;gap:0;border:1px solid #eee;border-radius:10px;overflow:hidden;margin-bottom:14px}
+.db-top-item{flex:1;padding:10px 16px;border-right:1px solid #eee;display:flex;align-items:center;gap:8px}
+.db-top-item:last-child{border-right:none}
+.db-top-icon{font-size:18px;opacity:0.6}
+.db-overview{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}
+.overview-card{background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.05);padding:16px}
+.overview-card h4{font-size:13px;margin:0 0 12px;color:#1a3a5c}
+.ov-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px}
+.ov-bar{height:5px;border-radius:3px;margin-top:2px;margin-bottom:6px}
+.db-bottom{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+.db-side{display:flex;flex-direction:column;gap:14px}
+</style>
 
-<!-- KPIs principaux -->
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
-    <div class="stat-card"><div class="stat-icon green">💵</div><div class="stat-info"><div class="stat-num" style="color:#2e7d32">{{ '{:,.0f}'.format(data.revenue) }}</div><div class="stat-label">Revenus (F)</div></div></div>
-    <div class="stat-card"><div class="stat-icon" style="background:#fde8e8;color:#c53030">📉</div><div class="stat-info"><div class="stat-num" style="color:#c53030">{{ '{:,.0f}'.format(data.expenses) }}</div><div class="stat-label">Dépenses (F)</div></div></div>
-    <div class="stat-card"><div class="stat-icon {% if data.profit >= 0 %}green{% else %}orange{% endif %}">{% if data.profit >= 0 %}📈{% else %}📉{% endif %}</div><div class="stat-info"><div class="stat-num" style="color:{% if data.profit >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(data.profit) }}</div><div class="stat-label">Bénéfice net (F)</div></div></div>
-    <div class="stat-card"><div class="stat-icon blue">👥</div><div class="stat-info"><div class="stat-num">{{ data.employees }}</div><div class="stat-label">Employés</div></div></div>
+<!-- Top bar -->
+<div class="db-top">
+    <div class="db-top-item"><span class="db-top-icon">📋</span><div><strong>{{ data.invoices }}</strong> factures<br><span style="font-size:10px;color:#888">{{ '{:,.0f}'.format(data.revenue) }} FCFA encaissé</span></div></div>
+    <div class="db-top-item"><span class="db-top-icon">🎯</span><div><strong>{{ data.prospects }}</strong> prospects<br><span style="font-size:10px;color:#888">{{ data.devis_acceptes }} convertis</span></div></div>
+    <div class="db-top-item"><span class="db-top-icon">📁</span><div><strong>{{ data.projets }}</strong> projets<br><span style="font-size:10px;color:#888">en cours</span></div></div>
+    <div class="db-top-item"><span class="db-top-icon">✅</span><div><strong>{{ data.tickets }}</strong> tickets<br><span style="font-size:10px;color:#888">support</span></div></div>
 </div>
 
-<!-- Sections par module -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-    <!-- CRM -->
-    <div class="card"><div class="card-header"><h3>🤝 CRM & Commercial</h3></div><div class="card-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ data.clients }}</div><div style="font-size:10px;color:#888">Clients</div></div>
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ data.prospects }}</div><div style="font-size:10px;color:#888">Prospects</div></div>
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ data.devis }}</div><div style="font-size:10px;color:#888">Devis total</div></div>
-            <div style="text-align:center;padding:10px;background:#e8f5e9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#2e7d32">{{ data.devis_acceptes }}</div><div style="font-size:10px;color:#888">Devis acceptés</div></div>
+<!-- Overview cards (like Image 5: Factures, Devis, Stock) -->
+<div class="db-overview">
+    <!-- Aperçu des factures -->
+    <div class="overview-card">
+        <h4>📋 Aperçu des factures</h4>
+        {% set inv = data.get('inv_stats', {}) %}
+        {% for status, label, color, pct in [('a_envoyer','À envoyer','#1565c0',0),('envoyee','Envoyée','#2e7d32',0),('en_attente_paiement','En attente','#e8672a',0),('payee','Payée','#2e7d32',0)] %}
+        <div class="ov-row"><span style="color:{{ color }}">{{ inv.get(status, 0) }} {{ label }}</span><span style="color:#888">{% if data.invoices > 0 %}{{ (inv.get(status,0)*100/data.invoices)|round(1) }}%{% else %}0%{% endif %}</span></div>
+        <div class="ov-bar" style="background:#eee"><div style="width:{% if data.invoices > 0 %}{{ inv.get(status,0)*100/data.invoices }}{% else %}0{% endif %}%;height:100%;background:{{ color }};border-radius:3px"></div></div>
+        {% endfor %}
+        <div style="display:flex;gap:6px;margin-top:8px;font-size:11px">
+            <div style="flex:1;padding:6px;background:#fff3e0;border-radius:6px;text-align:center"><span style="color:#e8672a">En attente</span><br><strong>{{ '{:,.0f}'.format(data.get('pending_amount',0)) }} F</strong></div>
+            <div style="flex:1;padding:6px;background:#e8f5e9;border-radius:6px;text-align:center"><span style="color:#2e7d32">Payées</span><br><strong>{{ '{:,.0f}'.format(data.revenue) }} F</strong></div>
         </div>
-    </div></div>
+    </div>
     
-    <!-- Comptabilité -->
-    <div class="card"><div class="card-header"><h3>💰 Comptabilité</h3></div><div class="card-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ data.invoices }}</div><div style="font-size:10px;color:#888">Factures</div></div>
-            <div style="text-align:center;padding:10px;background:#e8f5e9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#2e7d32">{{ '{:,.0f}'.format(data.revenue) }}</div><div style="font-size:10px;color:#888">Encaissé (F)</div></div>
-            <div style="text-align:center;padding:10px;background:#fff3e0;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ '{:,.0f}'.format(data.expenses) }}</div><div style="font-size:10px;color:#888">Dépenses (F)</div></div>
-            <div style="text-align:center;padding:10px;{% if data.profit >= 0 %}background:#e8f5e9{% else %}background:#fde8e8{% endif %};border-radius:8px"><div style="font-size:22px;font-weight:800;color:{% if data.profit >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(data.profit) }}</div><div style="font-size:10px;color:#888">Bénéfice (F)</div></div>
-        </div>
-    </div></div>
+    <!-- Aperçu des devis -->
+    <div class="overview-card">
+        <h4>📝 Aperçu des devis</h4>
+        {% set ds = data.get('devis_stats', {}) %}
+        {% for status, label, color in [('brouillon','Brouillon','#888'),('envoye','Envoyé','#1565c0'),('accepte','Accepté','#2e7d32'),('refuse','Refusé','#c53030')] %}
+        <div class="ov-row"><span style="color:{{ color }}">{{ ds.get(status, 0) }} {{ label }}</span><span style="color:#888">{% if data.devis > 0 %}{{ (ds.get(status,0)*100/data.devis)|round(1) }}%{% else %}0%{% endif %}</span></div>
+        <div class="ov-bar" style="background:#eee"><div style="width:{% if data.devis > 0 %}{{ ds.get(status,0)*100/data.devis }}{% else %}0{% endif %}%;height:100%;background:{{ color }};border-radius:3px"></div></div>
+        {% endfor %}
+    </div>
     
-    <!-- RH -->
-    <div class="card"><div class="card-header"><h3>👥 Ressources Humaines</h3></div><div class="card-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ data.employees }}</div><div style="font-size:10px;color:#888">Employés</div></div>
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ data.formations }}</div><div style="font-size:10px;color:#888">Formations</div></div>
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ data.annonces }}</div><div style="font-size:10px;color:#888">Annonces</div></div>
-        </div>
-    </div></div>
-    
-    <!-- Stock & Achats -->
-    <div class="card"><div class="card-header"><h3>📦 Stock & Achats</h3></div><div class="card-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ data.stock_items }}</div><div style="font-size:10px;color:#888">Articles</div></div>
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ '{:,.0f}'.format(data.stock_value) }}</div><div style="font-size:10px;color:#888">Valeur stock (F)</div></div>
-            <div style="text-align:center;padding:10px;{% if data.stock_low > 0 %}background:#fff3e0{% else %}background:#f8faf9{% endif %};border-radius:8px"><div style="font-size:22px;font-weight:800;color:{% if data.stock_low > 0 %}#c53030{% else %}#2e7d32{% endif %}">{{ data.stock_low }}</div><div style="font-size:10px;color:#888">Stock bas</div></div>
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ data.fournisseurs }}</div><div style="font-size:10px;color:#888">Fournisseurs</div></div>
-        </div>
-    </div></div>
-    
-    <!-- Gestion du temps -->
-    <div class="card"><div class="card-header"><h3>⏱️ Gestion du temps</h3></div><div class="card-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ data.rapports }}</div><div style="font-size:10px;color:#888">Rapports traités</div></div>
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ data.rapports_j }}</div><div style="font-size:10px;color:#888">Rapports journaliers</div></div>
-        </div>
-    </div></div>
-    
-    <!-- Informatique -->
-    <div class="card"><div class="card-header"><h3>💻 Informatique</h3></div><div class="card-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ data.projets }}</div><div style="font-size:10px;color:#888">Projets</div></div>
-            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ data.tickets }}</div><div style="font-size:10px;color:#888">Tickets</div></div>
-        </div>
-    </div></div>
+    <!-- Stock & RH -->
+    <div class="overview-card">
+        <h4>📦 Stock & 👥 RH</h4>
+        <div class="ov-row"><span>Articles en stock</span><strong>{{ data.stock_items }}</strong></div>
+        <div class="ov-row"><span>Valeur stock</span><strong>{{ '{:,.0f}'.format(data.stock_value) }} F</strong></div>
+        <div class="ov-row"><span style="color:#c53030">Stock bas / rupture</span><strong style="color:#c53030">{{ data.stock_low }}</strong></div>
+        <div style="height:1px;background:#eee;margin:8px 0"></div>
+        <div class="ov-row"><span>Employés</span><strong>{{ data.employees }}</strong></div>
+        <div class="ov-row"><span>Formations</span><strong>{{ data.formations }}</strong></div>
+        <div class="ov-row"><span>Fournisseurs</span><strong>{{ data.fournisseurs }}</strong></div>
+        <div class="ov-row"><span>Commandes achats</span><strong>{{ data.commandes }}</strong></div>
+    </div>
 </div>
 
-<!-- Graphique revenus -->
-{% if data.monthly_rev %}
-<div class="card"><div class="card-header"><h3>📈 Revenus mensuels</h3></div><div class="card-body" style="height:200px">
-<canvas id="revChart"></canvas>
-</div></div>
+<!-- Bottom: Activity + Side -->
+<div class="db-bottom">
+    <!-- Activité récente -->
+    <div class="card"><div class="card-header"><h3>🕐 Dernières activités</h3></div><div class="card-body" style="padding:0;max-height:350px;overflow-y:auto">
+    {% if data.recent_logs %}
+    {% for log in data.recent_logs %}
+    <div style="padding:8px 14px;border-bottom:1px solid #f5f5f5;display:flex;gap:8px;align-items:center;font-size:11px">
+        <span style="color:#aaa;min-width:110px">{{ log.timestamp[:16] if log.timestamp else '' }}</span>
+        <strong style="min-width:90px;color:#1a3a5c">{{ log.user_name or '' }}</strong>
+        <span style="background:#e3f2fd;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;color:#1565c0">{{ log.action_type or '' }}</span>
+        <span style="flex:1;color:#555">{{ (log.details or '')[:60] }}</span>
+    </div>
+    {% endfor %}
+    {% else %}<p style="text-align:center;color:#999;padding:20px;font-size:12px">Aucune activité récente</p>{% endif %}
+    </div></div>
+    
+    <!-- Side -->
+    <div class="db-side">
+        <!-- Aperçu prospects -->
+        <div class="overview-card">
+            <h4>🎯 Aperçu des prospects</h4>
+            <div style="text-align:center;padding:10px">
+                <canvas id="prospectChart" style="max-height:140px"></canvas>
+            </div>
+        </div>
+        
+        <!-- Rapports -->
+        <div class="overview-card">
+            <h4>⏱️ Gestion du temps</h4>
+            <div class="ov-row"><span>Rapports traités</span><strong>{{ data.rapports }}</strong></div>
+            <div class="ov-row"><span>Rapports journaliers</span><strong>{{ data.rapports_j }}</strong></div>
+        </div>
+        
+        <!-- Bénéfice -->
+        <div class="overview-card" style="{% if data.profit >= 0 %}border-left:4px solid #2e7d32{% else %}border-left:4px solid #c53030{% endif %}">
+            <h4>💰 Bénéfice net</h4>
+            <div style="font-size:24px;font-weight:800;color:{% if data.profit >= 0 %}#2e7d32{% else %}#c53030{% endif %};text-align:center">{{ '{:,.0f}'.format(data.profit) }} F</div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
-new Chart(document.getElementById('revChart'),{type:'bar',data:{
-    labels:{{ data.monthly_rev | map(attribute='month') | list | tojson }},
-    datasets:[{label:'Revenus',data:{{ data.monthly_rev | map(attribute='total') | list | tojson }},backgroundColor:'rgba(46,125,50,0.6)',borderRadius:4}]
-},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:function(v){return (v/1000000).toFixed(1)+'M'}}}}}});
+{% set ps = data.get('prospect_stats', {}) %}
+new Chart(document.getElementById('prospectChart'),{type:'doughnut',data:{
+    labels:['Nouveau','Contacté','Qualifié','Proposition','Gagné','Perdu'],
+    datasets:[{data:[{{ ps.get('nouveau',0) }},{{ ps.get('contacte',0) }},{{ ps.get('qualifie',0) }},{{ ps.get('proposition',0) }},{{ ps.get('gagne',0) }},{{ ps.get('perdu',0) }}],
+    backgroundColor:['#1565c0','#e8672a','#7b1fa2','#B8860B','#2e7d32','#c53030']}]
+},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:9}}}}}});
 </script>
-{% endif %}
-
-<!-- Activité récente -->
-{% if data.recent_logs %}
-<div class="card"><div class="card-header"><h3>🕐 Activité récente</h3></div><div class="card-body" style="padding:0">
-{% for log in data.recent_logs %}
-<div style="padding:8px 14px;border-bottom:1px solid #f0f0f0;display:flex;gap:10px;align-items:center;font-size:12px">
-    <span style="color:#888;min-width:120px;font-size:11px">{{ log.timestamp[:16] if log.timestamp else '' }}</span>
-    <strong style="min-width:100px;color:#1a3a5c">{{ log.user_name or '' }}</strong>
-    <span style="background:#e3f2fd;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;color:#1565c0;min-width:80px;text-align:center">{{ log.action_type or '' }}</span>
-    <span style="flex:1;color:#555">{{ log.details or '' }}</span>
-</div>
-{% endfor %}
-</div></div>
-{% endif %}
 {% endblock %}

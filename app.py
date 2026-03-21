@@ -89,6 +89,8 @@ from models import migrate_v7
 migrate_v7()
 from models import migrate_v8
 migrate_v8()
+from models import migrate_v9
+migrate_v9()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -336,6 +338,24 @@ def dashboard_general():
     data['monthly_rev'] = [dict(r) for r in conn.execute("""SELECT strftime('%Y-%m', created_at) as month, SUM(amount) as total 
         FROM invoices WHERE status='payee' GROUP BY month ORDER BY month DESC LIMIT 6""").fetchall()] if 'invoices' in _get_tables() else []
     data['monthly_rev'].reverse()
+    
+    # Invoice stats
+    data['inv_stats'] = {}
+    if 'invoices' in _get_tables():
+        for s in ('a_envoyer','envoyee','en_attente_paiement','payee'):
+            data['inv_stats'][s] = conn.execute(f"SELECT COUNT(*) FROM invoices WHERE status='{s}'").fetchone()[0]
+        data['pending_amount'] = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status IN ('envoyee','en_attente_paiement')").fetchone()[0]
+    
+    # Devis stats
+    data['devis_stats'] = {}
+    for s in ('brouillon','envoye','accepte','refuse'):
+        data['devis_stats'][s] = conn.execute(f"SELECT COUNT(*) FROM devis WHERE status='{s}'").fetchone()[0]
+    
+    # Prospect stats
+    data['prospect_stats'] = {}
+    if 'prospects' in _get_tables():
+        for s in ('nouveau','contacte','qualifie','proposition','gagne','perdu'):
+            data['prospect_stats'][s] = conn.execute(f"SELECT COUNT(*) FROM prospects WHERE status='{s}'").fetchone()[0]
     
     conn.close()
     return render_template('dashboard_general.html', page='dashboard_general', data=data)
@@ -1394,7 +1414,7 @@ def dpci_generate():
         generate_dpci_pdf(emps, output_path, client_name, period_str,
                          schedules_map=schedules_map, employee_costs=employee_costs,
                          default_cost=default_cost, hp=hp, hp_weekend=hp_weekend,
-                         provider_name=provider_name, treated_by=treated_by)
+                         provider_name=provider_name, treated_by=treated_by, period_mode=period_mode)
         
         if not os.path.exists(output_path):
             flash("Erreur de génération PDF", "error")
@@ -2280,6 +2300,45 @@ def tech_center_add():
         notes=request.form.get('notes',''), created_by=session['user_id'])
     flash("Système ajouté au centre technique", "success")
     return redirect(url_for('tech_center'))
+
+@app.route('/centre-technique/view/<int:sid>')
+@login_required
+def tech_center_view(sid):
+    from models import db_get_by_id
+    system = db_get_by_id('tech_center', sid)
+    if not system: flash("Non trouvé","error"); return redirect(url_for('tech_center'))
+    conn = _gdb()
+    devis_list = [dict(r) for r in conn.execute("SELECT * FROM devis WHERE client_name=? ORDER BY created_at DESC LIMIT 10",
+        (system.get('client_name',''),)).fetchall()]
+    conn.close()
+    return render_template('tech_center_view.html', page='tech_center', system=system, devis_list=devis_list)
+
+@app.route('/centre-technique/edit/<int:sid>', methods=['POST'])
+@login_required
+def tech_center_edit(sid):
+    from models import db_update
+    db_update('tech_center', sid, client_name=request.form.get('client_name',''),
+        code=request.form.get('code',''), contact_name=request.form.get('contact_name',''),
+        tel=request.form.get('tel',''), email=request.form.get('email',''),
+        system_type=request.form.get('system_type',''), category=request.form.get('category',''),
+        next_maintenance=request.form.get('next_maintenance',''),
+        maintenance_interval=int(request.form.get('maintenance_interval',90) or 90),
+        notes=request.form.get('notes',''), status=request.form.get('status','actif'))
+    flash("Modifié","success"); return redirect(f'/centre-technique/view/{sid}')
+
+@app.route('/centre-technique/delete/<int:sid>')
+@login_required
+def tech_center_delete(sid):
+    conn = _gdb(); conn.execute("DELETE FROM tech_center WHERE id=?", (sid,)); conn.commit(); conn.close()
+    flash("Supprimé","success"); return redirect(url_for('tech_center'))
+
+@app.route('/prospects/view/<int:pid>')
+@login_required
+def prospect_view(pid):
+    from models import db_get_by_id
+    p = db_get_by_id('prospects', pid)
+    if not p: flash("Non trouvé","error"); return redirect('/prospects')
+    return render_template('prospect_view.html', page='prospects', prospect=p)
 
 # ======================== CONTRATS RH ========================
 

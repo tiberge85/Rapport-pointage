@@ -101,7 +101,7 @@ def prospects():
 @modules_bp.route('/prospects/add', methods=['POST'])
 @perm_required('clients')
 def prospects_add():
-    db_insert('prospects', company=request.form['company'], contact_name=request.form.get('contact_name',''),
+    db_insert('prospects', company=request.form.get('company', request.form.get('contact_name','')), contact_name=request.form.get('contact_name',''),
         tel=request.form.get('tel',''), email=request.form.get('email',''), source=request.form.get('source',''),
         estimated_value=float(request.form.get('estimated_value',0) or 0),
         notes=request.form.get('notes',''), assigned_to=int(request.form.get('assigned_to',0) or 0) or None,

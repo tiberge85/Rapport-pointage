@@ -1,0 +1,88 @@
+{% extends "base.html" %}{% block title %}WannyGest - {{ system.client_name }}{% endblock %}{% block content %}
+<style>
+.profile-sidebar{width:200px;border-right:1px solid #eee;padding:14px 0}
+.profile-sidebar a{display:block;padding:8px 16px;font-size:12px;color:#555;text-decoration:none;border-left:3px solid transparent}
+.profile-sidebar a:hover,.profile-sidebar a.active{background:#f8faf9;color:#1a7a6d;border-left-color:#1a7a6d;font-weight:600}
+.profile-content{flex:1;padding:16px 24px}
+.info-field{margin-bottom:12px}.info-field label{font-size:11px;color:#888;display:block;margin-bottom:2px}
+.info-field .val{font-size:13px;color:#222;font-weight:500}
+</style>
+
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+    <a href="/centre-technique" class="btn btn-outline btn-sm">← Retour</a>
+    <h2 style="margin:0;font-size:16px">#{{ system.id }} {{ system.client_name }} {% if system.code %}({{ system.code }}){% endif %}</h2>
+    <span class="badge-status {% if system.status=='actif' %}sent{% else %}pending{% endif %}">{{ system.status }}</span>
+</div>
+
+<div class="card"><div style="display:flex;min-height:400px">
+    <!-- Sidebar -->
+    <div class="profile-sidebar">
+        <a href="#profil" class="active" onclick="showTab('profil',this)">📋 Profil</a>
+        <a href="#notes" onclick="showTab('notes',this)">📝 Notes</a>
+        <a href="#maintenance" onclick="showTab('maintenance',this)">🔧 Maintenance</a>
+        <a href="#devis" onclick="showTab('devis',this)">📄 Devis <span style="background:#eee;padding:1px 6px;border-radius:8px;font-size:10px">{{ devis_list|length }}</span></a>
+    </div>
+    
+    <!-- Content -->
+    <div class="profile-content">
+        <!-- PROFIL TAB -->
+        <div id="tab-profil">
+            <h3 style="font-size:14px;margin-bottom:12px">Informations Générales</h3>
+            <form method="post" action="/centre-technique/edit/{{ system.id }}">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px">
+                <div class="info-field"><label>Nom de code</label><input type="text" name="client_name" value="{{ system.client_name }}" style="width:100%"></div>
+                <div class="info-field"><label>Code</label><input type="text" name="code" value="{{ system.code or '' }}" style="width:100%"></div>
+                <div class="info-field"><label>Téléphone</label><input type="text" name="tel" value="{{ system.tel or '' }}" style="width:100%"></div>
+                <div class="info-field"><label>Email</label><input type="email" name="email" value="{{ system.email or '' }}" style="width:100%"></div>
+                <div class="info-field"><label>Contact principal</label><input type="text" name="contact_name" value="{{ system.contact_name or '' }}" style="width:100%"></div>
+                <div class="info-field"><label>Catégorie</label><select name="category" style="width:100%"><option {% if system.category=='ENTREPRISE' %}selected{% endif %}>ENTREPRISE</option><option {% if system.category=='PARTICULIER' %}selected{% endif %}>PARTICULIER</option></select></div>
+                <div class="info-field"><label>Type de système</label><select name="system_type" style="width:100%">{% for t in ['Vidéosurveillance','Clôture électrique','Contrôle d\'accès','Alarme','Réseau','Autre'] %}<option {% if system.system_type==t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+                <div class="info-field"><label>Statut</label><select name="status" style="width:100%"><option {% if system.status=='actif' %}selected{% endif %}>actif</option><option {% if system.status=='inactif' %}selected{% endif %}>inactif</option></select></div>
+                <div class="info-field"><label>Installation</label><div class="val">{{ system.installation_date or '-' }}</div></div>
+                <div class="info-field"><label>Prochaine maintenance</label><input type="date" name="next_maintenance" value="{{ system.next_maintenance or '' }}" style="width:100%"></div>
+                <div class="info-field"><label>Intervalle (jours)</label><input type="number" name="maintenance_interval" value="{{ system.maintenance_interval }}" style="width:100%"></div>
+            </div>
+            <div class="info-field"><label>Notes</label><textarea name="notes" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px">{{ system.notes or '' }}</textarea></div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+                <button type="submit" class="btn btn-primary btn-sm">💾 Sauvegarder</button>
+                <a href="/centre-technique/delete/{{ system.id }}" class="btn btn-sm" style="color:#c53030" onclick="return confirm('Supprimer ?')">🗑️ Supprimer</a>
+            </div>
+            </form>
+        </div>
+        
+        <!-- NOTES TAB -->
+        <div id="tab-notes" style="display:none">
+            <h3 style="font-size:14px;margin-bottom:12px">📝 Notes</h3>
+            <div style="background:#f8faf9;border-radius:8px;padding:14px;min-height:150px;font-size:13px">{{ system.notes or 'Aucune note.' }}</div>
+        </div>
+        
+        <!-- MAINTENANCE TAB -->
+        <div id="tab-maintenance" style="display:none">
+            <h3 style="font-size:14px;margin-bottom:12px">🔧 Historique de maintenance</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+                <div style="padding:12px;background:#f8faf9;border-radius:8px"><div style="font-size:10px;color:#888">Dernière maintenance</div><div style="font-size:14px;font-weight:700;color:#1a7a6d">{{ system.last_maintenance or 'Aucune' }}</div></div>
+                <div style="padding:12px;background:#f8faf9;border-radius:8px"><div style="font-size:10px;color:#888">Prochaine</div><div style="font-size:14px;font-weight:700;color:#e8672a">{{ system.next_maintenance or 'Non planifiée' }}</div></div>
+            </div>
+            <p style="font-size:12px;color:#888">Intervalle : {{ system.maintenance_interval }} jours</p>
+        </div>
+        
+        <!-- DEVIS TAB -->
+        <div id="tab-devis" style="display:none">
+            <h3 style="font-size:14px;margin-bottom:12px">📄 Devis associés</h3>
+            {% if devis_list %}
+            <table style="width:100%;font-size:12px"><thead><tr><th>Réf</th><th>Objet</th><th>Montant</th><th>Statut</th></tr></thead>
+            <tbody>{% for d in devis_list %}<tr><td>{{ d.reference }}</td><td>{{ d.objet or '-' }}</td><td>{{ '{:,.0f}'.format(d.total_ttc) }} F</td>
+            <td><span class="badge-status {% if d.status=='accepte' %}sent{% elif d.status=='envoye' %}pending{% endif %}">{{ d.status }}</span></td></tr>{% endfor %}</tbody></table>
+            {% else %}<p style="color:#999;font-size:12px">Aucun devis associé à ce client.</p>{% endif %}
+        </div>
+    </div>
+</div></div>
+<script>
+function showTab(name, el) {
+    document.querySelectorAll('[id^="tab-"]').forEach(t => t.style.display = 'none');
+    document.getElementById('tab-' + name).style.display = 'block';
+    document.querySelectorAll('.profile-sidebar a').forEach(a => a.classList.remove('active'));
+    el.classList.add('active');
+}
+</script>
+{% endblock %}

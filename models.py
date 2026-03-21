@@ -1905,3 +1905,15 @@ def get_known_employees():
     rows = conn.execute("SELECT DISTINCT name, service FROM known_employees ORDER BY service, name").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def migrate_v9():
+    conn = get_db()
+    # Tech center extra fields
+    for col in ['code', 'contact_name', 'tel', 'email', 'address', 'category', 'description']:
+        try: conn.execute(f"ALTER TABLE tech_center ADD COLUMN {col} TEXT DEFAULT ''")
+        except: pass
+    # Prospects extra fields
+    for col in ['position', 'address', 'city', 'region', 'country', 'tags', 'lead_value', 'assigned_to', 'description', 'last_contact']:
+        try: conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT DEFAULT ''")
+        except: pass
+    conn.commit(); conn.close()

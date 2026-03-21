@@ -1,30 +1,49 @@
 {% extends "base.html" %}{% block title %}WannyGest - Centre technique{% endblock %}{% block content %}
-<div class="page-header"><h1>🔧 Centre technique</h1><p>Suivi des systèmes clients — rappels maintenance et dépannage</p></div>
-{% if due %}
-<div class="card" style="border-left:4px solid #c53030;margin-bottom:16px"><div class="card-header"><h3 style="color:#c53030">⚠️ Maintenances dues ({{ due|length }})</h3></div><div class="card-body">
-<div class="table-wrap"><table>
-<thead><tr><th>Client</th><th>Système</th><th>Prochaine maintenance</th><th>Dernière</th></tr></thead>
-<tbody>{% for s in due %}<tr style="background:#fde8e8">
-<td><strong>{{ s.client_name }}</strong></td><td>{{ s.system_type }}</td><td style="color:#c53030;font-weight:700">{{ s.next_maintenance or 'Non planifiée' }}</td><td>{{ s.last_maintenance or '-' }}</td>
-</tr>{% endfor %}</tbody></table></div></div></div>
-{% endif %}
-<div class="card"><div class="card-header"><h3>Systèmes suivis ({{ systems|length }})</h3><button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Système</button></div><div class="card-body">
-{% if systems %}<div class="table-wrap"><table>
-<thead><tr><th>Client</th><th>Type système</th><th>Installation</th><th>Prochaine maint.</th><th>Intervalle</th><th>Statut</th></tr></thead>
-<tbody>{% for s in systems %}<tr{% if s.id in (due|map(attribute='id')|list) %} style="background:#fde8e8"{% endif %}>
-<td><strong>{{ s.client_name }}</strong></td><td>{{ s.system_type }}</td><td>{{ s.installation_date or '-' }}</td>
-<td>{{ s.next_maintenance or '-' }}</td><td>{{ s.maintenance_interval }} jours</td>
-<td><span class="badge-status {% if s.status=='actif' %}sent{% else %}pending{% endif %}">{{ s.status }}</span></td>
+<div class="page-header"><h1>🔧 Centre Technique</h1></div>
+
+<!-- Stats bar like Image 1 -->
+<div style="display:flex;gap:0;margin-bottom:16px;border:1px solid #eee;border-radius:10px;overflow:hidden">
+    <div style="flex:1;padding:12px 16px;border-right:1px solid #eee;text-align:center"><strong>{{ systems|length }}</strong> <span style="color:#888;font-size:12px">Nombre total</span></div>
+    <div style="flex:1;padding:12px 16px;border-right:1px solid #eee;text-align:center"><strong style="color:#2e7d32">{{ systems|selectattr('status','equalto','actif')|list|length }}</strong> <span style="color:#2e7d32;font-size:12px">Actifs</span></div>
+    <div style="flex:1;padding:12px 16px;border-right:1px solid #eee;text-align:center"><strong style="color:#c53030">{{ due|length }}</strong> <span style="color:#c53030;font-size:12px">Maintenance due</span></div>
+    <div style="flex:1;padding:12px 16px;text-align:center"><strong style="color:#1565c0">{{ systems|rejectattr('status','equalto','actif')|list|length }}</strong> <span style="color:#e8672a;font-size:12px">Inactifs</span></div>
+</div>
+
+<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Ajouter un système</button>
+    <div style="margin-left:auto"><input type="text" id="searchBox" placeholder="🔍 Rechercher..." onkeyup="filterTable()" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:200px"></div>
+</div>
+
+<div class="card"><div class="card-body" style="padding:0">
+{% if systems %}<div class="table-wrap"><table id="sysTable">
+<thead><tr><th>#</th><th>Nom de code</th><th>Contact principal</th><th>Téléphone</th><th>Type système</th><th>Catégorie</th><th>Statut</th><th>Prochaine maint.</th></tr></thead>
+<tbody>{% for s in systems %}<tr style="cursor:pointer" onclick="window.location='/centre-technique/view/{{ s.id }}'">
+<td>{{ s.id }}</td>
+<td><strong>{{ s.client_name }}</strong> {% if s.code %}<span style="color:#888">({{ s.code }})</span>{% endif %}
+<br><span style="font-size:10px;color:#1a7a6d;cursor:pointer">Voir | Modifier | Supprimer</span></td>
+<td>{{ s.contact_name or '-' }}</td>
+<td>{{ s.tel or '-' }}</td>
+<td>{{ s.system_type or '-' }}</td>
+<td><span class="badge-status {% if s.category=='ENTREPRISE' %}sent{% else %}pending{% endif %}">{{ s.category or 'ENTREPRISE' }}</span></td>
+<td>{% if s.status=='actif' %}<span style="color:#2e7d32">● Actif</span>{% else %}<span style="color:#c53030">● Inactif</span>{% endif %}</td>
+<td style="{% if s.id in (due|map(attribute='id')|list) %}color:#c53030;font-weight:700{% endif %}">{{ s.next_maintenance or '-' }}</td>
 </tr>{% endfor %}</tbody></table></div>
-{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun système enregistré</p>{% endif %}
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun système. <a href="#" onclick="document.getElementById('addM').classList.add('active')">Ajouter le premier →</a></p>{% endif %}
 </div></div>
-<div class="modal-bg" id="addM"><div class="modal"><h3>🔧 Ajouter un système</h3><form method="post" action="/centre-technique/add">
-<div class="form-group"><label>Client</label><select name="client_id" onchange="var o=this.options[this.selectedIndex];document.getElementById('cn').value=o.text||''"><option value="">— Sélectionner —</option>{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
-<div class="form-group"><label>Nom client</label><input type="text" name="client_name" id="cn" required></div>
-<div class="form-row"><div class="form-group"><label>Type de système</label><select name="system_type"><option>Vidéosurveillance</option><option>Clôture électrique</option><option>Contrôle d'accès</option><option>Alarme</option><option>Réseau informatique</option><option>Autre</option></select></div>
-<div class="form-group"><label>Date installation</label><input type="date" name="installation_date"></div></div>
+
+<div class="modal-bg" id="addM"><div class="modal" style="max-width:550px"><h3>🔧 Ajouter un système</h3><form method="post" action="/centre-technique/add">
+<div class="form-row"><div class="form-group"><label>Client</label><select name="client_id" onchange="var o=this.options[this.selectedIndex];document.getElementById('cn').value=o.text||''"><option value="">—</option>{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+<div class="form-group"><label>Nom / code *</label><input type="text" name="client_name" id="cn" required></div></div>
+<div class="form-row"><div class="form-group"><label>Code</label><input type="text" name="code" placeholder="CANAAN 208"></div>
+<div class="form-group"><label>Catégorie</label><select name="category"><option>ENTREPRISE</option><option>PARTICULIER</option></select></div></div>
+<div class="form-row"><div class="form-group"><label>Contact</label><input type="text" name="contact_name"></div>
+<div class="form-group"><label>Téléphone</label><input type="text" name="tel"></div></div>
+<div class="form-group"><label>Email</label><input type="email" name="email"></div>
+<div class="form-row"><div class="form-group"><label>Type système</label><select name="system_type"><option>Vidéosurveillance</option><option>Clôture électrique</option><option>Contrôle d'accès</option><option>Alarme</option><option>Réseau</option><option>Autre</option></select></div>
+<div class="form-group"><label>Installation</label><input type="date" name="installation_date"></div></div>
 <div class="form-row"><div class="form-group"><label>Prochaine maintenance</label><input type="date" name="next_maintenance"></div>
 <div class="form-group"><label>Intervalle (jours)</label><input type="number" name="maintenance_interval" value="90"></div></div>
 <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
 <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Ajouter</button></div></form></div></div>
+<script>function filterTable(){var f=document.getElementById('searchBox').value.toLowerCase();document.querySelectorAll('#sysTable tbody tr').forEach(r=>{r.style.display=r.textContent.toLowerCase().includes(f)?'':'none'})}</script>
 {% endblock %}
