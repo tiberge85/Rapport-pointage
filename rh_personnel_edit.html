@@ -1,15 +1,28 @@
 {% extends "base.html" %}
 {% block title %}WannyGest - Modifier employé{% endblock %}
 {% block content %}
-<div class="page-header"><h1>✏️ {{ emp.first_name }} {{ emp.last_name }}</h1></div>
-<div class="card" style="max-width:700px"><div class="card-body"><form method="post">
-    <div class="form-row"><div class="form-group"><label>Prénom</label><input type="text" name="first_name" value="{{ emp.first_name }}" required></div><div class="form-group"><label>Nom</label><input type="text" name="last_name" value="{{ emp.last_name }}" required></div></div>
-    <div class="form-row"><div class="form-group"><label>Matricule</label><input type="text" name="matricule" value="{{ emp.matricule or '' }}"></div><div class="form-group"><label>Email</label><input type="email" name="email" value="{{ emp.email or '' }}"></div></div>
-    <div class="form-row"><div class="form-group"><label>Tél</label><input type="text" name="tel" value="{{ emp.tel or '' }}"></div><div class="form-group"><label>Poste</label><input type="text" name="position" value="{{ emp.position or '' }}"></div></div>
-    <div class="form-row"><div class="form-group"><label>Département</label><input type="text" name="department" value="{{ emp.department or '' }}"></div><div class="form-group"><label>Embauche</label><input type="date" name="hire_date" value="{{ emp.hire_date or '' }}"></div></div>
-    <div class="form-row"><div class="form-group"><label>Contrat</label><select name="contract_type">{% for t in ['CDI','CDD','Stage','Freelance'] %}<option value="{{ t }}" {% if emp.contract_type==t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div><div class="form-group"><label>Salaire</label><input type="number" name="salary" step="1" value="{{ emp.salary or 0 }}"></div></div>
+<div class="page-header"><h1>✏️ {{ emp.first_name }} {{ emp.last_name }}</h1><a href="/rh/personnel" class="btn btn-outline btn-sm">← Retour</a></div>
+<div class="card" style="max-width:750px"><div class="card-body"><form method="post" enctype="multipart/form-data">
+    
+    <h4 style="font-size:13px;color:#1a7a6d;margin:0 0 10px;border-bottom:1px solid #eee;padding-bottom:5px">👤 Identité</h4>
+    <div class="form-row"><div class="form-group"><label>Prénom *</label><input type="text" name="first_name" value="{{ emp.first_name }}" required></div><div class="form-group"><label>Nom *</label><input type="text" name="last_name" value="{{ emp.last_name }}" required></div></div>
+    <div class="form-row"><div class="form-group"><label>Code RH</label><input type="text" name="code_rh" value="{{ emp.code_rh or '' }}"></div><div class="form-group"><label>Matricule</label><input type="text" name="matricule" value="{{ emp.matricule or '' }}"></div></div>
+    <div class="form-row"><div class="form-group"><label>Genre</label><select name="gender"><option value="">—</option><option {% if emp.gender=='M' %}selected{% endif %} value="M">Masculin</option><option {% if emp.gender=='F' %}selected{% endif %} value="F">Féminin</option></select></div><div class="form-group"><label>Date de naissance</label><input type="date" name="birth_date" value="{{ emp.birth_date or '' }}"></div></div>
+    <div class="form-row"><div class="form-group"><label>Groupe sanguin</label><select name="blood_type"><option value="">—</option>{% for bt in ['A+','A-','B+','B-','AB+','AB-','O+','O-'] %}<option {% if emp.blood_type==bt %}selected{% endif %}>{{ bt }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Photo</label><input type="file" name="photo" accept="image/*">{% if emp.photo %}<div style="font-size:10px;color:#888;margin-top:2px">Actuelle : {{ emp.photo }}</div>{% endif %}</div></div>
+    
+    <h4 style="font-size:13px;color:#1a7a6d;margin:16px 0 10px;border-bottom:1px solid #eee;padding-bottom:5px">📞 Contact</h4>
+    <div class="form-row"><div class="form-group"><label>Email</label><input type="email" name="email" value="{{ emp.email or '' }}"></div><div class="form-group"><label>Téléphone</label><input type="text" name="tel" value="{{ emp.tel or '' }}"></div></div>
+    <div class="form-row"><div class="form-group"><label>Contact d'urgence</label><input type="text" name="emergency_contact" value="{{ emp.emergency_contact or '' }}"></div><div class="form-group"><label>Tél urgence</label><input type="text" name="emergency_tel" value="{{ emp.emergency_tel or '' }}"></div></div>
+    
+    <h4 style="font-size:13px;color:#1a7a6d;margin:16px 0 10px;border-bottom:1px solid #eee;padding-bottom:5px">💼 Emploi</h4>
+    <div class="form-row"><div class="form-group"><label>Poste</label><input type="text" name="position" value="{{ emp.position or '' }}"></div><div class="form-group"><label>Département</label><input type="text" name="department" value="{{ emp.department or '' }}"></div></div>
+    <div class="form-row"><div class="form-group"><label>Date d'embauche</label><input type="date" name="hire_date" value="{{ emp.hire_date or '' }}"></div><div class="form-group"><label>Type de contrat</label><select name="contract_type">{% for t in ['CDI','CDD','Stage','Freelance'] %}<option {% if emp.contract_type==t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div></div>
+    <div class="form-row"><div class="form-group"><label>Salaire (FCFA)</label><input type="number" name="salary" step="1" min="0" value="{{ emp.salary or 0 }}"></div><div class="form-group"><label>Statut</label><select name="status"><option value="actif" {% if emp.status=='actif' %}selected{% endif %}>Actif</option><option value="inactif" {% if emp.status=='inactif' %}selected{% endif %}>Inactif</option><option value="suspendu" {% if emp.status=='suspendu' %}selected{% endif %}>Suspendu</option></select></div></div>
+    
+    <h4 style="font-size:13px;color:#1a7a6d;margin:16px 0 10px;border-bottom:1px solid #eee;padding-bottom:5px">🏥 Assurance</h4>
     <div class="form-row"><div class="form-group"><label>Assurance</label><input type="text" name="insurance" value="{{ emp.insurance or '' }}"></div><div class="form-group"><label>N° Assurance</label><input type="text" name="insurance_number" value="{{ emp.insurance_number or '' }}"></div></div>
-    <div class="form-group"><label>Statut</label><select name="status"><option value="actif" {% if emp.status=='actif' %}selected{% endif %}>Actif</option><option value="inactif" {% if emp.status=='inactif' %}selected{% endif %}>Inactif</option><option value="suspendu" {% if emp.status=='suspendu' %}selected{% endif %}>Suspendu</option></select></div>
-    <div style="display:flex;gap:10px;margin-top:16px"><a href="/rh/personnel" class="btn btn-outline">Annuler</a><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div>
+    
+    <div style="display:flex;gap:10px;margin-top:18px"><a href="/rh/personnel" class="btn btn-outline">Annuler</a><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div>
 </form></div></div>
 {% endblock %}

@@ -93,6 +93,8 @@ from models import migrate_v9
 migrate_v9()
 from models import migrate_v10
 migrate_v10()
+from models import migrate_v11
+migrate_v11()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -1990,13 +1992,26 @@ def rh_personnel_edit(eid):
     if request.method == 'POST':
         update_employee(eid,
             first_name=request.form['first_name'], last_name=request.form['last_name'],
-            matricule=request.form.get('matricule', ''), email=request.form.get('email', ''),
+            matricule=request.form.get('matricule', ''), code_rh=request.form.get('code_rh', ''),
+            email=request.form.get('email', ''),
             tel=request.form.get('tel', ''), position=request.form.get('position', ''),
             department=request.form.get('department', ''), hire_date=request.form.get('hire_date', ''),
             contract_type=request.form.get('contract_type', 'CDI'),
             salary=float(request.form.get('salary', 0) or 0),
             insurance=request.form.get('insurance', ''), insurance_number=request.form.get('insurance_number', ''),
+            gender=request.form.get('gender', ''), birth_date=request.form.get('birth_date', ''),
+            blood_type=request.form.get('blood_type', ''),
+            emergency_contact=request.form.get('emergency_contact', ''),
+            emergency_tel=request.form.get('emergency_tel', ''),
             status=request.form.get('status', 'actif'))
+        # Photo
+        if 'photo' in request.files and request.files['photo'].filename:
+            photo = request.files['photo']
+            fname = f"emp_{eid}_{secure_filename(photo.filename)}"
+            photo_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'photos')
+            os.makedirs(photo_dir, exist_ok=True)
+            photo.save(os.path.join(photo_dir, fname))
+            update_employee(eid, photo=fname)
         flash("Employé modifié", "success")
         return redirect(url_for('rh_personnel'))
     return render_template('rh_personnel_edit.html', page='personnel', emp=emp)
@@ -2340,7 +2355,79 @@ def prospect_view(pid):
     from models import db_get_by_id
     p = db_get_by_id('prospects', pid)
     if not p: flash("Non trouvé","error"); return redirect('/prospects')
-    return render_template('prospect_view.html', page='prospects', prospect=p)
+    conn = _gdb()
+    notes = [dict(r) for r in conn.execute("SELECT * FROM prospect_notes WHERE prospect_id=? ORDER BY created_at DESC", (pid,)).fetchall()]
+    tasks = [dict(r) for r in conn.execute("SELECT * FROM prospect_tasks WHERE prospect_id=? ORDER BY created_at DESC", (pid,)).fetchall()]
+    offers = [dict(r) for r in conn.execute("SELECT * FROM prospect_offers WHERE prospect_id=? ORDER BY created_at DESC", (pid,)).fetchall()]
+    reminders = [dict(r) for r in conn.execute("SELECT * FROM prospect_reminders WHERE prospect_id=? ORDER BY reminder_date ASC", (pid,)).fetchall()]
+    files = [dict(r) for r in conn.execute("SELECT * FROM prospect_files WHERE prospect_id=? ORDER BY created_at DESC", (pid,)).fetchall()]
+    conn.close()
+    tab = request.args.get('tab', 'profil')
+    from datetime import datetime as dt2
+    now_str = dt2.now().strftime('%Y-%m-%d')
+    return render_template('prospect_view.html', page='prospects', prospect=p, tab=tab,
+        notes=notes, tasks=tasks, offers=offers, reminders=reminders, files=files, now_str=now_str)
+
+@app.route('/prospects/view/<int:pid>/note/add', methods=['POST'])
+@login_required
+def prospect_note_add(pid):
+    from models import db_insert
+    db_insert('prospect_notes', prospect_id=pid, content=request.form.get('content',''), created_by=session['user_id'])
+    flash("Note ajoutée","success"); return redirect(f'/prospects/view/{pid}?tab=notes')
+
+@app.route('/prospects/view/<int:pid>/task/add', methods=['POST'])
+@login_required
+def prospect_task_add(pid):
+    from models import db_insert
+    db_insert('prospect_tasks', prospect_id=pid, title=request.form.get('title',''),
+        status=request.form.get('status','a_faire'), priority=request.form.get('priority','normale'),
+        due_date=request.form.get('due_date',''), assigned_to=request.form.get('assigned_to',''),
+        created_by=session['user_id'])
+    flash("Tâche ajoutée","success"); return redirect(f'/prospects/view/{pid}?tab=taches')
+
+@app.route('/prospects/view/<int:pid>/offer/add', methods=['POST'])
+@login_required
+def prospect_offer_add(pid):
+    from models import db_insert
+    db_insert('prospect_offers', prospect_id=pid, title=request.form.get('title',''),
+        amount=float(request.form.get('amount',0) or 0), status=request.form.get('status','brouillon'),
+        description=request.form.get('description',''), created_by=session['user_id'])
+    flash("Offre ajoutée","success"); return redirect(f'/prospects/view/{pid}?tab=offres')
+
+@app.route('/prospects/view/<int:pid>/reminder/add', methods=['POST'])
+@login_required
+def prospect_reminder_add(pid):
+    from models import db_insert
+    db_insert('prospect_reminders', prospect_id=pid, title=request.form.get('title',''),
+        reminder_date=request.form.get('reminder_date',''), notes=request.form.get('notes',''),
+        created_by=session['user_id'])
+    flash("Rappel ajouté","success"); return redirect(f'/prospects/view/{pid}?tab=rappels')
+
+@app.route('/prospects/view/<int:pid>/file/add', methods=['POST'])
+@login_required
+def prospect_file_add(pid):
+    from models import db_insert
+    if 'file' in request.files and request.files['file'].filename:
+        f = request.files['file']
+        fname = f"prospect_{pid}_{secure_filename(f.filename)}"
+        fdir = os.path.join(app.config['UPLOAD_FOLDER'], 'prospect_files')
+        os.makedirs(fdir, exist_ok=True)
+        f.save(os.path.join(fdir, fname))
+        db_insert('prospect_files', prospect_id=pid, filename=fname,
+            original_name=f.filename, created_by=session['user_id'])
+        flash("Fichier ajouté","success")
+    return redirect(f'/prospects/view/{pid}?tab=pieces')
+
+@app.route('/prospects/view/<int:pid>/delete/<table>/<int:item_id>')
+@login_required
+def prospect_item_delete(pid, table, item_id):
+    allowed = {'note': 'prospect_notes', 'task': 'prospect_tasks', 'offer': 'prospect_offers',
+               'reminder': 'prospect_reminders', 'file': 'prospect_files'}
+    if table in allowed:
+        conn = _gdb(); conn.execute(f"DELETE FROM {allowed[table]} WHERE id=? AND prospect_id=?", (item_id, pid))
+        conn.commit(); conn.close()
+        flash("Supprimé","success")
+    return redirect(f'/prospects/view/{pid}')
 
 # ======================== CONTRATS RH ========================
 

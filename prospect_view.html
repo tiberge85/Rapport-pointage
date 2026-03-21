@@ -1,80 +1,144 @@
 {% extends "base.html" %}{% block title %}WannyGest - {{ prospect.contact_name or prospect.company }}{% endblock %}{% block content %}
 <style>
-.pv-tabs{display:flex;gap:0;border-bottom:2px solid #eee;margin-bottom:16px}
-.pv-tab{padding:10px 18px;font-size:12px;font-weight:600;color:#888;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
+.pv-tabs{display:flex;gap:0;border-bottom:2px solid #eee;margin-bottom:0}
+.pv-tab{padding:10px 16px;font-size:12px;font-weight:600;color:#888;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-2px}
 .pv-tab:hover{color:#1a7a6d}.pv-tab.active{color:#1a7a6d;border-bottom-color:#1a7a6d}
-.pv-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 40px}
-.pv-section-title{font-weight:700;font-size:13px;color:#1a3a5c;border-bottom:1px solid #eee;padding-bottom:4px;margin:12px 0 8px}
-.pv-field{margin-bottom:8px}.pv-field .lbl{font-size:11px;color:#888}.pv-field .val{font-size:13px;color:#222;font-weight:500}
+.pv-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 30px}
+.pv-section{font-weight:700;font-size:12px;color:#1a3a5c;border-bottom:1px solid #eee;padding-bottom:3px;margin:10px 0 6px}
+.pv-field{margin-bottom:8px}.pv-field .lbl{font-size:10px;color:#999}.pv-field .val{font-size:13px;color:#222;font-weight:500}
 </style>
 
-<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
     <a href="/prospects" class="btn btn-outline btn-sm">← Retour</a>
     <h2 style="margin:0;font-size:16px">#{{ prospect.id }} — {{ prospect.contact_name or prospect.company }}</h2>
-    <span class="badge-status {% if prospect.status=='gagne' %}sent{% elif prospect.status=='perdu' %}{% elif prospect.status=='nouveau' %}{% else %}pending{% endif %}">{{ prospect.status }}</span>
+    <span class="badge-status {% if prospect.status=='gagne' %}sent{% elif prospect.status=='perdu' %}{% else %}pending{% endif %}">{{ prospect.status }}</span>
     <div style="margin-left:auto;display:flex;gap:6px">
         {% if prospect.status != 'gagne' %}<a href="/prospects/convert/{{ prospect.id }}" class="btn btn-primary btn-sm" onclick="return confirm('Convertir en client ?')">🔄 Convertir en client</a>{% endif %}
     </div>
 </div>
 
-<div class="card"><div class="card-body">
+<div class="card"><div class="card-body" style="padding:0">
 <!-- Tabs -->
-<div class="pv-tabs">
-    <div class="pv-tab active" onclick="showPvTab('profil',this)">👤 Profil</div>
-    <div class="pv-tab" onclick="showPvTab('notes',this)">📝 Notes</div>
-    <div class="pv-tab" onclick="showPvTab('historique',this)">📜 Historique</div>
+<div class="pv-tabs" style="padding:0 16px">
+{% set tabs = [('profil','👤 Profil',''),('offres','📦 Offres',offers|length),('taches','✅ Tâches',tasks|length),('pieces','📎 Pièces jointes',files|length),('rappels','🔔 Rappels',reminders|length),('notes','📝 Notes',notes|length),('historique','📜 Historique','')] %}
+{% for key,label,count in tabs %}
+    <a href="/prospects/view/{{ prospect.id }}?tab={{ key }}" class="pv-tab {% if tab==key %}active{% endif %}">{{ label }}{% if count %} <span style="background:#eee;padding:1px 6px;border-radius:8px;font-size:10px">{{ count }}</span>{% endif %}</a>
+{% endfor %}
 </div>
 
+<div style="padding:20px">
+
 <!-- PROFIL -->
-<div id="pvt-profil">
+{% if tab == 'profil' %}
+<form method="post" action="/prospects/edit/{{ prospect.id }}">
 <div class="pv-grid">
     <div>
-        <div class="pv-section-title">Informations du Lead</div>
-        <div class="pv-field"><div class="lbl">Nom</div><div class="val">{{ prospect.contact_name or prospect.company }}</div></div>
-        <div class="pv-field"><div class="lbl">Position</div><div class="val">{{ prospect.position or '-' }}</div></div>
-        <div class="pv-field"><div class="lbl">Email</div><div class="val">{{ prospect.email or '-' }}</div></div>
-        <div class="pv-field"><div class="lbl">Entreprise</div><div class="val">{{ prospect.company or '-' }}</div></div>
-        <div class="pv-field"><div class="lbl">Téléphone</div><div class="val" style="color:#1a7a6d">{{ prospect.tel or '-' }}</div></div>
-        <div class="pv-field"><div class="lbl">Valeur estimée</div><div class="val">{% if prospect.estimated_value %}{{ '{:,.0f}'.format(prospect.estimated_value) }} FCFA{% else %}-{% endif %}</div></div>
-        <div class="pv-field"><div class="lbl">Adresse</div><div class="val">{{ prospect.address or '-' }}</div></div>
+        <div class="pv-section">Informations du Lead</div>
+        <div class="form-group"><label style="font-size:10px">Nom</label><input type="text" name="contact_name" value="{{ prospect.contact_name or '' }}"></div>
+        <div class="form-group"><label style="font-size:10px">Position</label><input type="text" name="position" value="{{ prospect.position or '' }}"></div>
+        <div class="form-group"><label style="font-size:10px">Email</label><input type="email" name="email" value="{{ prospect.email or '' }}"></div>
+        <div class="form-group"><label style="font-size:10px">Entreprise</label><input type="text" name="company" value="{{ prospect.company or '' }}"></div>
+        <div class="form-group"><label style="font-size:10px">Téléphone</label><input type="text" name="tel" value="{{ prospect.tel or '' }}"></div>
+        <div class="form-group"><label style="font-size:10px">Valeur estimée (FCFA)</label><input type="number" name="estimated_value" step="1" min="0" value="{{ prospect.estimated_value or '' }}"></div>
+        <div class="form-group"><label style="font-size:10px">Adresse</label><input type="text" name="address" value="{{ prospect.address or '' }}"></div>
     </div>
     <div>
-        <div class="pv-section-title">Informations Générales</div>
-        <div class="pv-field"><div class="lbl">Statut du prospect</div><div class="val"><span class="badge-status {% if prospect.status=='gagne' %}sent{% elif prospect.status=='perdu' %}{% else %}pending{% endif %}">{{ prospect.status }}</span></div></div>
-        <div class="pv-field"><div class="lbl">Source</div><div class="val">{{ prospect.source or '-' }}</div></div>
-        <div class="pv-field"><div class="lbl">Attribuer à</div><div class="val">{{ prospect.assigned_to or '-' }}</div></div>
+        <div class="pv-section">Informations Générales</div>
+        <div class="form-group"><label style="font-size:10px">Statut</label><select name="status">{% for s in ['nouveau','contacte','qualifie','proposition','gagne','perdu'] %}<option {% if prospect.status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+        <div class="form-group"><label style="font-size:10px">Source</label><select name="source">{% for s in ['APPEL TELEPHONIQUE','Facebook','Site web','Recommandation','Salon','Autre'] %}<option {% if prospect.source==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+        <div class="form-group"><label style="font-size:10px">Attribuer à</label><input type="text" name="assigned_to" value="{{ prospect.assigned_to or '' }}"></div>
         <div class="pv-field"><div class="lbl">Créé le</div><div class="val">{{ prospect.created_at or '-' }}</div></div>
-        <div class="pv-field"><div class="lbl">Dernier contact</div><div class="val">{{ prospect.last_contact or '-' }}</div></div>
-        <div class="pv-field"><div class="lbl">Ville</div><div class="val">{{ prospect.city or '-' }}</div></div>
-        <div class="pv-field"><div class="lbl">Région</div><div class="val">{{ prospect.region or '-' }}</div></div>
+        <div class="form-group"><label style="font-size:10px">Ville</label><input type="text" name="city" value="{{ prospect.city or '' }}"></div>
+        <div class="form-group"><label style="font-size:10px">Région</label><input type="text" name="region" value="{{ prospect.region or '' }}"></div>
         <div class="pv-field"><div class="lbl">Pays</div><div class="val">{{ prospect.country or "Côte d'Ivoire" }}</div></div>
     </div>
 </div>
-{% if prospect.description %}
-<div style="margin-top:12px;padding:12px;background:#f8faf9;border-radius:8px">
-    <div style="font-size:11px;color:#888;margin-bottom:4px">Description</div>
-    <div style="font-size:13px">{{ prospect.description }}</div>
-</div>
-{% endif %}
-</div>
+<div class="form-group"><label style="font-size:10px">Description</label><textarea name="description" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px">{{ prospect.description or '' }}</textarea></div>
+<button type="submit" class="btn btn-primary btn-sm" style="margin-top:8px">💾 Sauvegarder le profil</button>
+</form>
+
+<!-- OFFRES -->
+{% elif tab == 'offres' %}
+<form method="post" action="/prospects/view/{{ prospect.id }}/offer/add" style="background:#f8faf9;padding:12px;border-radius:8px;margin-bottom:14px">
+    <div class="form-row"><div class="form-group"><label>Titre *</label><input type="text" name="title" required placeholder="Offre de prestation..."></div><div class="form-group"><label>Montant (FCFA)</label><input type="number" name="amount" step="1" min="0"></div></div>
+    <div class="form-row"><div class="form-group"><label>Statut</label><select name="status"><option>brouillon</option><option>envoyee</option><option>acceptee</option><option>refusee</option></select></div><div class="form-group"><label>Description</label><input type="text" name="description" placeholder="Détails..."></div></div>
+    <button type="submit" class="btn btn-primary btn-sm">+ Ajouter une offre</button>
+</form>
+{% if offers %}<table style="width:100%;font-size:12px"><thead><tr><th>#</th><th>Titre</th><th>Montant</th><th>Statut</th><th>Date</th><th></th></tr></thead>
+<tbody>{% for o in offers %}<tr>
+<td>{{ o.id }}</td><td>{{ o.title }}</td><td style="font-weight:700">{{ '{:,.0f}'.format(o.amount) }} F</td>
+<td><span class="badge-status {% if o.status=='acceptee' %}sent{% else %}pending{% endif %}">{{ o.status }}</span></td>
+<td style="font-size:10px">{{ o.created_at[:10] if o.created_at else '' }}</td>
+<td><a href="/prospects/view/{{ prospect.id }}/delete/offer/{{ o.id }}" style="color:#c53030;font-size:10px" onclick="return confirm('Supprimer ?')">🗑️</a></td>
+</tr>{% endfor %}</tbody></table>{% else %}<p style="color:#999;text-align:center;padding:20px">Aucune offre</p>{% endif %}
+
+<!-- TÂCHES -->
+{% elif tab == 'taches' %}
+<form method="post" action="/prospects/view/{{ prospect.id }}/task/add" style="background:#f8faf9;padding:12px;border-radius:8px;margin-bottom:14px">
+    <div class="form-row"><div class="form-group"><label>Titre *</label><input type="text" name="title" required placeholder="Appeler le prospect..."></div><div class="form-group"><label>Échéance</label><input type="date" name="due_date"></div></div>
+    <div class="form-row"><div class="form-group"><label>Priorité</label><select name="priority"><option>normale</option><option>haute</option><option>urgente</option></select></div><div class="form-group"><label>Assigné à</label><input type="text" name="assigned_to" placeholder="Nom"></div></div>
+    <button type="submit" class="btn btn-primary btn-sm">+ Ajouter une tâche</button>
+</form>
+{% if tasks %}<table style="width:100%;font-size:12px"><thead><tr><th>Titre</th><th>Priorité</th><th>Statut</th><th>Échéance</th><th>Assigné</th><th></th></tr></thead>
+<tbody>{% for t in tasks %}<tr>
+<td>{{ t.title }}</td>
+<td>{% if t.priority=='urgente' %}<span style="color:#c53030;font-weight:700">🔴 {{ t.priority }}</span>{% elif t.priority=='haute' %}<span style="color:#e8672a;font-weight:600">🟠 {{ t.priority }}</span>{% else %}{{ t.priority }}{% endif %}</td>
+<td><span class="badge-status {% if t.status=='fait' %}sent{% else %}pending{% endif %}">{{ t.status }}</span></td>
+<td>{{ t.due_date or '-' }}</td><td>{{ t.assigned_to or '-' }}</td>
+<td><a href="/prospects/view/{{ prospect.id }}/delete/task/{{ t.id }}" style="color:#c53030;font-size:10px" onclick="return confirm('Supprimer ?')">🗑️</a></td>
+</tr>{% endfor %}</tbody></table>{% else %}<p style="color:#999;text-align:center;padding:20px">Aucune tâche</p>{% endif %}
+
+<!-- PIÈCES JOINTES -->
+{% elif tab == 'pieces' %}
+<form method="post" action="/prospects/view/{{ prospect.id }}/file/add" enctype="multipart/form-data" style="background:#f8faf9;padding:12px;border-radius:8px;margin-bottom:14px">
+    <div style="display:flex;gap:10px;align-items:end"><div class="form-group" style="flex:1"><label>Fichier</label><input type="file" name="file" required></div>
+    <button type="submit" class="btn btn-primary btn-sm">📎 Joindre</button></div>
+</form>
+{% if files %}<table style="width:100%;font-size:12px"><thead><tr><th>Fichier</th><th>Date</th><th></th></tr></thead>
+<tbody>{% for f in files %}<tr>
+<td>📄 {{ f.original_name }}</td><td style="font-size:10px">{{ f.created_at[:10] if f.created_at else '' }}</td>
+<td><a href="/prospects/view/{{ prospect.id }}/delete/file/{{ f.id }}" style="color:#c53030;font-size:10px" onclick="return confirm('Supprimer ?')">🗑️</a></td>
+</tr>{% endfor %}</tbody></table>{% else %}<p style="color:#999;text-align:center;padding:20px">Aucune pièce jointe</p>{% endif %}
+
+<!-- RAPPELS -->
+{% elif tab == 'rappels' %}
+<form method="post" action="/prospects/view/{{ prospect.id }}/reminder/add" style="background:#f8faf9;padding:12px;border-radius:8px;margin-bottom:14px">
+    <div class="form-row"><div class="form-group"><label>Titre *</label><input type="text" name="title" required placeholder="Rappeler le prospect"></div><div class="form-group"><label>Date *</label><input type="date" name="reminder_date" required></div></div>
+    <div class="form-group"><label>Notes</label><input type="text" name="notes" placeholder="Détails..."></div>
+    <button type="submit" class="btn btn-primary btn-sm">🔔 Ajouter un rappel</button>
+</form>
+{% if reminders %}<table style="width:100%;font-size:12px"><thead><tr><th>Titre</th><th>Date</th><th>Notes</th><th>Statut</th><th></th></tr></thead>
+<tbody>{% for r in reminders %}<tr>
+<td>🔔 {{ r.title }}</td><td style="font-weight:600;{% if r.reminder_date < now_str %}color:#c53030{% endif %}">{{ r.reminder_date }}</td>
+<td style="font-size:11px">{{ r.notes or '-' }}</td>
+<td><span class="badge-status {% if r.status=='actif' %}pending{% else %}sent{% endif %}">{{ r.status }}</span></td>
+<td><a href="/prospects/view/{{ prospect.id }}/delete/reminder/{{ r.id }}" style="color:#c53030;font-size:10px" onclick="return confirm('Supprimer ?')">🗑️</a></td>
+</tr>{% endfor %}</tbody></table>{% else %}<p style="color:#999;text-align:center;padding:20px">Aucun rappel</p>{% endif %}
 
 <!-- NOTES -->
-<div id="pvt-notes" style="display:none">
-    <div style="background:#f8faf9;border-radius:8px;padding:14px;min-height:100px;font-size:13px">{{ prospect.notes or 'Aucune note.' }}</div>
+{% elif tab == 'notes' %}
+<form method="post" action="/prospects/view/{{ prospect.id }}/note/add" style="background:#f8faf9;padding:12px;border-radius:8px;margin-bottom:14px">
+    <div class="form-group"><label>Nouvelle note</label><textarea name="content" rows="3" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px" placeholder="Écrire une note..."></textarea></div>
+    <button type="submit" class="btn btn-primary btn-sm">📝 Ajouter</button>
+</form>
+{% for n in notes %}
+<div style="border:1px solid #eee;border-radius:8px;padding:12px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between"><span style="font-size:10px;color:#888">{{ n.created_at[:16] if n.created_at else '' }}</span><a href="/prospects/view/{{ prospect.id }}/delete/note/{{ n.id }}" style="color:#c53030;font-size:10px" onclick="return confirm('Supprimer ?')">🗑️</a></div>
+    <div style="font-size:13px;margin-top:4px">{{ n.content }}</div>
 </div>
+{% endfor %}
+{% if not notes %}<p style="color:#999;text-align:center;padding:20px">Aucune note</p>{% endif %}
 
 <!-- HISTORIQUE -->
-<div id="pvt-historique" style="display:none">
-    <div style="font-size:12px;color:#888;padding:20px;text-align:center">Historique des activités à venir dans une prochaine version.</div>
+{% elif tab == 'historique' %}
+<div style="font-size:12px">
+    <div style="padding:8px 0;border-bottom:1px solid #f0f0f0"><span style="color:#888;margin-right:10px">{{ prospect.created_at[:16] if prospect.created_at else '' }}</span> Prospect créé</div>
+    {% for n in notes %}<div style="padding:8px 0;border-bottom:1px solid #f0f0f0"><span style="color:#888;margin-right:10px">{{ n.created_at[:16] if n.created_at else '' }}</span> 📝 Note ajoutée</div>{% endfor %}
+    {% for t in tasks %}<div style="padding:8px 0;border-bottom:1px solid #f0f0f0"><span style="color:#888;margin-right:10px">{{ t.created_at[:16] if t.created_at else '' }}</span> ✅ Tâche "{{ t.title }}" créée</div>{% endfor %}
+    {% for o in offers %}<div style="padding:8px 0;border-bottom:1px solid #f0f0f0"><span style="color:#888;margin-right:10px">{{ o.created_at[:16] if o.created_at else '' }}</span> 📦 Offre "{{ o.title }}" — {{ '{:,.0f}'.format(o.amount) }} F</div>{% endfor %}
 </div>
-</div></div>
+{% if not notes and not tasks and not offers %}<p style="color:#999;text-align:center;padding:20px">Aucune activité enregistrée</p>{% endif %}
+{% endif %}
 
-<script>
-function showPvTab(name, el) {
-    document.querySelectorAll('[id^="pvt-"]').forEach(t => t.style.display = 'none');
-    document.getElementById('pvt-' + name).style.display = 'block';
-    document.querySelectorAll('.pv-tab').forEach(t => t.classList.remove('active'));
-    el.classList.add('active');
-}
-</script>
+</div></div></div>
 {% endblock %}

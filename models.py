@@ -1942,3 +1942,37 @@ def migrate_v10():
     try: conn.execute("ALTER TABLE treasury ADD COLUMN account_id INTEGER DEFAULT 0")
     except: pass
     conn.commit(); conn.close()
+
+def migrate_v11():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS prospect_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prospect_id INTEGER, content TEXT, created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS prospect_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prospect_id INTEGER, title TEXT, status TEXT DEFAULT 'a_faire',
+            priority TEXT DEFAULT 'normale', due_date TEXT, assigned_to TEXT,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS prospect_offers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prospect_id INTEGER, title TEXT, amount REAL DEFAULT 0,
+            status TEXT DEFAULT 'brouillon', description TEXT,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS prospect_reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prospect_id INTEGER, title TEXT, reminder_date TEXT,
+            status TEXT DEFAULT 'actif', notes TEXT,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS prospect_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prospect_id INTEGER, filename TEXT, original_name TEXT,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    conn.commit(); conn.close()
