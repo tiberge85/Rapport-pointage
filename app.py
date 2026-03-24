@@ -99,6 +99,8 @@ from models import migrate_v12
 migrate_v12()
 from models import migrate_v13
 migrate_v13()
+from models import migrate_v14
+migrate_v14()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -1576,6 +1578,11 @@ def comptabilite_page():
     exp_cats = [dict(r) for r in conn.execute("""
         SELECT category, SUM(amount) as total FROM pieces_caisse GROUP BY category ORDER BY total DESC LIMIT 8
     """).fetchall()]
+    
+    # Recent devis (for comptabilite to see new devis from CRM)
+    recent_devis = [dict(r) for r in conn.execute("""
+        SELECT * FROM devis ORDER BY created_at DESC LIMIT 5
+    """).fetchall()]
     conn.close()
     
     chart_data = {
@@ -1592,7 +1599,7 @@ def comptabilite_page():
     }
     
     return render_template('comptabilite.html', page='comptabilite', tab=tab,
-                          invoices=invoices, inv_stats=inv_stats, chart=chart_data)
+                          invoices=invoices, inv_stats=inv_stats, chart=chart_data, recent_devis=recent_devis)
 
 @app.route('/comptabilite/status/<int:inv_id>/<status>')
 @permission_required('comptabilite')
@@ -1648,6 +1655,192 @@ def devis_to_invoice(did):
                 'Facture', f"Devis {d.get('reference','')} converti en facture {ref}", request.remote_addr)
     flash(f"Devis {d.get('reference','')} converti en facture {ref}", "success")
     return redirect(url_for('comptabilite_page'))
+
+@app.route('/comptabilite/facture/view/<int:fid>')
+@permission_required('comptabilite')
+def invoice_view(fid):
+    conn = _gdb()
+    inv = conn.execute("SELECT * FROM invoices WHERE id=?", (fid,)).fetchone()
+    conn.close()
+    if not inv: flash("Facture non trouvée","error"); return redirect(url_for('comptabilite_page'))
+    inv = dict(inv)
+    inv['items'] = json.loads(inv.get('items_json','[]') or '[]')
+    return render_template('invoice_view.html', page='comptabilite', inv=inv, inv_items=inv['items'])
+
+@app.route('/comptabilite/facture/edit/<int:fid>', methods=['GET', 'POST'])
+@permission_required('comptabilite_edit')
+def invoice_edit(fid):
+    conn = _gdb()
+    inv = conn.execute("SELECT * FROM invoices WHERE id=?", (fid,)).fetchone()
+    if not inv: flash("Non trouvée","error"); return redirect(url_for('comptabilite_page'))
+    if request.method == 'POST':
+        conn.execute("""UPDATE invoices SET client_name=?, objet=?, amount=?, total_ht=?, tva=?, total_ttc=?,
+            description=?, due_date=?, payment_method=?, notes=? WHERE id=?""",
+            (request.form.get('client_name',''), request.form.get('objet',''),
+             float(request.form.get('amount',0) or 0), float(request.form.get('total_ht',0) or 0),
+             float(request.form.get('tva',0) or 0), float(request.form.get('total_ttc',0) or 0),
+             request.form.get('description',''), request.form.get('due_date',''),
+             request.form.get('payment_method',''), request.form.get('notes',''), fid))
+        conn.commit(); conn.close()
+        flash("Facture modifiée","success"); return redirect(f'/comptabilite/facture/view/{fid}')
+    conn.close()
+    clients = get_all_clients()
+    return render_template('invoice_edit.html', page='comptabilite', inv=dict(inv), clients=clients)
+
+# ======================== CAISSE (Entrées + Sorties) ========================
+
+@app.route('/caisse-entree/add', methods=['POST'])
+@permission_required('caisse_sortie')
+def caisse_entree_add():
+    conn = _gdb()
+    ref = f"CE-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    conn.execute("""INSERT INTO caisse_entrees (reference, date, source, montant, description, payment_method, created_by)
+        VALUES (?,?,?,?,?,?,?)""",
+        (ref, request.form.get('date',''), request.form.get('source',''),
+         float(request.form.get('montant',0) or 0), request.form.get('description',''),
+         request.form.get('payment_method',''), session['user_id']))
+    conn.commit(); conn.close()
+    flash("Entrée de caisse enregistrée","success")
+    return redirect('/caisse-sortie?tab=entrees')
+
+# ======================== BILAN COMPTABLE ========================
+
+@app.route('/comptabilite/bilan')
+@permission_required('comptabilite')
+def bilan_comptable():
+    month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    conn = _gdb()
+    
+    # Factures (revenus)
+    factures_payees = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='payee' AND strftime('%%Y-%%m',paid_at)=?", (month,)).fetchone()[0]
+    factures_pending = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status IN ('envoyee','en_attente_paiement') AND strftime('%%Y-%%m',created_at)=?", (month,)).fetchone()[0]
+    
+    # Caisse entrées
+    caisse_entrees = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_entrees WHERE strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
+    
+    # Caisse sorties
+    caisse_sorties = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_sorties WHERE status='approuve' AND strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
+    
+    # Treasury movements
+    treso_recettes = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='recette' AND strftime('%%Y-%%m',created_at)=?", (month,)).fetchone()[0]
+    treso_depenses = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='depense' AND strftime('%%Y-%%m',created_at)=?", (month,)).fetchone()[0]
+    
+    # Dépenses
+    depenses = conn.execute("SELECT COALESCE(SUM(amount),0) FROM pieces_caisse WHERE strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
+    
+    # Bank balances
+    banks = [dict(r) for r in conn.execute("SELECT * FROM bank_accounts ORDER BY name").fetchall()]
+    
+    # Detail lists
+    inv_list = [dict(r) for r in conn.execute("SELECT * FROM invoices WHERE strftime('%%Y-%%m',created_at)=? ORDER BY created_at DESC", (month,)).fetchall()]
+    entree_list = [dict(r) for r in conn.execute("SELECT * FROM caisse_entrees WHERE strftime('%%Y-%%m',date)=? ORDER BY date DESC", (month,)).fetchall()]
+    sortie_list = [dict(r) for r in conn.execute("SELECT * FROM caisse_sorties WHERE status='approuve' AND strftime('%%Y-%%m',date)=? ORDER BY date DESC", (month,)).fetchall()]
+    dep_list = [dict(r) for r in conn.execute("SELECT * FROM pieces_caisse WHERE strftime('%%Y-%%m',date)=? ORDER BY date DESC", (month,)).fetchall()]
+    
+    total_entrees = factures_payees + caisse_entrees + treso_recettes
+    total_sorties = caisse_sorties + treso_depenses + depenses
+    solde = total_entrees - total_sorties
+    
+    conn.close()
+    
+    data = {
+        'month': month, 'factures_payees': factures_payees, 'factures_pending': factures_pending,
+        'caisse_entrees': caisse_entrees, 'caisse_sorties': caisse_sorties,
+        'treso_recettes': treso_recettes, 'treso_depenses': treso_depenses, 'depenses': depenses,
+        'total_entrees': total_entrees, 'total_sorties': total_sorties, 'solde': solde,
+        'banks': banks, 'inv_list': inv_list, 'entree_list': entree_list,
+        'sortie_list': sortie_list, 'dep_list': dep_list
+    }
+    return render_template('bilan_comptable.html', page='bilan', data=data)
+
+@app.route('/comptabilite/bilan/pdf')
+@permission_required('comptabilite')
+def bilan_pdf():
+    month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    conn = _gdb()
+    fp = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='payee' AND strftime('%%Y-%%m',paid_at)=?", (month,)).fetchone()[0]
+    ce = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_entrees WHERE strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
+    tr = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='recette' AND strftime('%%Y-%%m',created_at)=?", (month,)).fetchone()[0]
+    cs = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_sorties WHERE status='approuve' AND strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
+    td = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='depense' AND strftime('%%Y-%%m',created_at)=?", (month,)).fetchone()[0]
+    dp = conn.execute("SELECT COALESCE(SUM(amount),0) FROM pieces_caisse WHERE strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
+    banks = [dict(r) for r in conn.execute("SELECT * FROM bank_accounts").fetchall()]
+    conn.close()
+    
+    te = fp + ce + tr; ts = cs + td + dp; solde = te - ts
+    
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib.colors import HexColor, white
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    
+    output = os.path.join(app.config['UPLOAD_FOLDER'], f'bilan_{month}.pdf')
+    os.makedirs(os.path.dirname(output), exist_ok=True)
+    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=12*mm, bottomMargin=12*mm)
+    
+    BG = HexColor('#44546A'); BL = HexColor('#4472C4'); GR = HexColor('#2e7d32'); RD = HexColor('#c53030')
+    hw = ParagraphStyle('hw', fontName='Helvetica-Bold', fontSize=9, textColor=white, alignment=TA_CENTER)
+    tc = ParagraphStyle('tc', fontSize=9, alignment=TA_CENTER)
+    tr_s = ParagraphStyle('tr', fontSize=9, alignment=TA_RIGHT)
+    tb = ParagraphStyle('tb', fontName='Helvetica-Bold', fontSize=9, alignment=TA_RIGHT)
+    
+    story = [Paragraph(f"<b>BILAN COMPTABLE — {month}</b>", ParagraphStyle('t', fontName='Helvetica-Bold', fontSize=16, textColor=BG, alignment=TA_CENTER, spaceAfter=8*mm))]
+    
+    pw = 180*mm
+    fmt = lambda x: f"{x:,.0f}"
+    
+    # Entrées
+    story.append(Paragraph("<b>ENTREES</b>", ParagraphStyle('h', fontName='Helvetica-Bold', fontSize=11, textColor=GR, spaceAfter=3*mm)))
+    ed = [[Paragraph(h, hw) for h in ['Source', 'Montant (FCFA)']]]
+    for label, val in [('Factures payées', fp), ('Entrées de caisse', ce), ('Recettes banque', tr)]:
+        ed.append([Paragraph(label, tc), Paragraph(fmt(val), tr_s)])
+    ed.append([Paragraph('<b>TOTAL ENTREES</b>', ParagraphStyle('x', fontName='Helvetica-Bold', fontSize=9, textColor=GR)),
+               Paragraph(f'<b>{fmt(te)}</b>', ParagraphStyle('y', fontName='Helvetica-Bold', fontSize=10, textColor=GR, alignment=TA_RIGHT))])
+    et = Table(ed, colWidths=[pw*0.6, pw*0.4])
+    et.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),BL),('BOX',(0,0),(-1,-1),0.5,HexColor('#8EAADB')),
+        ('INNERGRID',(0,0),(-1,-1),0.3,HexColor('#B4C6E7')),('BACKGROUND',(0,-1),(-1,-1),HexColor('#E2EFDA')),
+        ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]))
+    story.extend([et, Spacer(1, 6*mm)])
+    
+    # Sorties
+    story.append(Paragraph("<b>SORTIES</b>", ParagraphStyle('h2', fontName='Helvetica-Bold', fontSize=11, textColor=RD, spaceAfter=3*mm)))
+    sd = [[Paragraph(h, hw) for h in ['Source', 'Montant (FCFA)']]]
+    for label, val in [('Sorties de caisse', cs), ('Dépenses banque', td), ('Pièces de caisse', dp)]:
+        sd.append([Paragraph(label, tc), Paragraph(fmt(val), tr_s)])
+    sd.append([Paragraph('<b>TOTAL SORTIES</b>', ParagraphStyle('x2', fontName='Helvetica-Bold', fontSize=9, textColor=RD)),
+               Paragraph(f'<b>{fmt(ts)}</b>', ParagraphStyle('y2', fontName='Helvetica-Bold', fontSize=10, textColor=RD, alignment=TA_RIGHT))])
+    st = Table(sd, colWidths=[pw*0.6, pw*0.4])
+    st.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),BL),('BOX',(0,0),(-1,-1),0.5,HexColor('#8EAADB')),
+        ('INNERGRID',(0,0),(-1,-1),0.3,HexColor('#B4C6E7')),('BACKGROUND',(0,-1),(-1,-1),HexColor('#FDE8E8')),
+        ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]))
+    story.extend([st, Spacer(1, 6*mm)])
+    
+    # Solde
+    color = GR if solde >= 0 else RD
+    sol = Table([[Paragraph('<b>SOLDE DU MOIS</b>', ParagraphStyle('s1', fontName='Helvetica-Bold', fontSize=11, textColor=white)),
+                  Paragraph(f'<b>{fmt(solde)} FCFA</b>', ParagraphStyle('s2', fontName='Helvetica-Bold', fontSize=14, textColor=white, alignment=TA_RIGHT))]], colWidths=[pw*0.6, pw*0.4])
+    sol.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),color),('TOPPADDING',(0,0),(-1,-1),8),('BOTTOMPADDING',(0,0),(-1,-1),8),
+        ('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),10)]))
+    story.extend([sol, Spacer(1, 6*mm)])
+    
+    # Banks
+    if banks:
+        story.append(Paragraph("<b>SOLDES BANCAIRES</b>", ParagraphStyle('h3', fontName='Helvetica-Bold', fontSize=11, textColor=BG, spaceAfter=3*mm)))
+        bd = [[Paragraph(h, hw) for h in ['Compte', 'Type', 'Solde actuel']]]
+        for b in banks:
+            bd.append([Paragraph(b['name'], tc), Paragraph(f"{b['type']} ({b.get('subtype','courant')})", tc),
+                       Paragraph(fmt(b['current_balance']), tb)])
+        bt = Table(bd, colWidths=[pw*0.4, pw*0.3, pw*0.3])
+        bt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),BG),('BOX',(0,0),(-1,-1),0.5,HexColor('#8EAADB')),
+            ('INNERGRID',(0,0),(-1,-1),0.3,HexColor('#B4C6E7')),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]))
+        story.append(bt)
+    
+    story.append(Spacer(1, 8*mm))
+    story.append(Paragraph(f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", ParagraphStyle('ft', fontSize=8, textColor=HexColor('#999'))))
+    doc.build(story)
+    return send_file(output, as_attachment=True, download_name=f"Bilan_{month}.pdf")
 
 # ======================== RAPPORT DE CAISSE HEBDOMADAIRE ========================
 
@@ -1746,8 +1939,46 @@ def rapport_caisse_view(rid):
     conn.close()
     if not r: flash("Non trouvé","error"); return redirect('/comptabilite/rapport-caisse')
     report = dict(r)
+    report_items = json.loads(report.get('items_json','[]') or '[]')
+    return render_template('rapport_caisse_view.html', page='comptabilite', report=report, report_items=report_items)
+
+@app.route('/comptabilite/rapport-caisse/edit/<int:rid>', methods=['GET', 'POST'])
+@permission_required('comptabilite_edit')
+def rapport_caisse_edit(rid):
+    conn = _gdb()
+    r = conn.execute("SELECT * FROM weekly_cash_reports WHERE id=?", (rid,)).fetchone()
+    if not r: flash("Non trouvé","error"); return redirect('/comptabilite/rapport-caisse')
+    report = dict(r)
+    
+    if request.method == 'POST':
+        items = []
+        i = 1
+        while request.form.get(f'date_{i}'):
+            items.append({
+                'n': i, 'date': request.form.get(f'date_{i}',''),
+                'description': request.form.get(f'desc_{i}',''),
+                'credit': float(request.form.get(f'credit_{i}',0) or 0),
+                'pc': request.form.get(f'pc_{i}',''),
+                'debit': float(request.form.get(f'debit_{i}',0) or 0),
+            })
+            i += 1
+        total_c = sum(it['credit'] for it in items)
+        total_d = sum(it['debit'] for it in items)
+        
+        conn.execute("""UPDATE weekly_cash_reports SET agent_name=?, matricule=?, report_number=?,
+            week_start=?, items_json=?, total_credit=?, total_debit=?, reste_caisse=?, deposit_date=?
+            WHERE id=?""",
+            (request.form.get('agent_name',''), request.form.get('matricule',''),
+             request.form.get('report_number',''), request.form.get('week_start',''),
+             json.dumps(items), total_c, total_d, total_c - total_d,
+             request.form.get('deposit_date',''), rid))
+        conn.commit(); conn.close()
+        flash("Rapport modifié","success")
+        return redirect(f'/comptabilite/rapport-caisse/view/{rid}')
+    
+    conn.close()
     report['items'] = json.loads(report.get('items_json','[]') or '[]')
-    return render_template('rapport_caisse_view.html', page='comptabilite', report=report, report_items=report['items'])
+    return render_template('rapport_caisse_edit.html', page='comptabilite', report=report, report_items=report['items'])
 
 @app.route('/comptabilite/rapport-caisse/pdf/<int:rid>')
 @permission_required('comptabilite')
@@ -3246,9 +3477,15 @@ def devis_from_template(tid):
 @login_required
 def caisse_sortie():
     month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    tab = request.args.get('tab', 'sorties')
     sorties = get_caisse_sorties(month=month)
     stats = get_caisse_stats(month=month)
-    return render_template('caisse_sortie.html', page='caisse_sortie', sorties=sorties, stats=stats, month=month)
+    conn = _gdb()
+    entrees = [dict(r) for r in conn.execute("SELECT * FROM caisse_entrees WHERE strftime('%%Y-%%m',date)=? ORDER BY date DESC", (month,)).fetchall()]
+    total_entrees = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_entrees WHERE strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
+    conn.close()
+    return render_template('caisse_sortie.html', page='caisse_sortie', sorties=sorties, stats=stats, month=month,
+        tab=tab, entrees=entrees, total_entrees=total_entrees)
 
 @app.route('/caisse-sortie/demande', methods=['GET','POST'])
 @login_required

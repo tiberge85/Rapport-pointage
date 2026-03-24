@@ -1,11 +1,42 @@
-{% extends "base.html" %}{% block title %}WannyGest - Sortie de caisse{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}WannyGest - Caisse{% endblock %}{% block content %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<div class="page-header"><h1>💸 Pièces de caisse — Sorties</h1>
+<div class="page-header"><h1>💵 Caisse</h1>
 <div style="display:flex;gap:6px">
-    <a href="/caisse-sortie/demande" class="btn btn-orange btn-sm">+ Demande</a>
+    <a href="/caisse-sortie/demande" class="btn btn-orange btn-sm">+ Demande sortie</a>
     <a href="/caisse-sortie/rapport?month={{ month }}&format=excel" class="btn btn-outline btn-sm">📥 Excel</a>
     <a href="/caisse-sortie/rapport?month={{ month }}&format=pdf" class="btn btn-outline btn-sm">📥 PDF</a>
 </div></div>
+
+<!-- Tabs -->
+<div style="display:flex;gap:6px;margin-bottom:14px">
+    <a href="/caisse-sortie?tab=sorties&month={{ month }}" class="btn {% if tab=='sorties' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">📤 Demandes de sortie</a>
+    <a href="/caisse-sortie?tab=entrees&month={{ month }}" class="btn {% if tab=='entrees' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">📥 Entrées de caisse</a>
+</div>
+
+{% if tab == 'entrees' %}
+<!-- ENTREES DE CAISSE -->
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3>📥 Nouvelle entrée de caisse</h3></div><div class="card-body">
+<form method="post" action="/caisse-entree/add">
+    <div class="form-row"><div class="form-group"><label>Date</label><input type="date" name="date" required></div>
+    <div class="form-group"><label>Source</label><input type="text" name="source" required placeholder="Client, vente, encaissement..."></div></div>
+    <div class="form-row"><div class="form-group"><label>Montant (FCFA)</label><input type="number" name="montant" step="1" min="1" required></div>
+    <div class="form-group"><label>Moyen</label><select name="payment_method"><option>Espèces</option><option>Virement</option><option>Chèque</option><option>Mobile Money</option></select></div></div>
+    <div class="form-group"><label>Description</label><input type="text" name="description" placeholder="Détails"></div>
+    <button type="submit" class="btn btn-primary btn-sm" style="background:#2e7d32">📥 Enregistrer l'entrée</button>
+</form></div></div>
+
+{% if entrees %}
+<div class="card"><div class="card-header"><h3>Entrées ({{ '{:,.0f}'.format(total_entrees) }} F)</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<thead><tr><th>Réf</th><th>Date</th><th>Source</th><th style="text-align:right">Montant</th><th>Description</th><th>Moyen</th></tr></thead>
+<tbody>{% for e in entrees %}<tr>
+<td style="font-size:10px">{{ e.reference }}</td><td>{{ e.date }}</td><td><strong>{{ e.source }}</strong></td>
+<td style="text-align:right;font-weight:700;color:#2e7d32">+{{ '{:,.0f}'.format(e.montant) }} F</td>
+<td style="font-size:11px">{{ e.description or '-' }}</td><td style="font-size:11px">{{ e.payment_method or '-' }}</td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:30px">Aucune entrée ce mois</div></div>{% endif %}
+
+{% else %}
+<!-- SORTIES DE CAISSE (existing content) -->
 
 <!-- Filter -->
 <div style="margin-bottom:14px"><form method="get" style="display:flex;gap:8px;align-items:center">
@@ -66,6 +97,9 @@
 {% else %}<p style="text-align:center;color:#999;padding:30px">Aucune sortie de caisse ce mois</p>{% endif %}
 </div></div>
 <script>
+if (document.getElementById('cNature')) {
 new Chart(document.getElementById('cNature'),{type:'doughnut',data:{labels:['Espèces','Chèques','Virements'],datasets:[{data:[{{stats.montant_espece}},{{stats.montant_cheque}},{{stats.montant_virement}}],backgroundColor:['#2e7d32','#42a5f5','#ff9800']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+}
 </script>
+{% endif %}
 {% endblock %}

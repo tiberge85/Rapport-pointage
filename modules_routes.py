@@ -301,6 +301,7 @@ def tresorerie_add():
 def tresorerie_account_add():
     initial = float(request.form.get('initial_balance', 0) or 0)
     db_insert('bank_accounts', name=request.form['name'], type=request.form.get('type', 'caisse'),
+        subtype=request.form.get('subtype', 'courant'),
         bank_name=request.form.get('bank_name', ''), account_number=request.form.get('account_number', ''),
         initial_balance=initial, current_balance=initial, notes=request.form.get('notes', ''))
     flash("Compte ajouté", "success")
@@ -322,9 +323,10 @@ def tresorerie_account_edit(aid):
     if old:
         diff = new_initial - old['initial_balance']
         new_current = old['current_balance'] + diff
-        conn.execute("""UPDATE bank_accounts SET name=?, type=?, bank_name=?, account_number=?,
+        conn.execute("""UPDATE bank_accounts SET name=?, type=?, subtype=?, bank_name=?, account_number=?,
             initial_balance=?, current_balance=?, notes=?, status=? WHERE id=?""",
             (request.form.get('name',''), request.form.get('type','caisse'),
+             request.form.get('subtype','courant'),
              request.form.get('bank_name',''), request.form.get('account_number',''),
              new_initial, new_current, request.form.get('notes',''),
              request.form.get('status','actif'), aid))

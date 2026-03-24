@@ -17,6 +17,7 @@
 <td style="text-align:right;font-weight:700;color:{% if r.reste_caisse >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(r.reste_caisse) }}</td>
 <td style="white-space:nowrap">
     <a href="/comptabilite/rapport-caisse/view/{{ r.id }}" class="btn btn-sm btn-outline" title="Voir">👁️</a>
+    <a href="/comptabilite/rapport-caisse/edit/{{ r.id }}" class="btn btn-sm btn-outline" title="Modifier">✏️</a>
     <a href="/comptabilite/rapport-caisse/pdf/{{ r.id }}" class="btn btn-sm btn-outline" title="PDF">📄</a>
     <a href="/comptabilite/rapport-caisse/excel/{{ r.id }}" class="btn btn-sm btn-outline" title="Excel">📊</a>
 </td></tr>{% endfor %}</tbody></table></div></div></div>

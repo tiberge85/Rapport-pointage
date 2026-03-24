@@ -1,0 +1,65 @@
+{% extends "base.html" %}{% block title %}WannyGest - Bilan comptable{% endblock %}{% block content %}
+<style>@media print{.no-print{display:none!important}}</style>
+<div class="page-header no-print"><h1>📊 Bilan comptable mensuel</h1>
+<div style="display:flex;gap:6px">
+<a href="/comptabilite/bilan/pdf?month={{ data.month }}" class="btn btn-sm btn-outline">📄 PDF</a>
+<button class="btn btn-sm btn-outline" onclick="window.print()">🖨️ Imprimer</button>
+<a href="/comptabilite" class="btn btn-outline btn-sm">← Comptabilité</a>
+</div></div>
+
+<div class="no-print" style="margin-bottom:14px"><form method="get" style="display:flex;gap:8px;align-items:center">
+<input type="month" name="month" value="{{ data.month }}" style="padding:6px 10px;border:1.5px solid #ddd;border-radius:8px">
+<button type="submit" class="btn btn-primary btn-sm">Afficher</button></form></div>
+
+<h3 style="text-align:center;color:#44546A;margin-bottom:16px">Bilan du mois : {{ data.month }}</h3>
+
+<!-- KPIs -->
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #2e7d32"><div style="font-size:10px;color:#888">TOTAL ENTREES</div><div style="font-size:24px;font-weight:800;color:#2e7d32">{{ '{:,.0f}'.format(data.total_entrees) }} F</div></div>
+    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #c53030"><div style="font-size:10px;color:#888">TOTAL SORTIES</div><div style="font-size:24px;font-weight:800;color:#c53030">{{ '{:,.0f}'.format(data.total_sorties) }} F</div></div>
+    <div class="card" style="text-align:center;padding:16px;border-left:4px solid {% if data.solde >= 0 %}#2e7d32{% else %}#c53030{% endif %}"><div style="font-size:10px;color:#888">SOLDE</div><div style="font-size:24px;font-weight:800;color:{% if data.solde >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(data.solde) }} F</div></div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+    <!-- Entrées -->
+    <div class="card"><div class="card-header"><h3 style="color:#2e7d32">📈 Entrées</h3></div><div class="card-body">
+    <table style="width:100%;font-size:12px">
+    <tr><td>Factures payées</td><td style="text-align:right;font-weight:600;color:#2e7d32">{{ '{:,.0f}'.format(data.factures_payees) }} F</td></tr>
+    <tr><td>Entrées de caisse</td><td style="text-align:right;font-weight:600;color:#2e7d32">{{ '{:,.0f}'.format(data.caisse_entrees) }} F</td></tr>
+    <tr><td>Recettes banque</td><td style="text-align:right;font-weight:600;color:#2e7d32">{{ '{:,.0f}'.format(data.treso_recettes) }} F</td></tr>
+    <tr style="border-top:2px solid #2e7d32;font-weight:700"><td>TOTAL</td><td style="text-align:right;color:#2e7d32">{{ '{:,.0f}'.format(data.total_entrees) }} F</td></tr>
+    </table></div></div>
+    
+    <!-- Sorties -->
+    <div class="card"><div class="card-header"><h3 style="color:#c53030">📉 Sorties</h3></div><div class="card-body">
+    <table style="width:100%;font-size:12px">
+    <tr><td>Sorties de caisse</td><td style="text-align:right;font-weight:600;color:#c53030">{{ '{:,.0f}'.format(data.caisse_sorties) }} F</td></tr>
+    <tr><td>Dépenses banque</td><td style="text-align:right;font-weight:600;color:#c53030">{{ '{:,.0f}'.format(data.treso_depenses) }} F</td></tr>
+    <tr><td>Pièces de caisse</td><td style="text-align:right;font-weight:600;color:#c53030">{{ '{:,.0f}'.format(data.depenses) }} F</td></tr>
+    <tr style="border-top:2px solid #c53030;font-weight:700"><td>TOTAL</td><td style="text-align:right;color:#c53030">{{ '{:,.0f}'.format(data.total_sorties) }} F</td></tr>
+    </table></div></div>
+</div>
+
+<!-- Soldes bancaires -->
+{% if data.banks %}
+<div class="card"><div class="card-header"><h3>🏦 Soldes bancaires</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<thead><tr><th>Compte</th><th>Type</th><th>Sous-type</th><th style="text-align:right">Solde initial</th><th style="text-align:right">Solde actuel</th></tr></thead>
+<tbody>{% for b in data.banks %}<tr>
+<td><strong>{{ b.name }}</strong></td>
+<td>{{ b.type }}</td><td>{{ b.subtype or 'courant' }}</td>
+<td style="text-align:right">{{ '{:,.0f}'.format(b.initial_balance) }} F</td>
+<td style="text-align:right;font-weight:700;color:{% if b.current_balance >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(b.current_balance) }} F</td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% endif %}
+
+<!-- Détail factures du mois -->
+{% if data.inv_list %}
+<div class="card" style="margin-top:14px"><div class="card-header"><h3>📋 Factures du mois ({{ data.inv_list|length }})</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<thead><tr><th>Réf</th><th>Client</th><th>Objet</th><th style="text-align:right">Montant</th><th>Statut</th></tr></thead>
+<tbody>{% for i in data.inv_list %}<tr>
+<td><a href="/comptabilite/facture/view/{{ i.id }}">{{ i.reference }}</a></td><td>{{ i.client_name }}</td><td style="font-size:11px">{{ i.objet or '-' }}</td>
+<td style="text-align:right;font-weight:600">{{ '{:,.0f}'.format(i.amount) }} F</td>
+<td><span class="badge-status {% if i.status=='payee' %}sent{% else %}pending{% endif %}">{{ i.status }}</span></td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% endif %}
+{% endblock %}

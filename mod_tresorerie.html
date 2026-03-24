@@ -116,17 +116,19 @@
     <button class="btn btn-orange btn-sm" onclick="document.getElementById('addAccM').classList.add('active')">+ Nouveau compte</button>
 </div><div class="card-body">
 {% if accounts %}<div class="table-wrap"><table>
-<thead><tr><th>Nom du compte</th><th>Type</th><th>Banque</th><th>N° compte</th><th style="text-align:right">Solde initial</th><th style="text-align:right">Solde actuel</th><th>Statut</th><th>Actions</th></tr></thead>
+<thead><tr><th>Nom du compte</th><th>Type</th><th>Sous-type</th><th>Banque</th><th>N° compte</th><th>Sous-type</th><th>Sous-type</th><th style="text-align:right">Solde initial</th><th style="text-align:right">Solde actuel</th><th>Statut</th><th>Actions</th></tr></thead>
 <tbody>{% for a in accounts %}<tr>
 <td><strong>{{ a.name }}</strong></td>
-<td><span class="badge-status {% if a.type=='banque' %}sent{% elif a.type=='mobile_money' %}pending{% else %}{% endif %}">{{ a.type }}</span></td>
+<td><span class="badge-status {% if a.type=="banque" %}sent{% elif a.type=="mobile_money" %}pending{% else %}{% endif %}">{{ a.type }}</span></td>
+<td style="font-size:11px">{{ a.subtype or "courant" }}</td>
 <td>{{ a.bank_name or '-' }}</td>
-<td style="font-size:11px">{{ a.account_number or '-' }}</td>
+<td style="font-size:11px">{{ a.account_number or '-' }}</td><td><span class="badge-status {% if a.subtype=='epargne' %}sent{% else %}pending{% endif %}">{{ a.subtype or 'courant' }}</span></td>
+<td><span class="badge-status {% if a.subtype=='epargne' %}sent{% else %}pending{% endif %}">{{ a.subtype or 'courant' }}</span></td>
 <td style="text-align:right">{{ '{:,.0f}'.format(a.initial_balance) }} F</td>
 <td style="text-align:right;font-weight:700;color:{% if a.current_balance >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(a.current_balance) }} F</td>
 <td>{% if a.status=='actif' %}<span style="color:#2e7d32">● Actif</span>{% else %}<span style="color:#c53030">● Inactif</span>{% endif %}</td>
 <td style="white-space:nowrap">
-    <a href="#" class="btn btn-sm" style="color:#1565c0" onclick="editAccount({{ a.id }},'{{ a.name|replace("'","") }}','{{ a.type }}','{{ a.bank_name or "" }}','{{ a.account_number or "" }}',{{ a.initial_balance }},'{{ a.notes or "" }}','{{ a.status }}');return false">✏️</a>
+    <a href="#" class="btn btn-sm" style="color:#1565c0" onclick="editAccount({{ a.id }},'{{ a.name|replace("'","") }}','{{ a.type }}','{{ a.bank_name or "" }}','{{ a.account_number or "" }}',{{ a.initial_balance }},'{{ a.notes or "" }}','{{ a.status }}','{{ a.subtype or "courant" }}');return false">✏️</a>
     <a href="/tresorerie/account/delete/{{ a.id }}" class="btn btn-sm" style="color:#c53030" onclick="return confirm('Supprimer ce compte ?')">🗑️</a>
 </td>
 </tr>{% endfor %}</tbody></table></div>
@@ -139,7 +141,8 @@
 <!-- Modal: Ajouter un compte -->
 <div class="modal-bg" id="addAccM"><div class="modal"><h3>🏛️ Nouveau compte</h3><form method="post" action="/tresorerie/account/add">
 <div class="form-group"><label>Nom du compte *</label><input type="text" name="name" required placeholder="Ex: Caisse principale, SGBCI, BICICI..."></div>
-<div class="form-row"><div class="form-group"><label>Type</label><select name="type"><option value="caisse">Caisse</option><option value="banque">Banque</option><option value="mobile_money">Mobile Money</option></select></div>
+<div class="form-row"><div class="form-group"><label>Type</label><select name="type"><option value="caisse">Caisse</option><option value="banque">Banque</option></select></div>
+<div class="form-group"><label>Sous-type</label><select name="subtype"><option value="courant">Compte courant</option><option value="epargne">Compte épargne</option></select><option value="mobile_money">Mobile Money</option></select></div>
 <div class="form-group"><label>Nom de la banque</label><input type="text" name="bank_name" placeholder="SGBCI, BICICI..."></div></div>
 <div class="form-row"><div class="form-group"><label>N° de compte</label><input type="text" name="account_number" placeholder="CI..."></div>
 <div class="form-group"><label>Solde initial (FCFA) *</label><input type="number" name="initial_balance" step="1" min="0" value="0" required></div></div>
@@ -149,16 +152,20 @@
 <!-- Modal: Modifier un compte -->
 <div class="modal-bg" id="editAccM"><div class="modal"><h3 id="eaTitle">✏️ Modifier le compte</h3><form method="post" id="editAccForm">
 <div class="form-group"><label>Nom du compte *</label><input type="text" name="name" id="ea_name" required></div>
-<div class="form-row"><div class="form-group"><label>Type</label><select name="type" id="ea_type"><option value="caisse">Caisse</option><option value="banque">Banque</option><option value="mobile_money">Mobile Money</option></select></div>
+<div class="form-row"><div class="form-group"><label>Type</label><select name="type" id="ea_type"><option value="caisse">Caisse</option><option value="banque">Banque</option></select></div>
+<div class="form-group"><label>Sous-type</label><select name="subtype"><option value="courant">Compte courant</option><option value="epargne">Compte épargne</option></select><option value="mobile_money">Mobile Money</option></select></div>
 <div class="form-group"><label>Nom de la banque</label><input type="text" name="bank_name" id="ea_bank"></div></div>
 <div class="form-row"><div class="form-group"><label>N° de compte</label><input type="text" name="account_number" id="ea_number"></div>
 <div class="form-group"><label>Solde initial (FCFA)</label><input type="number" name="initial_balance" id="ea_balance" step="1" min="0"></div></div>
+<div class="form-row"><div class="form-group"><label>Statut</label><select name="subtype" id="ea_subtype"><option value="courant">Courant</option><option value="epargne">Épargne</option></select></div>
+<div class="form-group"><label>Sous-type</label><select name="subtype" id="ea_subtype"><option value="courant">Courant</option><option value="epargne">Épargne</option></select></div></div>
+<div class="form-row"><div class="form-group"><label>Statut</label><select name="subtype" id="ea_subtype"><option value="courant">Compte courant</option><option value="epargne">Compte épargne</option></select></div></div>
 <div class="form-row"><div class="form-group"><label>Statut</label><select name="status" id="ea_status"><option value="actif">Actif</option><option value="inactif">Inactif</option></select></div>
 <div class="form-group"><label>Notes</label><input type="text" name="notes" id="ea_notes"></div></div>
 <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div></form></div></div>
 
 <script>
-function editAccount(id, name, type, bank, number, balance, notes, status) {
+function editAccount(id, name, type, bank, number, balance, notes, status, subtype) {
     document.getElementById('editAccForm').action = '/tresorerie/account/edit/' + id;
     document.getElementById('eaTitle').textContent = '✏️ Modifier — ' + name;
     document.getElementById('ea_name').value = name;
@@ -168,6 +175,7 @@ function editAccount(id, name, type, bank, number, balance, notes, status) {
     document.getElementById('ea_balance').value = balance;
     document.getElementById('ea_notes').value = notes;
     document.getElementById('ea_status').value = status;
+    if (typeof arguments[8] !== 'undefined') document.getElementById('ea_subtype').value = arguments[8];
     document.getElementById('editAccM').classList.add('active');
 }
 </script>

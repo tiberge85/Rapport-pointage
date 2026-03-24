@@ -2085,3 +2085,18 @@ def migrate_v13():
         );
     ''')
     conn.commit(); conn.close()
+
+def migrate_v14():
+    conn = get_db()
+    try: conn.execute("ALTER TABLE bank_accounts ADD COLUMN subtype TEXT DEFAULT 'courant'")
+    except: pass
+    # Entries table for caisse
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS caisse_entrees (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference TEXT, date TEXT, source TEXT, montant REAL,
+            description TEXT, payment_method TEXT,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    conn.commit(); conn.close()

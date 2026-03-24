@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block title %}WannyGest - Modifier facture{% endblock %}{% block content %}
+<div class="page-header"><h1>✏️ Modifier — {{ inv.reference }}</h1><a href="/comptabilite/facture/view/{{ inv.id }}" class="btn btn-outline btn-sm">← Retour</a></div>
+<div class="card" style="max-width:700px"><div class="card-body"><form method="post">
+    <div class="form-row"><div class="form-group"><label>Client</label><input type="text" name="client_name" value="{{ inv.client_name or '' }}" required></div>
+    <div class="form-group"><label>Objet</label><input type="text" name="objet" value="{{ inv.objet or '' }}"></div></div>
+    <div class="form-row"><div class="form-group"><label>Montant HT</label><input type="number" name="total_ht" id="ht" step="1" min="0" value="{{ inv.total_ht or '' }}" oninput="calcTTC()"></div>
+    <div class="form-group"><label>TVA</label><input type="number" name="tva" id="tva" step="1" value="{{ inv.tva or '' }}" readonly></div>
+    <div class="form-group"><label>Montant TTC</label><input type="number" name="amount" id="ttc" step="1" value="{{ inv.amount or '' }}"><input type="hidden" name="total_ttc" id="ttc2" value="{{ inv.total_ttc or '' }}"></div></div>
+    <div class="form-row"><div class="form-group"><label>Échéance</label><input type="date" name="due_date" value="{{ inv.due_date or '' }}"></div>
+    <div class="form-group"><label>Paiement</label><select name="payment_method">{% for m in ['Virement','Espèces','Chèque','Mobile Money'] %}<option {% if inv.payment_method==m %}selected{% endif %}>{{ m }}</option>{% endfor %}</select></div></div>
+    <div class="form-group"><label>Description</label><textarea name="description" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px">{{ inv.description or '' }}</textarea></div>
+    <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px">{{ inv.notes or '' }}</textarea></div>
+    <div style="display:flex;gap:10px;margin-top:14px"><a href="/comptabilite/facture/view/{{ inv.id }}" class="btn btn-outline">Annuler</a><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div>
+</form></div></div>
+<script>function calcTTC(){var ht=parseFloat(document.getElementById('ht').value)||0;var tva=Math.round(ht*0.18);document.getElementById('tva').value=tva;document.getElementById('ttc').value=ht+tva;document.getElementById('ttc2').value=ht+tva}</script>
+{% endblock %}
