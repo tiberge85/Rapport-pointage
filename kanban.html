@@ -26,8 +26,8 @@
 <div class="kanban-header">
     <h1 style="font-size:20px">📋 Kanban</h1>
     <div style="display:flex;gap:6px">
-        <a href="/taches" class="btn btn-outline btn-sm">📋 Liste</a>
-        <a href="/taches/new" class="btn btn-primary btn-sm" onclick="return addTask()">+ Tâche</a>
+        <a href="/kanban" class="btn btn-outline btn-sm">📋 Liste</a>
+        <a href="/resp-projet/projets" class="btn btn-primary btn-sm" onclick="return addTask()">+ Tâche</a>
     </div>
 </div>
 
@@ -47,7 +47,8 @@
         {% for t in by_status[status] %}
         <div class="k-card {{ t.priority }}" draggable="true" id="card-{{ t.id }}"
              ondragstart="event.dataTransfer.setData('text/plain',{{ t.id }});this.classList.add('dragging')"
-             ondragend="this.classList.remove('dragging')">
+             ondragend="this.classList.remove('dragging')"
+             onclick="if(!event.target.closest('a'))window.location='/resp-projet/projet/{{ t.project_id }}'">
             <div class="k-title">{{ t.title }}</div>
             {% if t.description %}<div class="k-desc">{{ t.description[:80] }}{% if t.description|length > 80 %}...{% endif %}</div>{% endif %}
             <div class="k-tags">

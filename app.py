@@ -105,10 +105,18 @@ from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
 migrate_v16()
+from models import migrate_v17
+migrate_v17()
+from models import migrate_v18
+migrate_v18()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
 migrate_v16()
+from models import migrate_v17
+migrate_v17()
+from models import migrate_v18
+migrate_v18()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -3510,6 +3518,108 @@ def rh_annonces_delete(aid):
     flash("Annonce supprimée", "success"); return redirect(url_for('rh_annonces'))
 
 
+# ======================== MODULE IT ========================
+
+@app.route('/it')
+@permission_required('informatique')
+def it_dashboard():
+    conn = _gdb()
+    equip_total = conn.execute("SELECT COUNT(*) FROM it_equipment").fetchone()[0]
+    equip_actif = conn.execute("SELECT COUNT(*) FROM it_equipment WHERE status='actif'").fetchone()[0]
+    tickets_open = conn.execute("SELECT COUNT(*) FROM it_tickets WHERE status IN ('ouvert','en_cours')").fetchone()[0]
+    tickets_resolved = conn.execute("SELECT COUNT(*) FROM it_tickets WHERE status='resolu'").fetchone()[0]
+    tickets_recent = [dict(r) for r in conn.execute("""SELECT t.*, u.full_name as requester, u2.full_name as assignee
+        FROM it_tickets t LEFT JOIN users u ON t.requester_id=u.id LEFT JOIN users u2 ON t.assigned_to=u2.id
+        ORDER BY t.created_at DESC LIMIT 10""").fetchall()]
+    logs_recent = [dict(r) for r in conn.execute("SELECT * FROM it_logs ORDER BY created_at DESC LIMIT 10").fetchall()]
+    conn.close()
+    return render_template('it_dashboard.html', page='it', equip_total=equip_total, equip_actif=equip_actif,
+        tickets_open=tickets_open, tickets_resolved=tickets_resolved, tickets_recent=tickets_recent, logs_recent=logs_recent)
+
+@app.route('/it/parc')
+@permission_required('informatique')
+def it_parc():
+    conn = _gdb()
+    equipment = [dict(r) for r in conn.execute("""SELECT e.*, u.full_name as user_name FROM it_equipment e
+        LEFT JOIN users u ON e.assigned_to=u.id ORDER BY e.name""").fetchall()]
+    users = get_all_users()
+    conn.close()
+    return render_template('it_parc.html', page='it_parc', equipment=equipment, users=users)
+
+@app.route('/it/parc/add', methods=['POST'])
+@permission_required('informatique')
+def it_parc_add():
+    conn = _gdb()
+    conn.execute("""INSERT INTO it_equipment (name, type, brand, model, serial_number, assigned_to, location,
+        status, purchase_date, purchase_price, warranty_end, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (request.form.get('name',''), request.form.get('type',''), request.form.get('brand',''),
+         request.form.get('model',''), request.form.get('serial_number',''),
+         int(request.form.get('assigned_to',0) or 0) or None, request.form.get('location',''),
+         'actif', request.form.get('purchase_date',''),
+         float(request.form.get('purchase_price',0) or 0), request.form.get('warranty_end',''),
+         request.form.get('notes','')))
+    conn.commit(); conn.close()
+    flash("Équipement ajouté","success"); return redirect('/it/parc')
+
+@app.route('/it/tickets')
+@permission_required('informatique')
+def it_tickets():
+    tab = request.args.get('tab', 'ouvert')
+    conn = _gdb()
+    if tab == 'all':
+        tickets = [dict(r) for r in conn.execute("""SELECT t.*, u.full_name as requester, u2.full_name as assignee
+            FROM it_tickets t LEFT JOIN users u ON t.requester_id=u.id LEFT JOIN users u2 ON t.assigned_to=u2.id
+            ORDER BY t.created_at DESC""").fetchall()]
+    else:
+        tickets = [dict(r) for r in conn.execute("""SELECT t.*, u.full_name as requester, u2.full_name as assignee
+            FROM it_tickets t LEFT JOIN users u ON t.requester_id=u.id LEFT JOIN users u2 ON t.assigned_to=u2.id
+            WHERE t.status=? ORDER BY t.created_at DESC""", (tab,)).fetchall()]
+    stats = {
+        'ouvert': conn.execute("SELECT COUNT(*) FROM it_tickets WHERE status='ouvert'").fetchone()[0],
+        'en_cours': conn.execute("SELECT COUNT(*) FROM it_tickets WHERE status='en_cours'").fetchone()[0],
+        'resolu': conn.execute("SELECT COUNT(*) FROM it_tickets WHERE status='resolu'").fetchone()[0],
+    }
+    users = get_all_users()
+    equipment = [dict(r) for r in conn.execute("SELECT id, name FROM it_equipment ORDER BY name").fetchall()]
+    conn.close()
+    return render_template('it_tickets.html', page='it_tickets', tickets=tickets, tab=tab, stats=stats, users=users, equipment=equipment)
+
+@app.route('/it/tickets/add', methods=['POST'])
+@permission_required('informatique')
+def it_ticket_add():
+    conn = _gdb()
+    conn.execute("""INSERT INTO it_tickets (title, description, category, priority, status, requester_id, assigned_to, equipment_id)
+        VALUES (?,?,?,?,?,?,?,?)""",
+        (request.form.get('title',''), request.form.get('description',''),
+         request.form.get('category','incident'), request.form.get('priority','normal'),
+         'ouvert', session['user_id'],
+         int(request.form.get('assigned_to',0) or 0) or None,
+         int(request.form.get('equipment_id',0) or 0) or None))
+    conn.commit(); conn.close()
+    flash("Ticket créé","success"); return redirect('/it/tickets')
+
+@app.route('/it/tickets/<int:tid>/status/<status>')
+@permission_required('informatique')
+def it_ticket_status(tid, status):
+    conn = _gdb()
+    if status in ('ouvert','en_cours','resolu','ferme'):
+        updates = {'status': status}
+        if status == 'resolu': updates['resolved_at'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+        conn.execute(f"UPDATE it_tickets SET status=?, resolved_at=? WHERE id=?",
+            (status, updates.get('resolved_at',''), tid))
+        conn.commit()
+    conn.close()
+    flash("Ticket mis à jour","success"); return redirect('/it/tickets')
+
+@app.route('/it/securite')
+@permission_required('informatique')
+def it_securite():
+    conn = _gdb()
+    logs = [dict(r) for r in conn.execute("SELECT * FROM it_logs ORDER BY created_at DESC LIMIT 50").fetchall()]
+    login_logs = [dict(r) for r in conn.execute("SELECT * FROM activity_logs WHERE action LIKE '%Connexion%' ORDER BY created_at DESC LIMIT 20").fetchall()]
+    conn.close()
+    return render_template('it_securite.html', page='it_securite', logs=logs, login_logs=login_logs)
+
 # ======================== KANBAN ========================
 
 @app.route('/kanban')
@@ -3539,6 +3649,16 @@ def kanban():
     users = get_all_users()
     user_map = {u['id']: u['full_name'] for u in users}
     return render_template('kanban.html', page='kanban', by_status=by_status, users=users, user_map=user_map)
+
+@app.route('/taches')
+@login_required
+def taches_list():
+    return redirect(url_for('kanban'))
+
+@app.route('/taches/new')
+@login_required
+def taches_new():
+    return redirect('/resp-projet/projets')
 
 @app.route('/kanban/move/<int:tid>/<status>')
 @login_required

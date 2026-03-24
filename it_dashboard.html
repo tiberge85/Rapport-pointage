@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% block title %}WannyGest - IT{% endblock %}{% block content %}
+<div class="page-header"><h1>🖥️ Dashboard IT</h1></div>
+
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #1565c0"><div style="font-size:28px;font-weight:800;color:#1565c0">{{ equip_total }}</div><div style="font-size:10px;color:#888">Équipements</div></div>
+    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #2e7d32"><div style="font-size:28px;font-weight:800;color:#2e7d32">{{ equip_actif }}</div><div style="font-size:10px;color:#888">Actifs</div></div>
+    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #e8672a"><div style="font-size:28px;font-weight:800;color:#e8672a">{{ tickets_open }}</div><div style="font-size:10px;color:#888">Tickets ouverts</div></div>
+    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #2e7d32"><div style="font-size:28px;font-weight:800;color:#2e7d32">{{ tickets_resolved }}</div><div style="font-size:10px;color:#888">Résolus</div></div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+<div class="card"><div class="card-header"><h3>🛠️ Tickets récents</h3></div><div class="card-body" style="padding:0">
+{% if tickets_recent %}
+{% for t in tickets_recent %}
+<div style="padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:12px;display:flex;gap:8px;align-items:center">
+    <span class="badge-status {% if t.status=='resolu' %}sent{% elif t.status=='en_cours' %}pending{% endif %}" style="font-size:9px">{{ t.status }}</span>
+    <strong style="flex:1">{{ t.title }}</strong>
+    <span style="font-size:10px;color:#888">{{ t.requester or '-' }}</span>
+    <span class="k-tag {{ t.priority }}">{{ t.priority }}</span>
+</div>
+{% endfor %}
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucun ticket</p>{% endif %}
+</div></div>
+
+<div class="card"><div class="card-header"><h3>🔐 Dernières activités</h3></div><div class="card-body" style="padding:0">
+{% if logs_recent %}
+{% for l in logs_recent %}
+<div style="padding:8px 14px;border-bottom:1px solid #f0f0f0;font-size:11px">
+    <span style="color:{% if l.severity=='warning' %}#e8672a{% elif l.severity=='error' %}#c53030{% else %}#888{% endif %}">{{ l.severity|upper }}</span>
+    · {{ l.description }} <span style="float:right;color:#aaa">{{ l.created_at[:16] if l.created_at else '' }}</span>
+</div>
+{% endfor %}
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucun log</p>{% endif %}
+</div></div>
+</div>
+{% endblock %}

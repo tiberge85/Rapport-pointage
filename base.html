@@ -224,17 +224,15 @@
             {% endif %}
             
             {% if 'informatique' in permissions or 'projets' in permissions %}
-            <!-- Informatique & Projets -->
+            <!-- IT & Projets -->
             <div class="nav-section" id="sec-info">
-                <div class="nav-section-title" onclick="toggleSection('sec-info')">💻 INFORMATIQUE <span class="arrow">▼</span></div>
+                <div class="nav-section-title" onclick="toggleSection('sec-info')">🖥️ IT <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
-                    <a href="/projets" class="{% if page == 'projets' %}active{% endif %}">Projets</a>
-                    <a href="/taches" class="{% if page == 'taches' %}active{% endif %}">Tâches</a>
-                    <a href="/kanban" class="{% if page == 'kanban' %}active{% endif %}">Kanban</a>
-                    <a href="/tickets" class="{% if page == 'tickets' %}active{% endif %}">Tickets / Support</a>
-                    <a href="/centre-technique" class="{% if page == 'tech_center' %}active{% endif %}">Centre technique</a>
-                    <a href="/calendrier" class="{% if page == 'calendrier' %}active{% endif %}">Calendrier</a>
-                    <a href="/todos" class="{% if page == 'todos' %}active{% endif %}">Mes Todos</a>
+                    <a href="/it" class="{% if page == 'it' %}active{% endif %}">📊 Dashboard IT</a>
+                    <a href="/it/parc" class="{% if page == 'it_parc' %}active{% endif %}">🖥️ Parc informatique</a>
+                    <a href="/it/tickets" class="{% if page == 'it_tickets' %}active{% endif %}">🛠️ Helpdesk</a>
+                    <a href="/it/securite" class="{% if page == 'it_securite' %}active{% endif %}">🔐 Sécurité</a>
+                    <a href="/centre-technique" class="{% if page == 'tech_center' %}active{% endif %}">🏗️ Centre technique</a>
                 </div>
             </div>
             {% endif %}

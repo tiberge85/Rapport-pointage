@@ -2229,3 +2229,42 @@ def migrate_v16():
         );
     ''')
     conn.commit(); conn.close()
+
+def migrate_v17():
+    conn = get_db()
+    for col in ['last_contact', 'country']:
+        try: conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT DEFAULT ''")
+        except: pass
+    conn.commit(); conn.close()
+
+def migrate_v18():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS it_equipment (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, type TEXT, brand TEXT, model TEXT,
+            serial_number TEXT, assigned_to INTEGER, location TEXT,
+            status TEXT DEFAULT 'actif', purchase_date TEXT,
+            purchase_price REAL DEFAULT 0, warranty_end TEXT,
+            notes TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS it_tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL, description TEXT,
+            category TEXT DEFAULT 'incident',
+            priority TEXT DEFAULT 'normal',
+            status TEXT DEFAULT 'ouvert',
+            requester_id INTEGER, assigned_to INTEGER,
+            equipment_id INTEGER,
+            resolution TEXT, resolved_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS it_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT, description TEXT,
+            user_id INTEGER, ip_address TEXT,
+            severity TEXT DEFAULT 'info',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    conn.commit(); conn.close()
