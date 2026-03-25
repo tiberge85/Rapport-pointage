@@ -20,7 +20,7 @@ from flask import (Flask, render_template, request, send_file, flash,
 from werkzeug.utils import secure_filename
 
 from rapport_core import extract_from_excel, generate_full_pdf
-from merge_presence import generate_presence_xlsx
+from rapport_core import generate_presence_xlsx
 from models import (init_db, create_user, authenticate_user, get_user_by_id,
                     get_all_users, update_user, delete_user,
                     create_client, get_all_clients, get_client_by_id,
@@ -44,7 +44,7 @@ from models import (init_db, create_user, authenticate_user, get_user_by_id,
                     update_devis_status, get_devis_stats)
 from devis_generator import generate_devis_pdf
 
-app = Flask(__name__, template_folder=BASE_DIR, static_folder=BASE_DIR, static_url_path='/static')
+app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'), static_folder=BASE_DIR, static_url_path='/static')
 app.secret_key = os.environ.get('SECRET_KEY', 'ramya-tech-2026-secret-v3')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 PERSISTENT_DIR = os.environ.get('PERSISTENT_DIR', BASE_DIR)
@@ -1052,7 +1052,7 @@ def contrats_delete(cid):
 # ======================== COMPARAISON MENSUELLE ========================
 
 @app.route('/comparaison')
-@login_required
+@permission_required('traitement')
 def comparaison_page():
     stats = get_client_monthly_stats()
     # Collect all months
@@ -1066,7 +1066,7 @@ def comparaison_page():
 # ======================== ALERTES ========================
 
 @app.route('/alertes')
-@login_required
+@permission_required('traitement')
 def alertes_page():
     # Analyser les derniers rapports pour trouver les alertes
     jobs = get_all_jobs()
@@ -2299,7 +2299,7 @@ def visites_new():
     return render_template('visite_new.html', page='visites', clients=clients)
 
 @app.route('/visites/<int:vid>')
-@login_required
+@permission_required('visites')
 def visite_detail(vid):
     visit = get_visit_by_id(vid)
     if not visit:
@@ -2465,7 +2465,7 @@ def devis_new():
     return render_template('devis_new.html', page='devis', clients=clients, stock_items=stock_items)
 
 @app.route('/devis/pdf/<int:did>')
-@login_required
+@permission_required('proforma')
 def devis_pdf(did):
     devis = get_devis_by_id(did)
     if not devis:
@@ -2572,7 +2572,7 @@ def devis_duplicate(did):
     return redirect(url_for('devis_page'))
 
 @app.route('/devis/preview/<int:did>')
-@login_required
+@permission_required('proforma')
 def devis_preview(did):
     devis = get_devis_by_id(did)
     if not devis: return "Non trouvé", 404
@@ -2649,29 +2649,53 @@ def rh_personnel_edit(eid):
         flash("Employé non trouvé", "error")
         return redirect(url_for('rh_personnel'))
     if request.method == 'POST':
-        fields = {}
-        for key in ['first_name','last_name','matricule','email','tel','position','department',
-                     'hire_date','contract_type','insurance','insurance_number',
-                     'emergency_contact','emergency_tel','code_rh','birth_date','gender','blood_type',
-                     'birth_place','birth_city','civil_status','nationality','religion',
-                     'id_type','id_expiry','id_place','resident','address','education_level',
-                     'work_location','bank_account','bank_name_emp','bank_holder',
-                     'fiscal_code','hourly_rate','facebook','linkedin','skype',
-                     'direction','email_signature','other_info','status']:
-            fields[key] = request.form.get(key, '')
-        fields['salary'] = float(request.form.get('salary', 0) or 0)
-        update_employee(eid, **fields)
-        # Photo
-        if 'photo' in request.files and request.files['photo'].filename:
-            photo = request.files['photo']
-            fname = f"emp_{eid}_{secure_filename(photo.filename)}"
-            photo_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'photos')
-            os.makedirs(photo_dir, exist_ok=True)
-            photo.save(os.path.join(photo_dir, fname))
-            update_employee(eid, photo=fname)
-        flash("Employé modifié", "success")
+        try:
+            fields = {}
+            for key in ['first_name','last_name','matricule','email','tel','position','department',
+                         'hire_date','contract_type','insurance','insurance_number',
+                         'emergency_contact','emergency_tel','code_rh','birth_date','gender','blood_type',
+                         'birth_place','birth_city','civil_status','nationality','religion',
+                         'id_type','id_expiry','id_place','resident','address','education_level',
+                         'work_location','bank_account','bank_name_emp','bank_holder',
+                         'fiscal_code','hourly_rate','facebook','linkedin','skype',
+                         'direction','email_signature','other_info','status']:
+                fields[key] = request.form.get(key, '')
+            fields['salary'] = float(request.form.get('salary', 0) or 0)
+            # Convert empty unique fields to None
+            for uf in ['matricule', 'email']:
+                if not fields.get(uf): fields[uf] = None
+            update_employee(eid, **fields)
+            # Photo
+            if 'photo' in request.files and request.files['photo'].filename:
+                photo = request.files['photo']
+                from werkzeug.utils import secure_filename as _sf
+                fname = f"emp_{eid}_{_sf(photo.filename)}"
+                photo_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'photos')
+                os.makedirs(photo_dir, exist_ok=True)
+                photo.save(os.path.join(photo_dir, fname))
+                update_employee(eid, photo=fname)
+            flash("Employé modifié", "success")
+        except Exception as e:
+            flash(f"Erreur: {str(e)}", "error")
         return redirect(url_for('rh_personnel'))
     return render_template('rh_personnel_edit.html', page='personnel', emp=emp)
+
+@app.route('/rh/personnel/delete/<int:eid>')
+@permission_required('fichiers')
+def rh_personnel_delete(eid):
+    conn = _gdb()
+    emp = conn.execute("SELECT first_name, last_name FROM employees WHERE id=?", (eid,)).fetchone()
+    if emp:
+        conn.execute("DELETE FROM employees WHERE id=?", (eid,))
+        conn.commit()
+        user = get_user_by_id(session['user_id'])
+        log_activity(session['user_id'], user['full_name'] if user else '?', 'RH',
+                    f"Employé supprimé: {emp['first_name']} {emp['last_name']}", request.remote_addr)
+        flash("Employé supprimé", "success")
+    else:
+        flash("Employé non trouvé", "error")
+    conn.close()
+    return redirect(url_for('rh_personnel'))
 
 @app.route('/rh/conges')
 @permission_required('fichiers')
@@ -2953,7 +2977,7 @@ def clients_import():
 # ======================== CENTRE TECHNIQUE ========================
 
 @app.route('/centre-technique')
-@login_required
+@permission_required('centre_technique')
 def tech_center():
     from models import db_get_all, db_insert, db_update
     systems = db_get_all('tech_center', order='next_maintenance ASC')
@@ -2976,7 +3000,7 @@ def tech_center_add():
     return redirect(url_for('tech_center'))
 
 @app.route('/centre-technique/view/<int:sid>')
-@login_required
+@permission_required('centre_technique')
 def tech_center_view(sid):
     from models import db_get_by_id
     system = db_get_by_id('tech_center', sid)
@@ -3584,6 +3608,20 @@ def tracking_vehicule_edit(vid):
     conn.close()
     return render_template('tracking_vehicule_edit.html', page='tracking_vehicules', vehicle=dict(v))
 
+@app.route('/tracking/vehicules/delete/<int:vid>')
+@permission_required('tracking')
+def tracking_vehicule_delete(vid):
+    conn = _gdb()
+    v = conn.execute("SELECT immatriculation FROM tracking_vehicles WHERE id=?", (vid,)).fetchone()
+    if v:
+        conn.execute("DELETE FROM tracking_history WHERE vehicle_id=?", (vid,))
+        conn.execute("DELETE FROM tracking_alerts WHERE vehicle_id=?", (vid,))
+        conn.execute("DELETE FROM tracking_vehicles WHERE id=?", (vid,))
+        conn.commit()
+        flash(f"Véhicule {v['immatriculation']} supprimé", "success")
+    conn.close()
+    return redirect('/tracking/vehicules')
+
 @app.route('/tracking/vehicules/view/<int:vid>')
 @permission_required('tracking')
 def tracking_vehicule_view(vid):
@@ -3751,7 +3789,7 @@ def it_securite():
 # ======================== KANBAN ========================
 
 @app.route('/kanban')
-@login_required
+@permission_required('resp_projet')
 def kanban():
     from models import db_get_all, get_all_users, get_db
     user = get_user_by_id(session['user_id'])
