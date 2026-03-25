@@ -182,6 +182,19 @@
             </div>
             {% endif %}
             
+            {% if 'tracking' in permissions or 'admin' in permissions %}
+            <!-- Tracking GPS -->
+            <div class="nav-section" id="sec-tracking">
+                <div class="nav-section-title" onclick="toggleSection('sec-tracking')">📡 TRACKING GPS <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/tracking" class="{% if page == 'tracking' %}active{% endif %}">📊 Dashboard</a>
+                    <a href="/tracking/vehicules" class="{% if page == 'tracking_vehicules' %}active{% endif %}">🚗 Véhicules</a>
+                    <a href="/tracking/carte" class="{% if page == 'tracking_carte' %}active{% endif %}">🗺️ Carte</a>
+                    <a href="/tracking/alertes" class="{% if page == 'tracking_alertes' %}active{% endif %}">🔔 Alertes</a>
+                </div>
+            </div>
+            {% endif %}
+            
             {% if 'fichiers' in permissions %}
             <!-- Gestion RH -->
             <div class="nav-section" id="sec-rh">

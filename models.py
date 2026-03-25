@@ -196,8 +196,8 @@ def init_db():
     
     # Permissions par défaut — tous les rôles
     default_perms = {
-        'admin': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat'],
-        'dg': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat'],
+        'admin': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking'],
+        'dg': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking'],
         'rh': ['fichiers', 'clients', 'dashboard', 'envoyer', 'contrats', 'rapports_j', 'chat'],
         'technicien': ['traitement', 'dashboard', 'visites', 'rapports_j', 'centre_technique', 'chat'],
         'commercial': ['dashboard', 'clients', 'clients_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'contrats', 'rapports_j', 'chat'],
@@ -854,17 +854,27 @@ def get_employee_by_id(eid):
     return dict(e) if e else None
 
 def create_employee(**kwargs):
+    # Convert empty unique fields to None to avoid UNIQUE constraint on empty strings
+    for unique_field in ['matricule', 'email']:
+        if unique_field in kwargs and not kwargs[unique_field]:
+            kwargs[unique_field] = None
     conn = get_db()
-    cols = ', '.join(kwargs.keys())
-    placeholders = ', '.join(['?' for _ in kwargs])
-    conn.execute(f"INSERT INTO employees ({cols}) VALUES ({placeholders})", list(kwargs.values()))
-    conn.commit()
+    # Filter kwargs to only include columns that exist in the table
+    existing_cols = set(r['name'] for r in conn.execute("PRAGMA table_info(employees)").fetchall())
+    filtered = {k: v for k, v in kwargs.items() if k in existing_cols}
+    if filtered:
+        cols = ', '.join(filtered.keys())
+        placeholders = ', '.join(['?' for _ in filtered])
+        conn.execute(f"INSERT INTO employees ({cols}) VALUES ({placeholders})", list(filtered.values()))
+        conn.commit()
     conn.close()
 
 def update_employee(eid, **kwargs):
     conn = get_db()
+    existing_cols = set(r['name'] for r in conn.execute("PRAGMA table_info(employees)").fetchall())
     for k, v in kwargs.items():
-        conn.execute(f"UPDATE employees SET {k}=? WHERE id=?", (v, eid))
+        if k in existing_cols:
+            conn.execute(f"UPDATE employees SET {k}=? WHERE id=?", (v, eid))
     conn.commit()
     conn.close()
 
@@ -2285,4 +2295,47 @@ def migrate_v19():
     for col in new_cols:
         try: conn.execute(f"ALTER TABLE employees ADD COLUMN {col} TEXT DEFAULT ''")
         except: pass
+    conn.commit(); conn.close()
+
+def migrate_v20():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS tracking_vehicles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            immatriculation TEXT NOT NULL,
+            marque TEXT, modele TEXT, type TEXT DEFAULT 'voiture',
+            couleur TEXT, annee TEXT,
+            proprietaire TEXT, tel_proprietaire TEXT,
+            gps_device_id TEXT, gps_brand TEXT DEFAULT 'Concox',
+            gps_model TEXT, gps_sim TEXT, gps_imei TEXT,
+            installation_date TEXT, installation_tech TEXT,
+            status TEXT DEFAULT 'actif',
+            last_lat REAL, last_lng REAL, last_speed REAL DEFAULT 0,
+            last_address TEXT, last_update TEXT,
+            notes TEXT, created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS tracking_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_id INTEGER, lat REAL, lng REAL,
+            speed REAL DEFAULT 0, heading REAL DEFAULT 0,
+            address TEXT, event_type TEXT DEFAULT 'position',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (vehicle_id) REFERENCES tracking_vehicles(id)
+        );
+        CREATE TABLE IF NOT EXISTS tracking_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_id INTEGER, alert_type TEXT,
+            message TEXT, lat REAL, lng REAL,
+            acknowledged INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (vehicle_id) REFERENCES tracking_vehicles(id)
+        );
+        CREATE TABLE IF NOT EXISTS tracking_geofences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT, lat REAL, lng REAL, radius REAL DEFAULT 500,
+            vehicle_id INTEGER, active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
     conn.commit(); conn.close()

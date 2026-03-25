@@ -111,6 +111,8 @@ from models import migrate_v18
 migrate_v18()
 from models import migrate_v19
 migrate_v19()
+from models import migrate_v20
+migrate_v20()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -121,6 +123,8 @@ from models import migrate_v18
 migrate_v18()
 from models import migrate_v19
 migrate_v19()
+from models import migrate_v20
+migrate_v20()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -135,7 +139,7 @@ ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin',
                    'envoyer', 'logs', 
                    'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit',
                    'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis',
-                   'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat']
+                   'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking']
 
 # Permission categories for admin display
 PERM_CATEGORIES = {
@@ -2610,7 +2614,11 @@ def rh_personnel_add():
                      'direction','email_signature','other_info','status']:
             fields[key] = request.form.get(key, '')
         fields['salary'] = float(request.form.get('salary', 0) or 0)
-        create_employee(**fields)
+        try:
+            create_employee(**fields)
+        except Exception as e:
+            flash(f"Erreur : {str(e)}", "error")
+            return redirect('/rh/personnel/add')
         # Get new employee ID for photo
         conn = get_db()
         new_emp = conn.execute("SELECT id FROM employees ORDER BY id DESC LIMIT 1").fetchone()
@@ -3510,6 +3518,133 @@ def rh_annonces_delete(aid):
     conn.commit(); conn.close()
     flash("Annonce supprimée", "success"); return redirect(url_for('rh_annonces'))
 
+
+# ======================== MODULE TRACKING GPS ========================
+
+@app.route('/tracking')
+@permission_required('tracking')
+def tracking_dashboard():
+    conn = _gdb()
+    vehicles = [dict(r) for r in conn.execute("SELECT * FROM tracking_vehicles ORDER BY status, immatriculation").fetchall()]
+    actifs = len([v for v in vehicles if v['status'] == 'actif'])
+    en_mouvement = len([v for v in vehicles if v.get('last_speed',0) and float(v.get('last_speed',0) or 0) > 2])
+    alerts_new = conn.execute("SELECT COUNT(*) FROM tracking_alerts WHERE acknowledged=0").fetchone()[0]
+    recent_alerts = [dict(r) for r in conn.execute("""SELECT a.*, v.immatriculation, v.marque 
+        FROM tracking_alerts a LEFT JOIN tracking_vehicles v ON a.vehicle_id=v.id
+        ORDER BY a.created_at DESC LIMIT 10""").fetchall()]
+    conn.close()
+    return render_template('tracking_dashboard.html', page='tracking', vehicles=vehicles,
+        actifs=actifs, en_mouvement=en_mouvement, alerts_new=alerts_new, recent_alerts=recent_alerts)
+
+@app.route('/tracking/vehicules')
+@permission_required('tracking')
+def tracking_vehicules():
+    conn = _gdb()
+    vehicles = [dict(r) for r in conn.execute("""SELECT v.*, u.full_name as tech_name 
+        FROM tracking_vehicles v LEFT JOIN users u ON v.created_by=u.id
+        ORDER BY v.created_at DESC""").fetchall()]
+    conn.close()
+    return render_template('tracking_vehicules.html', page='tracking_vehicules', vehicles=vehicles)
+
+@app.route('/tracking/vehicules/add', methods=['POST'])
+@permission_required('tracking')
+def tracking_vehicule_add():
+    conn = _gdb()
+    conn.execute("""INSERT INTO tracking_vehicles (immatriculation, marque, modele, type, couleur, annee,
+        proprietaire, tel_proprietaire, gps_device_id, gps_brand, gps_model, gps_sim, gps_imei,
+        installation_date, installation_tech, notes, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (request.form.get('immatriculation',''), request.form.get('marque',''),
+         request.form.get('modele',''), request.form.get('type','voiture'),
+         request.form.get('couleur',''), request.form.get('annee',''),
+         request.form.get('proprietaire',''), request.form.get('tel_proprietaire',''),
+         request.form.get('gps_device_id',''), request.form.get('gps_brand','Concox'),
+         request.form.get('gps_model',''), request.form.get('gps_sim',''),
+         request.form.get('gps_imei',''), request.form.get('installation_date',''),
+         request.form.get('installation_tech',''), request.form.get('notes',''),
+         session['user_id']))
+    conn.commit(); conn.close()
+    flash("Véhicule ajouté","success"); return redirect('/tracking/vehicules')
+
+@app.route('/tracking/vehicules/edit/<int:vid>', methods=['GET','POST'])
+@permission_required('tracking')
+def tracking_vehicule_edit(vid):
+    conn = _gdb()
+    v = conn.execute("SELECT * FROM tracking_vehicles WHERE id=?", (vid,)).fetchone()
+    if not v: flash("Non trouvé","error"); return redirect('/tracking/vehicules')
+    if request.method == 'POST':
+        for col in ['immatriculation','marque','modele','type','couleur','annee',
+                     'proprietaire','tel_proprietaire','gps_device_id','gps_brand',
+                     'gps_model','gps_sim','gps_imei','installation_date',
+                     'installation_tech','status','notes']:
+            val = request.form.get(col, '')
+            conn.execute(f"UPDATE tracking_vehicles SET {col}=? WHERE id=?", (val, vid))
+        conn.commit(); conn.close()
+        flash("Véhicule modifié","success"); return redirect('/tracking/vehicules')
+    conn.close()
+    return render_template('tracking_vehicule_edit.html', page='tracking_vehicules', vehicle=dict(v))
+
+@app.route('/tracking/vehicules/view/<int:vid>')
+@permission_required('tracking')
+def tracking_vehicule_view(vid):
+    conn = _gdb()
+    v = conn.execute("SELECT * FROM tracking_vehicles WHERE id=?", (vid,)).fetchone()
+    if not v: flash("Non trouvé","error"); return redirect('/tracking/vehicules')
+    history = [dict(r) for r in conn.execute(
+        "SELECT * FROM tracking_history WHERE vehicle_id=? ORDER BY created_at DESC LIMIT 50", (vid,)).fetchall()]
+    alerts = [dict(r) for r in conn.execute(
+        "SELECT * FROM tracking_alerts WHERE vehicle_id=? ORDER BY created_at DESC LIMIT 20", (vid,)).fetchall()]
+    conn.close()
+    return render_template('tracking_vehicule_view.html', page='tracking_vehicules', vehicle=dict(v), history=history, alerts=alerts)
+
+@app.route('/tracking/carte')
+@permission_required('tracking')
+def tracking_carte():
+    conn = _gdb()
+    vehicles = [dict(r) for r in conn.execute(
+        "SELECT * FROM tracking_vehicles WHERE status='actif' AND last_lat IS NOT NULL ORDER BY immatriculation").fetchall()]
+    conn.close()
+    return render_template('tracking_carte.html', page='tracking_carte', vehicles=vehicles)
+
+@app.route('/tracking/alertes')
+@permission_required('tracking')
+def tracking_alertes():
+    conn = _gdb()
+    alerts = [dict(r) for r in conn.execute("""SELECT a.*, v.immatriculation, v.marque, v.modele
+        FROM tracking_alerts a LEFT JOIN tracking_vehicles v ON a.vehicle_id=v.id
+        ORDER BY a.created_at DESC LIMIT 100""").fetchall()]
+    conn.close()
+    return render_template('tracking_alertes.html', page='tracking_alertes', alerts=alerts)
+
+@app.route('/tracking/alertes/<int:aid>/ack')
+@permission_required('tracking')
+def tracking_alert_ack(aid):
+    conn = _gdb()
+    conn.execute("UPDATE tracking_alerts SET acknowledged=1 WHERE id=?", (aid,))
+    conn.commit(); conn.close()
+    flash("Alerte acquittée","success"); return redirect('/tracking/alertes')
+
+@app.route('/tracking/position/update', methods=['POST'])
+def tracking_position_update():
+    """API endpoint pour recevoir les positions GPS (depuis les balises ou un serveur intermédiaire)."""
+    data = request.get_json(silent=True) or {}
+    device_id = data.get('device_id','')
+    if not device_id: return jsonify({'error': 'device_id requis'}), 400
+    conn = _gdb()
+    v = conn.execute("SELECT id FROM tracking_vehicles WHERE gps_device_id=?", (device_id,)).fetchone()
+    if not v: conn.close(); return jsonify({'error': 'device inconnu'}), 404
+    lat = float(data.get('lat',0)); lng = float(data.get('lng',0)); speed = float(data.get('speed',0))
+    addr = data.get('address','')
+    conn.execute("UPDATE tracking_vehicles SET last_lat=?, last_lng=?, last_speed=?, last_address=?, last_update=? WHERE id=?",
+        (lat, lng, speed, addr, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), v['id']))
+    conn.execute("INSERT INTO tracking_history (vehicle_id, lat, lng, speed, address) VALUES (?,?,?,?,?)",
+        (v['id'], lat, lng, speed, addr))
+    # Alert: excès de vitesse
+    if speed > 120:
+        conn.execute("INSERT INTO tracking_alerts (vehicle_id, alert_type, message, lat, lng) VALUES (?,?,?,?,?)",
+            (v['id'], 'vitesse', f'Excès de vitesse: {speed:.0f} km/h', lat, lng))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
 
 # ======================== MODULE IT ========================
 
