@@ -46,13 +46,18 @@ from rapport_core import generate_devis_pdf
 
 app = Flask(__name__, template_folder=BASE_DIR, static_folder=BASE_DIR, static_url_path='/static')
 app.secret_key = os.environ.get('SECRET_KEY', 'ramya-tech-2026-secret-v3')
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 PERSISTENT_DIR = os.environ.get('PERSISTENT_DIR', BASE_DIR)
 app.config['UPLOAD_FOLDER'] = os.path.join(PERSISTENT_DIR, 'uploads')
 app.config['FILES_FOLDER'] = os.path.join(PERSISTENT_DIR, 'files')
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['FILES_FOLDER'], exist_ok=True)
+
+@app.errorhandler(413)
+def too_large(e):
+    flash("Fichier trop volumineux. Taille max : 50 Mo.", "error")
+    return redirect(request.referrer or '/dashboard'), 302
 
 init_db()
 
@@ -115,6 +120,8 @@ from models import migrate_v20
 migrate_v20()
 from models import migrate_v21
 migrate_v21()
+from models import migrate_v22
+migrate_v22()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -125,10 +132,6 @@ from models import migrate_v18
 migrate_v18()
 from models import migrate_v19
 migrate_v19()
-from models import migrate_v20
-migrate_v20()
-from models import migrate_v21
-migrate_v21()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -2638,6 +2641,9 @@ def rh_personnel_add():
                     fname = f"emp_{new_emp['id']}{ext}"
                     f.save(os.path.join(photo_dir, fname))
                     update_employee(new_emp['id'], photo=fname)
+        # Handle file attachments (CV, contrat, diplômes...)
+        if new_emp:
+            _save_employee_files(new_emp['id'], request.files.getlist('files'))
         user = get_user_by_id(session['user_id'])
         log_activity(session['user_id'], user['full_name'] if user else '?', 'RH',
                     f"Employé ajouté: {request.form.get('first_name','')} {request.form.get('last_name','')}", request.remote_addr)
@@ -2678,11 +2684,18 @@ def rh_personnel_edit(eid):
                 os.makedirs(photo_dir, exist_ok=True)
                 photo.save(os.path.join(photo_dir, fname))
                 update_employee(eid, photo=fname)
+            # Handle file attachments
+            _save_employee_files(eid, request.files.getlist('files'))
             flash("Employé modifié", "success")
         except Exception as e:
             flash(f"Erreur: {str(e)}", "error")
         return redirect(url_for('rh_personnel'))
-    return render_template('rh_personnel_edit.html', page='personnel', emp=emp)
+    # Load attachments
+    conn = _gdb()
+    attachments = [dict(r) for r in conn.execute(
+        "SELECT * FROM employee_attachments WHERE employee_id=? ORDER BY created_at DESC", (eid,)).fetchall()]
+    conn.close()
+    return render_template('rh_personnel_edit.html', page='personnel', emp=emp, attachments=attachments)
 
 @app.route('/rh/personnel/delete/<int:eid>')
 @permission_required('fichiers')
@@ -2700,6 +2713,67 @@ def rh_personnel_delete(eid):
         flash("Employé non trouvé", "error")
     conn.close()
     return redirect(url_for('rh_personnel'))
+
+def _save_employee_files(emp_id, files):
+    """Save uploaded files for an employee."""
+    from werkzeug.utils import secure_filename as _sf
+    conn = _gdb()
+    attach_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'employees', str(emp_id))
+    os.makedirs(attach_dir, exist_ok=True)
+    for f in files:
+        if f and f.filename:
+            fname = f"{int(datetime.now().timestamp())}_{_sf(f.filename)}"
+            fpath = os.path.join(attach_dir, fname)
+            f.save(fpath)
+            ext = os.path.splitext(f.filename)[1].lower()
+            cat = 'cv' if 'cv' in f.filename.lower() else 'contrat' if 'contrat' in f.filename.lower() else 'diplome' if 'diplom' in f.filename.lower() else 'cni' if 'cni' in f.filename.lower() or 'identit' in f.filename.lower() else 'autre'
+            conn.execute("""INSERT INTO employee_attachments (employee_id, file_name, file_path, file_type, file_size, category, uploaded_by)
+                VALUES (?,?,?,?,?,?,?)""",
+                (emp_id, f.filename, fname, ext, os.path.getsize(fpath), cat, session.get('user_id')))
+    conn.commit(); conn.close()
+
+@app.route('/rh/personnel/<int:eid>/files')
+@permission_required('fichiers')
+def rh_personnel_files(eid):
+    """View employee attachments page."""
+    emp = get_employee_by_id(eid)
+    if not emp: flash("Employé non trouvé","error"); return redirect('/rh/personnel')
+    conn = _gdb()
+    attachments = [dict(r) for r in conn.execute(
+        "SELECT * FROM employee_attachments WHERE employee_id=? ORDER BY created_at DESC", (eid,)).fetchall()]
+    conn.close()
+    return render_template('rh_personnel_edit.html', page='personnel', emp=emp, attachments=attachments, tab='pieces')
+
+@app.route('/rh/personnel/file/<int:fid>/download')
+@permission_required('fichiers')
+def rh_personnel_file_download(fid):
+    conn = _gdb()
+    att = conn.execute("SELECT * FROM employee_attachments WHERE id=?", (fid,)).fetchone()
+    conn.close()
+    if not att: flash("Fichier non trouvé","error"); return redirect('/rh/personnel')
+    fpath = os.path.join(app.config['UPLOAD_FOLDER'], 'employees', str(att['employee_id']), att['file_path'])
+    if os.path.exists(fpath):
+        return send_file(fpath, as_attachment=True, download_name=att['file_name'])
+    flash("Fichier introuvable sur le serveur","error")
+    return redirect(f'/rh/personnel/edit/{att["employee_id"]}')
+
+@app.route('/rh/personnel/file/<int:fid>/delete')
+@permission_required('fichiers')
+def rh_personnel_file_delete(fid):
+    conn = _gdb()
+    att = conn.execute("SELECT * FROM employee_attachments WHERE id=?", (fid,)).fetchone()
+    if att:
+        fpath = os.path.join(app.config['UPLOAD_FOLDER'], 'employees', str(att['employee_id']), att['file_path'])
+        try: os.remove(fpath)
+        except: pass
+        conn.execute("DELETE FROM employee_attachments WHERE id=?", (fid,))
+        conn.commit()
+        flash("Fichier supprimé","success")
+        eid = att['employee_id']
+    else:
+        flash("Fichier non trouvé","error"); eid = 0
+    conn.close()
+    return redirect(f'/rh/personnel/edit/{eid}' if eid else '/rh/personnel')
 
 @app.route('/rh/conges')
 @permission_required('fichiers')
@@ -2950,6 +3024,14 @@ def rh_personnel_photo(eid):
 @app.route('/uploads/photos/<path:filename>')
 def employee_photo(filename):
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'photos'), filename)
+
+@app.route('/uploads/employees/<path:filename>')
+def employee_file_serve(filename):
+    return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'employees'), filename)
+
+@app.route('/uploads/chat_files/<path:filename>')
+def chat_file_serve(filename):
+    return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'chat_files'), filename)
 
 # ======================== IMPORT CLIENTS EXCEL ========================
 

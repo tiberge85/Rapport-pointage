@@ -2391,3 +2391,21 @@ def migrate_v21():
     except: pass
     
     conn.commit(); conn.close()
+
+def migrate_v22():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS employee_attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            file_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_type TEXT DEFAULT '',
+            file_size INTEGER DEFAULT 0,
+            category TEXT DEFAULT 'autre',
+            uploaded_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees(id)
+        );
+    ''')
+    conn.commit(); conn.close()

@@ -119,8 +119,29 @@
 
 <!-- PIÈCES -->
 <div class="emp-section" id="tab-pieces">
-<div class="form-group"><label>📎 Ajouter des documents</label>
+{% if attachments %}
+<div style="margin-bottom:14px">
+    <div style="font-size:12px;font-weight:600;color:#1a3a5c;margin-bottom:8px">📁 Documents enregistrés ({{ attachments|length }})</div>
+    <div style="display:grid;gap:6px">
+    {% for att in attachments %}
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#f8faf9;border-radius:8px;border:1px solid #e8e8e8">
+        <span style="font-size:20px">{% if att.file_type in ('.pdf',) %}📄{% elif att.file_type in ('.jpg','.jpeg','.png','.webp') %}🖼️{% elif att.file_type in ('.doc','.docx') %}📝{% elif att.file_type in ('.xls','.xlsx') %}📊{% else %}📎{% endif %}</span>
+        <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:600;color:#1a3a5c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ att.file_name }}</div>
+            <div style="font-size:10px;color:#888">{{ att.category|upper }} · {{ '%.1f'|format((att.file_size or 0) / 1024) }} Ko · {{ (att.created_at or '')[:10] }}</div>
+        </div>
+        <a href="/rh/personnel/file/{{ att.id }}/download" class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px" title="Télécharger">⬇️</a>
+        <a href="/rh/personnel/file/{{ att.id }}/delete" class="btn btn-sm" style="font-size:10px;padding:3px 8px;color:#c53030" onclick="return confirm('Supprimer ce fichier ?')" title="Supprimer">🗑️</a>
+    </div>
+    {% endfor %}
+    </div>
+</div>
+{% else %}
+<p style="color:#999;font-size:12px;text-align:center;padding:10px">Aucun document joint pour le moment.</p>
+{% endif %}
+<div class="form-group"><label>📎 Ajouter des documents (CV, contrat, diplômes, CNI...)</label>
 <input type="file" name="files" multiple style="padding:12px;border:2px dashed #ccc;border-radius:10px;width:100%"></div>
+<p style="font-size:10px;color:#888;margin-top:4px">Formats : PDF, JPG, PNG, DOC, XLS. Max 50 Mo par fichier.</p>
 </div>
 
 <div style="display:flex;gap:10px;margin-top:20px;padding-top:14px;border-top:1px solid #eee">
@@ -144,5 +165,6 @@ function previewPhoto(input) {
         }; reader.readAsDataURL(input.files[0]);
     }
 }
+{% if tab == 'pieces' %}showTab('pieces');document.querySelectorAll('.emp-tab')[4].classList.add('active');{% endif %}
 </script>
 {% endblock %}
