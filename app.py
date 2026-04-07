@@ -576,6 +576,13 @@ def traitement_generate():
     except:
         employee_costs = {}
     
+    # Rest days
+    rest_days = request.form.getlist('rest_days')
+    try:
+        employee_rest_days = json.loads(request.form.get('employee_rest_days_json', '{}'))
+    except:
+        employee_rest_days = {}
+    
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(app.config['UPLOAD_FOLDER'], job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -635,7 +642,8 @@ def traitement_generate():
         generate_full_pdf(emps, output_path, provider_name, provider_info,
                          client_name, period, logo_path, hp=hp, client_info=client_info,
                          work_dir=job_dir, hp_weekend=hp_weekend, hourly_cost=hourly_cost,
-                         employee_costs=employee_costs)
+                         employee_costs=employee_costs, rest_days=rest_days,
+                         employee_rest_days=employee_rest_days)
         
         if not os.path.exists(output_path):
             flash("Erreur génération PDF", "error")
@@ -1479,7 +1487,8 @@ def dpci_generate():
         generate_dpci_pdf(emps, output_path, client_name, period_str,
                          schedules_map=schedules_map, employee_costs=employee_costs,
                          default_cost=default_cost, hp=hp, hp_weekend=hp_weekend,
-                         provider_name=provider_name, treated_by=treated_by, period_mode=period_mode)
+                         provider_name=provider_name, treated_by=treated_by, period_mode=period_mode,
+                         rest_days=request.form.getlist('rest_days'))
         
         if not os.path.exists(output_path):
             flash("Erreur de génération PDF", "error")
@@ -2597,12 +2606,33 @@ def devis_preview(did):
 @permission_required('fichiers')
 def rh_dashboard():
     emp_stats = get_employee_stats()
-    return render_template('rh_dashboard.html', page='rh', emp_stats=emp_stats)
+    conn = _gdb()
+    # Leave requests recap
+    leaves_pending = [dict(r) for r in conn.execute("""SELECT l.*, e.first_name||' '||e.last_name as employee_name
+        FROM leaves l LEFT JOIN employees e ON l.employee_id=e.id
+        WHERE l.status='en_attente' ORDER BY l.created_at DESC LIMIT 10""").fetchall()]
+    leaves_approved = conn.execute("SELECT COUNT(*) FROM leaves WHERE status='approuve'").fetchone()[0]
+    leaves_refused = conn.execute("SELECT COUNT(*) FROM leaves WHERE status='refuse'").fetchone()[0]
+    leaves_total = conn.execute("SELECT COUNT(*) FROM leaves").fetchone()[0]
+    # Employee status counts
+    emp_demission = conn.execute("SELECT COUNT(*) FROM employees WHERE status='démissionné'").fetchone()[0]
+    emp_renvoye = conn.execute("SELECT COUNT(*) FROM employees WHERE status='renvoyé'").fetchone()[0]
+    emp_inactif = conn.execute("SELECT COUNT(*) FROM employees WHERE status='inactif'").fetchone()[0]
+    # Recent payslips
+    recent_paie = [dict(r) for r in conn.execute("""SELECT p.*, e.first_name||' '||e.last_name as employee_name
+        FROM payslips p LEFT JOIN employees e ON p.employee_id=e.id
+        ORDER BY p.period DESC, e.last_name LIMIT 5""").fetchall()]
+    conn.close()
+    return render_template('rh_dashboard.html', page='rh', emp_stats=emp_stats,
+        leaves_pending=leaves_pending, leaves_approved=leaves_approved,
+        leaves_refused=leaves_refused, leaves_total=leaves_total,
+        emp_demission=emp_demission, emp_renvoye=emp_renvoye, emp_inactif=emp_inactif,
+        recent_paie=recent_paie)
 
 @app.route('/rh/personnel')
 @permission_required('fichiers')
 def rh_personnel():
-    employees = get_all_employees()
+    employees = get_all_employees(status=None)
     return render_template('rh_personnel.html', page='personnel', employees=employees)
 
 @app.route('/rh/personnel/add', methods=['GET', 'POST'])
@@ -3000,6 +3030,20 @@ def rh_paie_status(pid, status):
         if status == 'envoye':
             update_payslip(pid, sent_at=datetime.now().isoformat())
         flash(f"Statut → {status}", "success")
+    return redirect(url_for('rh_paie'))
+
+@app.route('/rh/paie/<int:pid>/delete')
+@permission_required('fichiers')
+def rh_paie_delete(pid):
+    conn = _gdb()
+    p = conn.execute("SELECT p.*, e.first_name||' '||e.last_name as employee_name FROM payslips p LEFT JOIN employees e ON p.employee_id=e.id WHERE p.id=?", (pid,)).fetchone()
+    if p:
+        conn.execute("DELETE FROM payslips WHERE id=?", (pid,))
+        conn.commit()
+        flash(f"Bulletin de paie supprimé ({p['employee_name']} — {p['period']})", "success")
+    else:
+        flash("Bulletin non trouvé", "error")
+    conn.close()
     return redirect(url_for('rh_paie'))
 
 # ======================== EMPLOYEE PHOTO ========================

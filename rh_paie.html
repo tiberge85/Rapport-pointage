@@ -23,6 +23,7 @@
 <a href="/rh/paie/{{ p.id }}/pdf" class="btn btn-primary btn-sm">📥</a>
 {% if p.status=='brouillon' %}<a href="/rh/paie/{{ p.id }}/status/valide" class="btn btn-sm" style="background:#2e7d32;color:#fff">✅</a>{% endif %}
 {% if p.status=='valide' %}<a href="/rh/paie/{{ p.id }}/status/envoye" class="btn btn-sm" style="background:#e8672a;color:#fff">📧</a>{% endif %}
+<a href="/rh/paie/{{ p.id }}/delete" class="btn btn-sm" style="color:#c53030" onclick="return confirm('Supprimer ce bulletin de paie ?')">🗑️</a>
 </td></tr>{% endfor %}</tbody></table></div>
 {% else %}<p style="text-align:center;color:#999;padding:30px">Aucun bulletin de paie</p>{% endif %}
 </div></div>

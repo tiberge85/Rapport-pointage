@@ -147,8 +147,9 @@ def extract_from_excel(xlsx_path):
 
 # ======================== CALCULS ========================
 
-def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0):
-    """Calcule les statistiques complètes d'un employé. hp=heures obligatoires semaine, hp_weekend=heures obligatoires weekend (0=auto), hourly_cost=coût horaire FCFA."""
+def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0, rest_days=None):
+    """Calcule les statistiques complètes d'un employé. rest_days=liste des jours de repos (0=lundi..6=dimanche)."""
+    if rest_days is None: rest_days = []
     records = emp['records']
     total_required = 0
     total_worked = 0
@@ -160,8 +161,9 @@ def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0):
     days_punctual = 0
     days_absent = 0
     days_badge_error = 0
-    hm = hp * 60  # heures obligatoires semaine en minutes
-    hm_we = hp_weekend * 60  # heures obligatoires weekend en minutes
+    days_rest = 0
+    hm = hp * 60
+    hm_we = hp_weekend * 60
     
     enriched = []
     
@@ -172,32 +174,48 @@ def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0):
         ad = t2m(rec['departure'])
         dur = t2m(rec['duration'])
         
-        # Déterminer si c'est un week-end
+        # Déterminer le jour de la semaine
         is_weekend = False
+        is_rest_day = False
         try:
             from datetime import datetime as _dt
             d = _dt.strptime(rec['date'][:10], '%Y-%m-%d')
-            is_weekend = d.weekday() >= 5  # 5=samedi, 6=dimanche
+            is_weekend = d.weekday() >= 5
+            if d.weekday() in rest_days:
+                is_rest_day = True
         except:
             pass
         
         # Sélectionner les heures obligatoires selon le jour
-        if is_weekend and hp_weekend > 0:
+        if is_rest_day:
+            required = 0  # Jour de repos — pas d'heures obligatoires
+        elif is_weekend and hp_weekend > 0:
             required = hm_we
         elif not is_weekend and hp > 0:
             required = hm
         elif hp > 0 and hp_weekend == 0:
-            # hp fourni mais pas de weekend spécifique → utiliser hp partout
             required = hm
         else:
             required = se - ss if se > ss else 0
         
-        total_required += required
+        if not is_rest_day:
+            total_required += required
         
         schedule_str = f"({rec['sched_start']}_{rec['sched_end']})"
         
         # Déterminer l'état
-        if dur == 0 or (aa == 0 and ad == 0):
+        if is_rest_day:
+            state = "Repos"
+            days_rest += 1
+            worked = t2m(rec['duration']) if t2m(rec['duration']) > 0 else 0
+            if worked > 0:
+                total_worked += worked
+                days_present += 1
+                total_overtime += worked  # Tout travail en jour de repos = heures sup
+            overtime = worked
+            late = 0
+            respect = "REPOS"
+        elif dur == 0 or (aa == 0 and ad == 0):
             state = "Absent(e)"
             days_absent += 1
             worked = 0
@@ -266,12 +284,13 @@ def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0):
         observation = "Non assidu"
     
     stats = {
-        'days_required': len(records),
+        'days_required': len(records) - days_rest,
         'days_present': days_present,
         'days_late': days_late,
         'days_punctual': days_punctual,
         'days_absent': days_absent,
         'days_badge_error': days_badge_error,
+        'days_rest': days_rest,
         'total_required': total_required,
         'total_worked': total_worked,
         'total_overtime': total_overtime,
@@ -335,17 +354,19 @@ def make_header(S, provider_name, provider_info, client_name, client_info=""):
 
 def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now):
     """Génère les pages de rapport individuel."""
+    total_emps = len(emps)
     
     for idx, emp in enumerate(emps):
         if idx > 0: story.append(PageBreak())
         
         enriched, stats = all_stats[idx]
+        emp_num = idx + 1
         
         story.append(make_header(S, provider_name, provider_info, client_name, client_info))
         story.append(Spacer(1, 3*mm))
         story.append(Paragraph("RAPPORT INDIVIDUEL ENRICHI", S['ti']))
         story.append(Paragraph(period, S['st']))
-        story.append(Paragraph(f"Employé: {emp['name']}  |  Réf: {emp['ref']}", S['ei']))
+        story.append(Paragraph(f"Employé: {emp['name']}  |  Réf: {emp['ref']}  |  Fiche {emp_num}/{total_emps}", S['ei']))
         story.append(Spacer(1, 2*mm))
         
         # Résumé compact
@@ -469,7 +490,7 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
             story.extend([ct, Spacer(1,2*mm)])
         
         story.append(
-            Paragraph(f"Généré le {now} | {safe(client_name)} - Rapport enrichi", S['ft']))
+            Paragraph(f"Généré le {now} | {safe(client_name)} - Rapport {safe(emp['name'])} {emp_num}/{total_emps}", S['ft']))
 
 # ======================== PAGE : RAPPORT DE PRÉSENCE ========================
 
@@ -516,7 +537,7 @@ def gen_rapport_presence(story, emps, all_stats, S, provider_name, provider_info
         sc.append(('BACKGROUND',(0,i),(-1,i),LGRAY))
     t.setStyle(TableStyle(sc))
     story.extend([t, Spacer(1,4*mm),
-        Paragraph(f"Généré le {now}", S['ft'])])
+        Paragraph(f"Généré le {now} | {safe(client_name)} - Rapport de Présence", S['ft'])])
 
 # ======================== PAGE : CLASSEMENT RETARDS & ABSENCES ========================
 
@@ -797,7 +818,7 @@ def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, clien
         ('INNERGRID',(0,0),(-1,-1),0.5,colors.grey),
         ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),
         ('LEFTPADDING',(0,0),(-1,-1),6)]))
-    story.extend([leg, Spacer(1,4*mm), Paragraph(f"Généré le {now}", S['ft'])])
+    story.extend([leg, Spacer(1,4*mm), Paragraph(f"Généré le {now} | {safe(client_name)} - Graphique d'Assiduité", S['ft'])])
 
 # ======================== FICHE DE PRÉSENCE SIMPLE ========================
 
@@ -988,8 +1009,10 @@ def gen_simple_pages(story, emps, all_stats, S, provider_name, provider_info, cl
 
 # ======================== GENERATION PDF COMPLETE ========================
 
-def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0, hourly_cost=0, employee_costs=None):
+def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0, hourly_cost=0, employee_costs=None, rest_days=None, employee_rest_days=None):
     if not employee_costs: employee_costs = {}
+    if rest_days is None: rest_days = []
+    if employee_rest_days is None: employee_rest_days = {}
     if not work_dir:
         work_dir = os.path.dirname(os.path.abspath(output_path))
     doc = SimpleDocTemplate(output_path, pagesize=A4,
@@ -998,11 +1021,12 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
     story = []
     now = datetime.now().strftime("%d/%m/%Y à %H:%M")
     
-    # Pré-calculer toutes les stats avec coût par employé
+    # Pré-calculer toutes les stats avec coût par employé et jours de repos
     all_stats = []
     for emp in emps:
         emp_cost = employee_costs.get(emp['name'], hourly_cost)
-        all_stats.append(calc_employee_stats(emp, hp, hp_weekend, emp_cost))
+        emp_rest = employee_rest_days.get(emp['name'], rest_days)
+        all_stats.append(calc_employee_stats(emp, hp, hp_weekend, emp_cost, rest_days=emp_rest))
     
     # 1. Rapports individuels
     gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now)
@@ -1745,12 +1769,14 @@ def calc_dpci_stats(emp, schedule=None, hourly_cost=0, hp=0, hp_weekend=0):
     return enriched, stats
 
 
-def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None, employee_costs=None, default_cost=0, hp=0, hp_weekend=0, provider_name='', treated_by='', period_mode='all'):
+def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None, employee_costs=None, default_cost=0, hp=0, hp_weekend=0, provider_name='', treated_by='', period_mode='all', rest_days=None):
     """Génère le rapport PDF DPCI — design identique à la fiche de présence."""
     if not schedules_map:
         schedules_map = {}
     if not employee_costs:
         employee_costs = {}
+    if rest_days is None:
+        rest_days = []
 
     doc = SimpleDocTemplate(output_path, pagesize=A4,
                             leftMargin=12 * mm, rightMargin=12 * mm, topMargin=10 * mm, bottomMargin=10 * mm)
@@ -1785,9 +1811,12 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
 
     first_page = True
     pw = 186 * mm
+    total_emps = sum(len(v) for v in depts.values())
+    emp_counter = 0
 
     for dept_name, dept_emps in depts.items():
         for emp in dept_emps:
+            emp_counter += 1
             if not first_page:
                 story.append(PageBreak())
             first_page = False
@@ -1958,7 +1987,7 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
 
             # FOOTER
             story.append(Spacer(1, 6 * mm))
-            story.append(Paragraph(f"Rapport trait\u00e9 par : {treated_by or 'Admin'}, le {now}", ft_s))
+            story.append(Paragraph(f"Généré le {now} | {client_name} - Rapport {emp['name']} {emp_counter}/{total_emps}  —  Traité par : {treated_by or 'Admin'}", ft_s))
 
     doc.build(story)
 #!/usr/bin/env python3

@@ -74,6 +74,19 @@
         <div class="hint">Mettez 0 pour désactiver. Le coût peut être personnalisé par personne.</div>
     </div>
     
+    <!-- Step 4: Jours de repos -->
+    <div class="step" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="background:#1a7a6d;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">4</span><strong>Jour(s) de repos</strong></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+            {% for d, label in [('lundi','Lun'),('mardi','Mar'),('mercredi','Mer'),('jeudi','Jeu'),('vendredi','Ven'),('samedi','Sam'),('dimanche','Dim')] %}
+            <label style="display:flex;align-items:center;gap:4px;padding:6px 10px;background:#f5f7fa;border-radius:6px;font-size:12px;cursor:pointer;border:1.5px solid #e0e0e0">
+                <input type="checkbox" name="rest_days" value="{{ d }}" {% if d == 'dimanche' %}checked{% endif %}> {{ label }}
+            </label>
+            {% endfor %}
+        </div>
+        <div class="hint">Les jours de repos sont déduits du nombre de jours prévus.</div>
+    </div>
+    
     <!-- Submit -->
     <div style="margin-top:16px">
         <button type="submit" class="btn btn-orange btn-block" id="submitBtn" disabled style="padding:14px;font-size:16px">

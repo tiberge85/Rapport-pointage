@@ -144,10 +144,36 @@
                 <div class="hint">Définissez un coût global ou personnalisez par employé. Le gain perdu sera calculé sur le rapport individuel.</div>
             </div>
             
-            <!-- Step 7: Logo -->
-            <div class="step" style="border-bottom:none">
+            <!-- Step 7: Jour de repos -->
+            <div class="step">
                 <div class="step-label">
                     <span class="step-num">7</span>
+                    <span class="step-title">Jour(s) de repos</span>
+                </div>
+                <div class="form-group">
+                    <label style="font-size:12px;font-weight:600">Jour de repos global (appliqué à tous)</label>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+                        {% for d, label in [('lundi','Lun'),('mardi','Mar'),('mercredi','Mer'),('jeudi','Jeu'),('vendredi','Ven'),('samedi','Sam'),('dimanche','Dim')] %}
+                        <label style="display:flex;align-items:center;gap:4px;padding:6px 10px;background:#f5f7fa;border-radius:6px;font-size:12px;cursor:pointer;border:1.5px solid #e0e0e0">
+                            <input type="checkbox" name="rest_days" value="{{ d }}" {% if d == 'dimanche' %}checked{% endif %}> {{ label }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div style="margin-top:6px">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="toggleEmpRestDays()" style="font-size:10px">⚙️ Personnaliser par employé</button>
+                </div>
+                <div id="empRestList" style="display:none;margin-top:8px;background:#f8faf9;padding:10px 14px;border-radius:8px;max-height:250px;overflow-y:auto">
+                    <div style="font-size:11px;font-weight:700;color:#1a3a5c;margin-bottom:6px">🗓️ Jour de repos par employé :</div>
+                </div>
+                <input type="hidden" name="employee_rest_days_json" id="empRestJson" value="{}">
+                <div class="hint">Le dimanche est coché par défaut. Les jours de repos sont déduits du nombre de jours prévus. Personnalisez si certains employés ont un jour différent.</div>
+            </div>
+            
+            <!-- Step 8: Logo -->
+            <div class="step" style="border-bottom:none">
+                <div class="step-label">
+                    <span class="step-num">8</span>
                     <span class="step-title">Logo (optionnel)</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:12px">
@@ -242,6 +268,7 @@ function tryMerge() {
             if (empNames.length > 0) {
                 var empObjs = empNames.map(function(n) { return {name: n, ref: '', days: 0}; });
                 buildCostInputs(empObjs);
+                buildRestDayInputs(empObjs);
                 // Group by service for display
                 var grouped = {};
                 empNames.forEach(function(n) {
@@ -290,7 +317,7 @@ function handleFile(file) {
             document.getElementById('empList').innerHTML = html;
             previewBox.classList.add('visible');
             buildCostInputs(data.employees);
-        }).catch(()=>{});
+            buildRestDayInputs(data.employees);
 }
 
 var _employees = [];
@@ -323,8 +350,41 @@ function collectCosts() {
     document.getElementById('empCostsJson').value = JSON.stringify(costs);
 }
 
+function buildRestDayInputs(employees) {
+    var box = document.getElementById('empRestList');
+    var days = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
+    var labels = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+    var html = '<div style="font-size:11px;font-weight:700;color:#1a3a5c;margin-bottom:6px">🗓️ Jour de repos par employé :</div>';
+    employees.forEach(function(e, i) {
+        html += '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;padding:4px 0;border-bottom:1px solid #eee">' +
+            '<span style="flex:1;font-size:11px;font-weight:600;min-width:120px">' + e.name + '</span>';
+        days.forEach(function(d, di) {
+            html += '<label style="font-size:9px;display:flex;align-items:center;gap:1px;cursor:pointer">' +
+                '<input type="checkbox" class="emp-rest-cb" data-name="' + e.name + '" value="' + d + '" ' + (d==='dimanche'?'checked':'') + '> ' + labels[di] + '</label>';
+        });
+        html += '</div>';
+    });
+    box.innerHTML = html;
+}
+
+function toggleEmpRestDays() {
+    var box = document.getElementById('empRestList');
+    box.style.display = box.style.display === 'none' ? 'block' : 'none';
+}
+
+function collectRestDays() {
+    var empRest = {};
+    document.querySelectorAll('.emp-rest-cb:checked').forEach(function(cb) {
+        var name = cb.dataset.name;
+        if (!empRest[name]) empRest[name] = [];
+        empRest[name].push(cb.value);
+    });
+    document.getElementById('empRestJson').value = JSON.stringify(empRest);
+}
+
 document.getElementById('reportForm').addEventListener('submit', () => {
     collectCosts();
+    collectRestDays();
     submitBtn.classList.add('loading');
     document.getElementById('spinner').classList.add('active');
     document.getElementById('btnText').textContent = 'Génération en cours...';
