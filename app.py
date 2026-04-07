@@ -122,6 +122,8 @@ from models import migrate_v21
 migrate_v21()
 from models import migrate_v22
 migrate_v22()
+from models import migrate_v23
+migrate_v23()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -141,7 +143,7 @@ from models import (init_devis_tables, create_devis, get_all_devis, get_devis_by
                     update_devis_status, get_devis_stats, get_next_devis_ref)
 init_devis_tables()
 
-ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
+ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
 ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general',
                    'envoyer', 'logs', 
                    'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit',
@@ -2607,6 +2609,8 @@ def devis_preview(did):
 def rh_dashboard():
     emp_stats = get_employee_stats()
     conn = _gdb()
+    today = datetime.now().strftime('%Y-%m-%d')
+    this_month = datetime.now().strftime('%Y-%m')
     # Leave requests recap
     leaves_pending = [dict(r) for r in conn.execute("""SELECT l.*, e.first_name||' '||e.last_name as employee_name
         FROM leaves l LEFT JOIN employees e ON l.employee_id=e.id
@@ -2615,9 +2619,38 @@ def rh_dashboard():
     leaves_refused = conn.execute("SELECT COUNT(*) FROM leaves WHERE status='refuse'").fetchone()[0]
     leaves_total = conn.execute("SELECT COUNT(*) FROM leaves").fetchone()[0]
     # Employee status counts
+    emp_total_all = conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
+    emp_actif = conn.execute("SELECT COUNT(*) FROM employees WHERE status='actif'").fetchone()[0]
     emp_demission = conn.execute("SELECT COUNT(*) FROM employees WHERE status='démissionné'").fetchone()[0]
     emp_renvoye = conn.execute("SELECT COUNT(*) FROM employees WHERE status='renvoyé'").fetchone()[0]
     emp_inactif = conn.execute("SELECT COUNT(*) FROM employees WHERE status='inactif'").fetchone()[0]
+    new_hires = conn.execute("SELECT COUNT(*) FROM employees WHERE hire_date LIKE ?", (this_month+'%',)).fetchone()[0]
+    # Contract expiry
+    expired_contracts = [dict(r) for r in conn.execute("""SELECT c.*, e.first_name||' '||e.last_name as employee_name, e.department
+        FROM rh_contracts c LEFT JOIN employees e ON c.employee_id=e.id
+        WHERE c.end_date < ? AND c.end_date != '' AND c.status='actif' ORDER BY c.end_date""", (today,)).fetchall()]
+    expiring_soon = [dict(r) for r in conn.execute("""SELECT c.*, e.first_name||' '||e.last_name as employee_name, e.department
+        FROM rh_contracts c LEFT JOIN employees e ON c.employee_id=e.id
+        WHERE c.end_date >= ? AND c.end_date <= date(?, '+30 days') AND c.status='actif'
+        ORDER BY c.end_date""", (today, today)).fetchall()]
+    # Upcoming birthdays (next 30 days)
+    birthdays = []
+    all_emps = [dict(r) for r in conn.execute("SELECT * FROM employees WHERE status='actif' AND birth_date IS NOT NULL AND birth_date != ''").fetchall()]
+    for e in all_emps:
+        try:
+            bd = e.get('birth_date','')
+            if not bd or len(bd) < 10: continue
+            bd_this_year = f"{datetime.now().year}-{bd[5:7]}-{bd[8:10]}"
+            from datetime import timedelta
+            bd_date = datetime.strptime(bd_this_year, '%Y-%m-%d')
+            diff = (bd_date - datetime.now()).days
+            if -1 <= diff <= 30:
+                e['birthday'] = bd_this_year
+                e['days_until'] = diff
+                e['age'] = datetime.now().year - int(bd[:4])
+                birthdays.append(e)
+        except: pass
+    birthdays.sort(key=lambda x: x.get('days_until', 99))
     # Recent payslips
     recent_paie = [dict(r) for r in conn.execute("""SELECT p.*, e.first_name||' '||e.last_name as employee_name
         FROM payslips p LEFT JOIN employees e ON p.employee_id=e.id
@@ -2626,8 +2659,10 @@ def rh_dashboard():
     return render_template('rh_dashboard.html', page='rh', emp_stats=emp_stats,
         leaves_pending=leaves_pending, leaves_approved=leaves_approved,
         leaves_refused=leaves_refused, leaves_total=leaves_total,
+        emp_total_all=emp_total_all, emp_actif=emp_actif,
         emp_demission=emp_demission, emp_renvoye=emp_renvoye, emp_inactif=emp_inactif,
-        recent_paie=recent_paie)
+        new_hires=new_hires, expired_contracts=expired_contracts, expiring_soon=expiring_soon,
+        birthdays=birthdays, recent_paie=recent_paie)
 
 @app.route('/rh/personnel')
 @permission_required('fichiers')
@@ -3385,7 +3420,8 @@ def rh_contracts():
     emp_map = {e['id']: f"{e['first_name']} {e['last_name']}" for e in employees}
     for c in contracts:
         c['employee_name'] = emp_map.get(c.get('employee_id'), '-')
-    return render_template('rh_contrats.html', page='contrats_rh', contracts=contracts, employees=employees)
+    return render_template('rh_contrats.html', page='contrats_rh', contracts=contracts, employees=employees,
+        now_str=datetime.now().strftime('%Y-%m-%d'))
 
 @app.route('/rh/contrats-rh/add', methods=['POST'])
 @permission_required('fichiers')
@@ -3397,8 +3433,51 @@ def rh_contracts_add():
         start_date=request.form.get('start_date',''),
         end_date=request.form.get('end_date',''),
         salary=float(request.form.get('salary',0) or 0),
+        department=request.form.get('department',''),
+        signature_date=request.form.get('signature_date',''),
         notes=request.form.get('notes',''))
     flash("Contrat RH ajouté", "success")
+    return redirect(url_for('rh_contracts'))
+
+@app.route('/rh/contrats-rh/edit/<int:cid>', methods=['GET','POST'])
+@permission_required('fichiers')
+def rh_contracts_edit(cid):
+    from models import db_get_by_id, db_update
+    contract = db_get_by_id('rh_contracts', cid)
+    if not contract: flash("Contrat non trouvé","error"); return redirect(url_for('rh_contracts'))
+    if request.method == 'POST':
+        db_update('rh_contracts', cid,
+            code=request.form.get('code',''),
+            employee_id=int(request.form.get('employee_id', contract['employee_id'])),
+            contract_type=request.form.get('contract_type','CDI'),
+            start_date=request.form.get('start_date',''),
+            end_date=request.form.get('end_date',''),
+            salary=float(request.form.get('salary',0) or 0),
+            department=request.form.get('department',''),
+            signature_date=request.form.get('signature_date',''),
+            status=request.form.get('status','actif'),
+            notes=request.form.get('notes',''))
+        flash("Contrat modifié","success")
+        return redirect(url_for('rh_contracts'))
+    employees = get_all_employees(status=None)
+    return render_template('rh_contrats.html', page='contrats_rh', edit_contract=dict(contract), employees=employees, contracts=[])
+
+@app.route('/rh/contrats-rh/status/<int:cid>/<status>')
+@permission_required('fichiers')
+def rh_contracts_status(cid, status):
+    from models import db_update
+    if status in ('actif','expiré','résilié','terminé'):
+        db_update('rh_contracts', cid, status=status)
+        flash(f"Contrat → {status}","success")
+    return redirect(url_for('rh_contracts'))
+
+@app.route('/rh/contrats-rh/delete/<int:cid>')
+@permission_required('fichiers')
+def rh_contracts_delete(cid):
+    conn = _gdb()
+    conn.execute("DELETE FROM rh_contracts WHERE id=?", (cid,))
+    conn.commit(); conn.close()
+    flash("Contrat supprimé","success")
     return redirect(url_for('rh_contracts'))
 
 

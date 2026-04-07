@@ -2409,3 +2409,10 @@ def migrate_v22():
         );
     ''')
     conn.commit(); conn.close()
+
+def migrate_v23():
+    conn = get_db()
+    for col in ['department', 'signature_date']:
+        try: conn.execute(f"ALTER TABLE rh_contracts ADD COLUMN {col} TEXT DEFAULT ''")
+        except: pass
+    conn.commit(); conn.close()
