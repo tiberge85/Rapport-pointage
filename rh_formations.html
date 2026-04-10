@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}WannyGest - Formations{% endblock %}{% block content %}
 <div class="page-header"><h1>🎓 Formations</h1></div>
 <div class="card"><div class="card-header"><h3>Programme de formation</h3><button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Formation</button></div><div class="card-body">
-{% if trainings %}<div class="table-wrap"><table>
+{% if trainings %}<div class="table-wrap"><div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher..." onkeyup="filterTable("searchInput","dataTable")" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><table id="dataTable">
 <thead><tr><th>Formation</th><th>Formateur</th><th>Département</th><th>Destinataire</th><th>Date</th><th>Durée</th><th>Coût</th><th>Statut</th><th>Actions</th></tr></thead>
 <tbody>{% for t in trainings %}<tr>
 <td><strong>{{ t.title }}</strong><br><span style="font-size:11px;color:#888">{{ (t.description or '')[:60] }}</span></td>

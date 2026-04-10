@@ -3,7 +3,7 @@
 <button class="btn btn-primary btn-sm" onclick="document.getElementById('addV').classList.add('active')">+ Ajouter un véhicule</button></div>
 
 {% if vehicles %}
-<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher un véhicule..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><table id="dataTable">
 <thead><tr><th>Immat.</th><th>Véhicule</th><th>Propriétaire</th><th>Balise GPS</th><th>SIM / IMEI</th><th>Installation</th><th>Statut</th><th>Dernière pos.</th><th>Actions</th></tr></thead>
 <tbody>{% for v in vehicles %}<tr>
 <td><strong style="font-size:13px">{{ v.immatriculation }}</strong></td>

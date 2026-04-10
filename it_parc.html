@@ -3,7 +3,7 @@
 <button class="btn btn-primary btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Équipement</button></div>
 
 {% if equipment %}
-<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher un équipement..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><table id="dataTable">
 <thead><tr><th>Nom</th><th>Type</th><th>Marque / Modèle</th><th>N° Série</th><th>Affecté à</th><th>Lieu</th><th>Statut</th><th>Garantie</th></tr></thead>
 <tbody>{% for e in equipment %}<tr>
 <td><strong>{{ e.name }}</strong></td><td>{{ e.type or '-' }}</td>

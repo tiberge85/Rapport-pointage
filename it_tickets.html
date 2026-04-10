@@ -9,7 +9,7 @@
 </div>
 
 {% if tickets %}
-<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher un ticket..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><table id="dataTable">
 <thead><tr><th>#</th><th>Titre</th><th>Catégorie</th><th>Priorité</th><th>Demandeur</th><th>Assigné</th><th>Statut</th><th>Date</th><th>Actions</th></tr></thead>
 <tbody>{% for t in tickets %}<tr>
 <td>{{ t.id }}</td><td><strong>{{ t.title }}</strong>{% if t.description %}<br><span style="font-size:10px;color:#888">{{ t.description[:50] }}</span>{% endif %}</td>

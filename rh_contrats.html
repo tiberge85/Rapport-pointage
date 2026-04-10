@@ -27,8 +27,9 @@
 {% endif %}
 
 {% if contracts %}
-<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table>
-<thead><tr><th>Code</th><th>ID</th><th>Personnel</th><th>Type</th><th>Département</th><th>Début</th><th>Fin</th><th>Signature</th><th>Statut</th><th>Salaire</th><th>Actions</th></tr></thead>
+<div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div>
+<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table id="dataTable">
+<thead id="dataTableHead"><tr><th>Code</th><th>ID</th><th>Personnel</th><th>Type</th><th>Département</th><th>Début</th><th>Fin</th><th>Signature</th><th>Statut</th><th>Salaire</th><th>Actions</th></tr></thead>
 <tbody>{% for c in contracts %}
 {% set today = import('datetime').datetime.now().strftime('%Y-%m-%d') if false else '' %}
 <tr>

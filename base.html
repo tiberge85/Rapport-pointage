@@ -414,6 +414,14 @@
         try { if(localStorage.getItem('nav_'+s.id)==='1') s.classList.add('collapsed'); } catch(e) {}
     });
     
+    // Universal table filter
+    function filterTable(inputId, tableId) {
+        var f = document.getElementById(inputId).value.toLowerCase();
+        document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function(r) {
+            r.style.display = r.textContent.toLowerCase().includes(f) ? '' : 'none';
+        });
+    }
+    
     // Mobile responsive handler
     function applyMobile() {
         var w = window.innerWidth;

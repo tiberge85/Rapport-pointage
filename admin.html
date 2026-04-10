@@ -14,7 +14,7 @@
     </div>
     <div class="card-body">
         <div class="table-wrap">
-            <table>
+            <div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><table id="dataTable">
                 <thead><tr><th>Nom</th><th>Identifiant</th><th>Email</th><th>Rôle</th><th>Dernière connexion</th><th>Statut</th><th>Actions</th></tr></thead>
                 <tbody>
                 {% for u in users %}

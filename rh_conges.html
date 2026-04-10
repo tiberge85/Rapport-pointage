@@ -5,7 +5,7 @@
 <div class="page-header"><h1>📋 Gestion des absences {% if pending_count %}<span class="badge" style="background:#e8672a;color:#fff;padding:2px 10px;border-radius:12px;font-size:12px">{{ pending_count }} en attente</span>{% endif %}</h1>
 <button class="btn btn-primary btn-sm" onclick="document.getElementById('addA').classList.add('active')">+ Déclarer une absence</button></div>
 <div class="card"><div class="card-body" style="padding:0">
-{% if absences %}<div class="table-wrap"><table>
+{% if absences %}<div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchAbs" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchAbs','absTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><div class="table-wrap"><table id="absTable">
 <thead><tr><th>Date</th><th>Employé</th><th>Type</th><th>Durée</th><th>Motif</th><th>Justif.</th><th>Statut</th>{% if is_rh %}<th>Actions</th>{% endif %}</tr></thead>
 <tbody>{% for a in absences %}<tr>
 <td style="font-weight:600">{{ a.date }}</td>
@@ -38,7 +38,7 @@
     <button class="btn btn-orange" onclick="document.getElementById('addLeave').classList.add('active')">+ Nouvelle demande</button>
 </div>
 <div class="card"><div class="card-body">
-{% if leaves %}<div class="table-wrap"><table>
+{% if leaves %}<div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchLeave" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchLeave','leaveTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><div class="table-wrap"><table id="leaveTable">
 <thead><tr><th>Employé</th><th>Type</th><th>Du</th><th>Au</th><th>Jours</th><th>Motif</th><th>Statut</th><th>Actions</th></tr></thead>
 <tbody>{% for l in leaves %}<tr>
 <td><strong>{{ l.employee_name }}</strong></td><td>{{ l.leave_type }}</td><td>{{ l.start_date }}</td><td>{{ l.end_date }}</td><td>{{ l.days }}</td>

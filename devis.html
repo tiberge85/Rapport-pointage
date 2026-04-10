@@ -15,7 +15,7 @@
     <a href="/devis/new" class="btn btn-orange" style="margin-left:auto">+ Nouveau devis</a>
 </div>
 <div class="card"><div class="card-body">
-{% if devis_list %}<div class="table-wrap"><table>
+{% if devis_list %}<div class="table-wrap"><div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher un devis..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><table id="dataTable">
 <thead><tr><th>Réf</th><th>Type</th><th>Client</th><th>Objet</th><th>Total TTC</th><th>Statut</th><th>Actions</th></tr></thead>
 <tbody>{% for d in devis_list %}<tr>
 <td><strong>{{ d.reference }}</strong></td>

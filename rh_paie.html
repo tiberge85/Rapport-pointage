@@ -9,7 +9,7 @@
 </form></div>
 
 <div class="card"><div class="card-body">
-{% if payslips %}<div class="table-wrap"><table>
+{% if payslips %}<div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><div class="table-wrap"><table id="dataTable">
 <thead><tr><th>Période</th><th>Employé</th><th>Mat.</th><th style="text-align:right">Brut</th><th style="text-align:right">Retenues</th><th style="text-align:right">Net</th><th>Statut</th><th>Actions</th></tr></thead>
 <tbody>{% for p in payslips %}<tr>
 <td>{{ p.period }}</td><td><strong>{{ p.first_name }} {{ p.last_name }}</strong></td><td style="font-size:11px">{{ p.matricule or '-' }}</td>
