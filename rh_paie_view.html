@@ -44,7 +44,7 @@ th{text-align:left;font-weight:600}
     <div class="form-row"><div class="form-group"><label>Prime ancienneté</label><input type="number" name="prime_anciennete" value="{{ p.prime_anciennete or 0 }}" step="500"></div>
     <div class="form-group"><label></div>
     <div class="form-group"><label>Prime rendement</label><input type="number" name="prime_rendement" value="{{ p.prime_rendement or 0 }}" step="500"></div></div>
-    <div class="form-row"><div class="form-group"><label>Bonus / KPI</label><input type="number" name="bonus" value="{{ p.bonus or 0 }}" step="500"></div>
+    <div class="form-row">
     <div class="form-group"><label></div></div>
     
     <div style="font-size:12px;font-weight:600;color:#e8672a;margin:8px 0 6px;border-bottom:1px solid #eee;padding-bottom:4px">🏷️ Autres primes (hors brut)</div>
@@ -101,12 +101,11 @@ th{text-align:left;font-weight:600}
 <tr><td></tr>
 <tr><td>Prime de transport</td><td style="text-align:right">{{ fmt(g('prime_transport',0) or 0) }}</td></tr>
 <tr><td>Prime d'ancienneté</td><td style="text-align:right">{{ fmt(g('prime_anciennete',0) or 0) }}</td></tr>
-<tr><td><td style="text-align:right">{{ fmt(g('prime_logement',0) or 0) }}</td></tr>
-<tr><td>Prime de rendement / KPI</td><td style="text-align:right">{{ fmt((g('prime_rendement',0) or 0) + (g('bonus',0) or 0)) }}</td></tr>
+<tr><td>Prime de rendement / KPI</td><td style="text-align:right">{{ fmt(g('prime_rendement',0) or 0) }}</td></tr>
 <tr><td>Prime d'astreinte</td><td style="text-align:right">{{ fmt(g('prime_astreinte',0) or 0) }}</td></tr>
 </table>
 
-{% set brut = (g('base_salary',0) or 0) + (g('bonus',0) or 0) + (g('prime_transport',0) or 0) + (g('prime_anciennete',0) or 0) + (g('prime_astreinte',0) or 0) + (g('prime_rendement',0) or 0) %}
+{% set brut = (g('base_salary',0) or 0) + (g('prime_transport',0) or 0) + (g('prime_anciennete',0) or 0) + (g('prime_astreinte',0) or 0) + (g('prime_rendement',0) or 0) %}
 <div class="brut-bar"><span>SALAIRE BRUT</span><span>{{ fmt(brut) }} FCFA</span></div>
 
 <!-- AUTRES PRIMES hors brut -->

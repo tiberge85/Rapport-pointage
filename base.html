@@ -187,6 +187,7 @@
         </div>
         <div class="sidebar-nav">
             <a href="/dashboard" class="{% if page == 'dashboard' %}active{% endif %}">📊 Tableau de bord</a>
+            <a href="/notifications" class="{% if page == 'notifications' %}active{% endif %}" style="position:relative">🔔 Notifications{% if notif_count %} <span class="badge">{{ notif_count }}</span>{% endif %}</a>
             {% if 'dashboard_general' in permissions %}
             <a href="/dashboard-general" class="{% if page == 'dashboard_general' %}active{% endif %}">🌐 Tableau de bord général</a>
             {% endif %}

@@ -2527,3 +2527,20 @@ def migrate_v29():
         try: conn.execute(f"ALTER TABLE payslips ADD COLUMN {col} {typ}")
         except: pass
     conn.commit(); conn.close()
+
+def migrate_v30():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            employee_id INTEGER,
+            type TEXT DEFAULT 'info',
+            title TEXT NOT NULL,
+            message TEXT DEFAULT '',
+            link TEXT DEFAULT '',
+            read INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    conn.commit(); conn.close()

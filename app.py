@@ -136,12 +136,16 @@ from models import migrate_v28
 migrate_v28()
 from models import migrate_v29
 migrate_v29()
+from models import migrate_v30
+migrate_v30()
 from models import migrate_v27
 migrate_v27()
 from models import migrate_v28
 migrate_v28()
 from models import migrate_v29
 migrate_v29()
+from models import migrate_v30
+migrate_v30()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -222,6 +226,14 @@ def inject_globals():
             ctx['pending_count'] = len(get_jobs_by_status('traite'))
             try: ctx['unread_messages'] = get_unread_count(user['id'])
             except: pass
+            # Notification count
+            try:
+                from models import get_db as _ndb
+                _nc = _ndb()
+                ctx['notif_count'] = _nc.execute("SELECT COUNT(*) FROM notifications WHERE (user_id=? OR employee_id IN (SELECT id FROM employees WHERE email=?)) AND read=0",
+                    (user['id'], user.get('email',''))).fetchone()[0]
+                _nc.close()
+            except: ctx['notif_count'] = 0
             if 'fichiers' in perms or 'admin' in perms:
                 try:
                     from models import get_db as _gdb_abs
@@ -3074,7 +3086,7 @@ def rh_paie():
 def rh_paie_add():
     f = lambda k: float(request.form.get(k, 0) or 0)
     base = f('base_salary')
-    primes = f('bonus') + f('prime_transport') + f('prime_anciennete') + f('prime_astreinte') + f('prime_rendement')
+    primes = f('prime_transport') + f('prime_anciennete') + f('prime_astreinte') + f('prime_rendement')
     brut = base + primes
     total_autres = f('prime_mission') + f('commission')
     retenues = f('cnps_employee') + f('insurance_amount') + f('its') + f('deductions') + f('autres_retenues') + f('avances')
@@ -3082,7 +3094,7 @@ def rh_paie_add():
     
     create_payslip(
         employee_id=int(request.form['employee_id']), period=request.form['period'],
-        base_salary=base, bonus=f('bonus'), commission=f('commission'),
+        base_salary=base, commission=f('commission'),
         deductions=f('deductions'),
         insurance_amount=f('insurance_amount'), tax_amount=f('its'), net_salary=net,
         prime_transport=f('prime_transport'), prime_anciennete=f('prime_anciennete'),
@@ -3107,12 +3119,12 @@ def rh_paie_edit(pid):
     if request.method == 'POST':
         f = lambda k: float(request.form.get(k, 0) or 0)
         base = f('base_salary')
-        primes = f('bonus') + f('prime_transport') + f('prime_anciennete') + f('prime_astreinte') + f('prime_rendement')
+        primes = f('prime_transport') + f('prime_anciennete') + f('prime_astreinte') + f('prime_rendement')
         brut = base + primes
         total_autres = f('prime_mission') + f('commission')
         retenues = f('cnps_employee') + f('insurance_amount') + f('its') + f('deductions') + f('autres_retenues') + f('avances')
         net = brut + total_autres - retenues
-        update_payslip(pid, base_salary=base, bonus=f('bonus'), commission=f('commission'),
+        update_payslip(pid, base_salary=base, commission=f('commission'),
             deductions=f('deductions'),
             insurance_amount=f('insurance_amount'), tax_amount=f('its'), net_salary=net,
             prime_transport=f('prime_transport'), prime_anciennete=f('prime_anciennete'),
@@ -3220,7 +3232,7 @@ def rh_paie_pdf(pid):
     
     cw = [pw*0.45, pw*0.18, pw*0.12, pw*0.25]
     base = g('base_salary')
-    brut = base + g('bonus') + g('prime_transport') + g('prime_anciennete') + g('prime_astreinte') + g('prime_rendement')
+    brut = base + g('prime_transport') + g('prime_anciennete') + g('prime_astreinte') + g('prime_rendement')
     
     # === GAINS ===
     gains = [
@@ -3229,7 +3241,7 @@ def rh_paie_pdf(pid):
         [Paragraph('Prime de transport', sc), Paragraph('', sr), Paragraph('', sr), Paragraph(fmt(g('prime_transport')), sr)],
         [Paragraph("Prime d'ancienneté", sc), Paragraph('', sr), Paragraph('', sr), Paragraph(fmt(g('prime_anciennete')), sr)],
         [Paragraph("Prime d'astreinte", sc), Paragraph('', sr), Paragraph('', sr), Paragraph(fmt(g('prime_astreinte')), sr)],
-        [Paragraph('Prime de rendement', sc), Paragraph('', sr), Paragraph('', sr), Paragraph(fmt(g('prime_rendement')+g('bonus')), sr)],
+        [Paragraph('Prime de rendement', sc), Paragraph('', sr), Paragraph('', sr), Paragraph(fmt(g('prime_rendement')), sr)],
     ]
     gt = Table(gains, colWidths=cw)
     gt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),VERT),('GRID',(0,0),(-1,-1),0.3,HexColor('#ddd')),
@@ -3317,10 +3329,22 @@ def rh_paie_pdf(pid):
     return send_file(output, as_attachment=True, download_name=f"Bulletin_{p['period']}_{p['employee_name']}.pdf")
 
 @app.route('/rh/paie/<int:pid>/view')
-@permission_required('fichiers')
+@login_required
 def rh_paie_view(pid):
     p = get_payslip_detail_v2(pid)
-    if not p: flash("Non trouvé","error"); return redirect(url_for('rh_paie'))
+    if not p: flash("Non trouvé","error"); return redirect('/dashboard')
+    # Check access: RH/admin or own payslip
+    user = get_user_by_id(session['user_id'])
+    perms = get_role_permissions(user['role']) if user else []
+    is_rh = 'fichiers' in perms or 'admin' in perms
+    if not is_rh:
+        # Check if this is the employee's own payslip
+        conn = _gdb()
+        emp = conn.execute("SELECT id FROM employees WHERE email=? OR LOWER(first_name||' '||last_name)=LOWER(?)",
+            (user.get('email',''), user.get('full_name',''))).fetchone()
+        conn.close()
+        if not emp or emp['id'] != p.get('employee_id'):
+            flash("Accès non autorisé","error"); return redirect('/dashboard')
     return render_template('rh_paie_view.html', page='paie', p=p)
 
 @app.route('/rh/paie/<int:pid>/status/<status>')
@@ -3427,6 +3451,22 @@ Service des Ressources Humaines"""
             log_activity(session['user_id'], user['full_name'] if user else '?',
                         'Email Paie', f"Bulletin {p['period']} envoyé à {to_email}", request.remote_addr)
             
+            # Create notification for employee
+            try:
+                conn_n = _gdb()
+                # Find user account linked to employee
+                emp_user = conn_n.execute("SELECT id FROM users WHERE email=? OR LOWER(full_name)=LOWER(?)",
+                    (to_email, p['employee_name'])).fetchone()
+                user_id_notif = emp_user['id'] if emp_user else None
+                conn_n.execute("""INSERT INTO notifications (user_id, employee_id, type, title, message, link)
+                    VALUES (?,?,?,?,?,?)""",
+                    (user_id_notif, p.get('employee_id'), 'bulletin',
+                     f"Bulletin de paie — {p['period']}",
+                     f"Votre bulletin de paie pour la période {p['period']} est disponible. Net à payer : {p.get('net_salary',0):,.0f} FCFA",
+                     f"/rh/paie/{pid}/view"))
+                conn_n.commit(); conn_n.close()
+            except: pass
+            
             flash(f"Bulletin envoyé par email à {to_email}", "success")
             return redirect(url_for('rh_paie'))
         except Exception as e:
@@ -3434,6 +3474,38 @@ Service des Ressources Humaines"""
     
     smtp = get_admin_smtp()
     return render_template('rh_paie_view.html', page='paie', p=p, send_email=True, smtp=smtp)
+
+# ======================== NOTIFICATIONS ========================
+
+@app.route('/notifications')
+@login_required
+def notifications_page():
+    conn = _gdb()
+    user = get_user_by_id(session['user_id'])
+    notifs = [dict(r) for r in conn.execute("""SELECT * FROM notifications 
+        WHERE user_id=? OR employee_id IN (SELECT id FROM employees WHERE email=?)
+        ORDER BY created_at DESC LIMIT 50""",
+        (session['user_id'], user.get('email',''))).fetchall()]
+    # Mark all as read
+    conn.execute("""UPDATE notifications SET read=1 
+        WHERE (user_id=? OR employee_id IN (SELECT id FROM employees WHERE email=?)) AND read=0""",
+        (session['user_id'], user.get('email','')))
+    conn.commit(); conn.close()
+    return render_template('rh_conges.html', page='notifications', notifs=notifs)
+
+@app.route('/notifications/read/<int:nid>')
+@login_required
+def notification_read(nid):
+    conn = _gdb()
+    n = conn.execute("SELECT * FROM notifications WHERE id=?", (nid,)).fetchone()
+    if n:
+        conn.execute("UPDATE notifications SET read=1 WHERE id=?", (nid,))
+        conn.commit()
+        link = n['link'] or '/dashboard'
+    else:
+        link = '/dashboard'
+    conn.close()
+    return redirect(link)
 
 # ======================== EMPLOYEE PHOTO ========================
 
