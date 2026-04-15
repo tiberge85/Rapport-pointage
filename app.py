@@ -149,6 +149,10 @@ from models import migrate_v34
 migrate_v34()
 from models import migrate_v35
 migrate_v35()
+from models import migrate_v36
+migrate_v36()
+from models import migrate_v37
+migrate_v37()
 from models import migrate_v31
 migrate_v31()
 from models import migrate_v32
@@ -159,6 +163,10 @@ from models import migrate_v34
 migrate_v34()
 from models import migrate_v35
 migrate_v35()
+from models import migrate_v36
+migrate_v36()
+from models import migrate_v37
+migrate_v37()
 from models import migrate_v27
 migrate_v27()
 from models import migrate_v28
@@ -177,6 +185,10 @@ from models import migrate_v34
 migrate_v34()
 from models import migrate_v35
 migrate_v35()
+from models import migrate_v36
+migrate_v36()
+from models import migrate_v37
+migrate_v37()
 from models import migrate_v31
 migrate_v31()
 from models import migrate_v32
@@ -187,6 +199,10 @@ from models import migrate_v34
 migrate_v34()
 from models import migrate_v35
 migrate_v35()
+from models import migrate_v36
+migrate_v36()
+from models import migrate_v37
+migrate_v37()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -868,6 +884,92 @@ def fichiers_marquer(job_id):
 def clients_page():
     clients = get_all_clients()
     return render_template('clients.html', page='clients', clients=clients)
+
+
+@app.route('/clients/<int:cid>')
+@permission_required('clients')
+def client_profile(cid):
+    conn = _gdb()
+    client = conn.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone()
+    if not client: flash("Client non trouvé","error"); return redirect('/clients')
+    client = dict(client)
+    tab = request.args.get('tab', 'profil')
+    data = {'tab': tab, 'client': client}
+    
+    # Notes
+    try: data['notes'] = [dict(r) for r in conn.execute("SELECT n.*, u.full_name as author FROM client_notes n LEFT JOIN users u ON n.created_by=u.id WHERE n.client_id=? ORDER BY n.created_at DESC", (cid,)).fetchall()]
+    except: data['notes'] = []
+    # Devis
+    try: data['devis'] = [dict(r) for r in conn.execute("SELECT * FROM devis WHERE client_id=? ORDER BY created_at DESC", (cid,)).fetchall()]
+    except: data['devis'] = []
+    # Factures
+    try: data['factures'] = [dict(r) for r in conn.execute("SELECT * FROM invoices WHERE client_id=? ORDER BY created_at DESC", (cid,)).fetchall()]
+    except: data['factures'] = []
+    # Contrats
+    try: data['contrats'] = [dict(r) for r in conn.execute("SELECT * FROM achats_contrats WHERE fournisseur_id=? ORDER BY created_at DESC", (cid,)).fetchall()]
+    except: data['contrats'] = []
+    # Visites
+    try: data['visites'] = [dict(r) for r in conn.execute("SELECT * FROM visits WHERE client_id=? ORDER BY created_at DESC", (cid,)).fetchall()]
+    except: data['visites'] = []
+    # Tickets
+    try: data['tickets'] = [dict(r) for r in conn.execute("SELECT * FROM tickets WHERE client_id=? ORDER BY created_at DESC", (cid,)).fetchall()]
+    except: data['tickets'] = []
+    # Projets
+    try: data['projets'] = [dict(r) for r in conn.execute("SELECT * FROM projects WHERE client_id=? ORDER BY created_at DESC", (cid,)).fetchall()]
+    except: data['projets'] = []
+    # Attachments
+    try: data['attachments'] = [dict(r) for r in conn.execute("SELECT * FROM client_attachments WHERE client_id=? ORDER BY created_at DESC", (cid,)).fetchall()]
+    except: data['attachments'] = []
+    # Reminders
+    try: data['reminders'] = [dict(r) for r in conn.execute("SELECT * FROM client_reminders WHERE client_id=? ORDER BY date ASC", (cid,)).fetchall()]
+    except: data['reminders'] = []
+    # Pieces caisse (expenses linked to client)
+    try: data['depenses'] = [dict(r) for r in conn.execute("SELECT * FROM pieces_caisse WHERE supplier LIKE ? ORDER BY date DESC", (f'%{client["name"]}%',)).fetchall()]
+    except: data['depenses'] = []
+    
+    conn.close()
+    return render_template('extra_pages.html', page='client_profile', **data)
+
+@app.route('/clients/<int:cid>/note/add', methods=['POST'])
+@permission_required('clients_edit')
+def client_note_add(cid):
+    conn = _gdb()
+    conn.execute("INSERT INTO client_notes (client_id, content, created_by) VALUES (?,?,?)",
+        (cid, request.form.get('content',''), session['user_id']))
+    conn.commit(); conn.close()
+    flash("Note ajoutée","success"); return redirect(f'/clients/{cid}?tab=notes')
+
+@app.route('/clients/<int:cid>/attachment/add', methods=['POST'])
+@permission_required('clients_edit')
+def client_attachment_add(cid):
+    if 'file' in request.files and request.files['file'].filename:
+        f = request.files['file']
+        fname = f"client_{cid}_{secure_filename(f.filename)}"
+        fdir = os.path.join(app.config['UPLOAD_FOLDER'], 'clients')
+        os.makedirs(fdir, exist_ok=True)
+        f.save(os.path.join(fdir, fname))
+        conn = _gdb()
+        conn.execute("INSERT INTO client_attachments (client_id, filename, original_name, category, notes, created_by) VALUES (?,?,?,?,?,?)",
+            (cid, fname, f.filename, request.form.get('category','general'), request.form.get('notes',''), session['user_id']))
+        conn.commit(); conn.close()
+        flash("Pièce jointe ajoutée","success")
+    return redirect(f'/clients/{cid}?tab=attachments')
+
+@app.route('/clients/<int:cid>/reminder/add', methods=['POST'])
+@permission_required('clients_edit')
+def client_reminder_add(cid):
+    conn = _gdb()
+    conn.execute("INSERT INTO client_reminders (client_id, title, date, created_by) VALUES (?,?,?,?)",
+        (cid, request.form.get('title',''), request.form.get('date',''), session['user_id']))
+    conn.commit(); conn.close()
+    flash("Rappel ajouté","success"); return redirect(f'/clients/{cid}?tab=reminders')
+
+@app.route('/clients/<int:cid>/reminder/done/<int:rid>')
+@permission_required('clients_edit')
+def client_reminder_done(cid, rid):
+    conn = _gdb(); conn.execute("UPDATE client_reminders SET done=1 WHERE id=?", (rid,)); conn.commit(); conn.close()
+    return redirect(f'/clients/{cid}?tab=reminders')
+
 
 @app.route('/clients/add', methods=['POST'])
 @permission_required('clients_edit')
@@ -3037,6 +3139,15 @@ def rh_personnel_edit(eid):
                 os.makedirs(photo_dir, exist_ok=True)
                 photo.save(os.path.join(photo_dir, fname))
                 update_employee(eid, photo=fname)
+            # Handle signature file
+            if 'signature_file' in request.files and request.files['signature_file'].filename:
+                sig_f = request.files['signature_file']
+                from werkzeug.utils import secure_filename as _sf2
+                sig_fname = f"sig_{eid}_{_sf2(sig_f.filename)}"
+                sig_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'signatures')
+                os.makedirs(sig_dir, exist_ok=True)
+                sig_f.save(os.path.join(sig_dir, sig_fname))
+                update_employee(eid, signature_file=sig_fname)
             # Handle file attachments
             _save_employee_files(eid, request.files.getlist('files'))
             flash("Employé modifié", "success")
@@ -3507,33 +3618,89 @@ def _generate_bulletin_pdf(pid):
     story.extend([nt, Spacer(1,8*mm)])
     
     # Signatures
-    sig = [[Paragraph("<b>L'Employeur</b><br/><br/><br/>Signature et cachet", ParagraphStyle('s1',fontSize=8,textColor=DARK,alignment=TA_CENTER)),
-            Paragraph(f"<b>L'Employé</b><br/><br/><br/>Lu et approuvé<br/>{p['employee_name']}", ParagraphStyle('s2',fontSize=8,textColor=DARK,alignment=TA_CENTER))]]
-    st = Table(sig, colWidths=[pw*0.5, pw*0.5])
-    st.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.3,HexColor('#ddd')),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
-    story.extend([st, Spacer(1,6*mm)])
-    story.append(Paragraph("Ce bulletin de paie doit être conservé sans limitation de durée (Art. 32.4 du Code du Travail de Côte d'Ivoire)", ParagraphStyle('f',fontSize=7,alignment=TA_CENTER,textColor=GREY)))
+    emp_sig_content = "<b>L'Employé</b><br/><br/>"
+    emp_sig_elements = []
     
-    # === SIGNATURE if signed ===
-    if p.get('signed_at') and p.get('signature_data'):
-        story.append(Spacer(1, 4*mm))
-        sig_row = [[
-            Paragraph(f"<b>Signature de l'employé :</b> {p['signed_by']}<br/><font size='7' color='#888'>Signé le {p['signed_at']}</font>", sc),
-        ]]
-        # Add signature image
+    # Check for signature: either digital (canvas) or imported file
+    has_sig_data = p.get('signed_at') and p.get('signature_data')
+    has_sig_file = p.get('signature_file') and os.path.exists(os.path.join(app.config['UPLOAD_FOLDER'], 'signatures', p.get('signature_file','')))
+    
+    if has_sig_data or has_sig_file:
+        # Build employee column with signature image
+        sig_img = None
         try:
             import base64, io as _io
-            sig_b64 = p['signature_data'].split(',')[1] if ',' in p['signature_data'] else p['signature_data']
-            sig_bytes = base64.b64decode(sig_b64)
-            sig_buf = _io.BytesIO(sig_bytes)
-            sig_img = Image(sig_buf, width=50*mm, height=18*mm)
-            sig_row[0].append(sig_img)
+            if has_sig_file and not has_sig_data:
+                # Use imported signature file
+                sig_path = os.path.join(app.config['UPLOAD_FOLDER'], 'signatures', p['signature_file'])
+                from PIL import Image as PILImg
+                pil_img = PILImg.open(sig_path)
+                if pil_img.mode == 'RGBA':
+                    bg = PILImg.new('RGB', pil_img.size, (255,255,255))
+                    bg.paste(pil_img, mask=pil_img.split()[3])
+                    pil_img = bg
+                elif pil_img.mode != 'RGB':
+                    pil_img = pil_img.convert('RGB')
+                sig_jpgfile = os.path.join(app.config['UPLOAD_FOLDER'], f'sig_imported_{pid}.jpg')
+                pil_img.save(sig_jpgfile, 'JPEG', quality=95)
+                sig_img = Image(sig_jpgfile, width=45*mm, height=16*mm)
+            elif has_sig_data:
+                sig_b64 = p['signature_data'].split(',')[1] if ',' in p['signature_data'] else p['signature_data']
+                sig_bytes = base64.b64decode(sig_b64)
+            # Save to temp file to avoid BytesIO issues with reportlab
+            sig_tmpfile = os.path.join(app.config['UPLOAD_FOLDER'], f'sig_tmp_{pid}.png')
+            os.makedirs(os.path.dirname(sig_tmpfile), exist_ok=True)
+            # Convert to RGB JPEG to avoid PNG alpha issues
+            from PIL import Image as PILImg
+            pil_img = PILImg.open(_io.BytesIO(sig_bytes))
+            if pil_img.mode == 'RGBA':
+                bg = PILImg.new('RGB', pil_img.size, (255, 255, 255))
+                bg.paste(pil_img, mask=pil_img.split()[3])
+                pil_img = bg
+            elif pil_img.mode != 'RGB':
+                pil_img = pil_img.convert('RGB')
+            sig_jpgfile = sig_tmpfile.replace('.png', '.jpg')
+            pil_img.save(sig_jpgfile, 'JPEG', quality=95)
+            sig_img = Image(sig_jpgfile, width=45*mm, height=16*mm)
         except:
-            sig_row[0].append(Paragraph("✅ Signé numériquement", scb))
-        sig_t = Table(sig_row, colWidths=[pw*0.5, pw*0.5])
-        sig_t.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BACKGROUND',(0,0),(-1,-1),HexColor('#f0fff0')),
-            ('BOX',(0,0),(-1,-1),0.5,HexColor('#2e7d32')),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),('LEFTPADDING',(0,0),(-1,-1),8)]))
-        story.append(sig_t)
+            sig_img = None
+        
+        sig_date = p.get('signed_at','') or ''
+        if sig_img:
+            emp_sig_elements = [
+                Paragraph("<b>L'Employé</b>", ParagraphStyle('s2h',fontSize=8,textColor=DARK,alignment=TA_CENTER)),
+                Spacer(1, 2*mm),
+                sig_img,
+                Spacer(1, 1*mm),
+                Paragraph(f"Lu et approuvé<br/>{'<font size=7 color=#2e7d32>✅ Signé le '+sig_date+'</font><br/>' if sig_date else ''}<b>{p['employee_name']}</b>", 
+                    ParagraphStyle('s2s',fontSize=8,textColor=DARK,alignment=TA_CENTER)),
+            ]
+        else:
+            emp_sig_elements = [
+                Paragraph(f"<b>L'Employé</b><br/><br/>{'<font color=#2e7d32>✅ Signé</font><br/>' if sig_date else ''}Lu et approuvé<br/><b>{p['employee_name']}</b>", 
+                    ParagraphStyle('s2f',fontSize=8,textColor=DARK,alignment=TA_CENTER)),
+            ]
+    else:
+        emp_sig_elements = [
+            Paragraph(f"<b>L'Employé</b><br/><br/><br/><br/>Lu et approuvé<br/><b>{p['employee_name']}</b>", 
+                ParagraphStyle('s2',fontSize=8,textColor=DARK,alignment=TA_CENTER)),
+        ]
+    
+    # Use nested table for employee column to stack elements
+    from reportlab.platypus import KeepTogether
+    emp_inner = Table([[e] for e in emp_sig_elements], colWidths=[pw*0.48])
+    emp_inner.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('TOPPADDING',(0,0),(-1,-1),1),('BOTTOMPADDING',(0,0),(-1,-1),1)]))
+    
+    sig = [[
+        Paragraph("<b>L'Employeur</b><br/><br/><br/><br/>Signature et cachet", ParagraphStyle('s1',fontSize=8,textColor=DARK,alignment=TA_CENTER)),
+        emp_inner
+    ]]
+    st = Table(sig, colWidths=[pw*0.5, pw*0.5])
+    st.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.3,HexColor('#ddd')),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),
+        ('VALIGN',(0,0),(-1,-1),'TOP')]))
+    story.extend([st, Spacer(1,6*mm)])
+    story.append(Paragraph("Ce bulletin de paie doit être conservé sans limitation de durée (Art. 32.4 du Code du Travail de Côte d'Ivoire)", ParagraphStyle('f',fontSize=7,alignment=TA_CENTER,textColor=GREY)))
     
     doc.build(story)
     return output
@@ -5954,6 +6121,15 @@ def pieces_caisse_delete(pid):
 @app.route('/uploads/pieces/<path:filename>')
 def piece_file(filename):
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'pieces'), filename)
+
+
+@app.route('/uploads/signatures/<path:filename>')
+def signature_file(filename):
+    return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'signatures'), filename)
+
+@app.route('/uploads/clients/<path:filename>')
+def client_file(filename):
+    return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'clients'), filename)
 
 @app.route('/uploads/stock/<path:filename>')
 def stock_image(filename):

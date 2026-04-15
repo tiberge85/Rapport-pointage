@@ -2,111 +2,101 @@
 {% block title %}RAMYA - Clients{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h1>🏢 Base de données clients</h1>
-    <p>Gérez les informations de vos clients</p>
+    <h1>🏢 Relation Client</h1>
 </div>
 
 <div class="card">
     <div class="card-header">
-        <h3>Clients enregistrés ({{ clients|length }})</h3>
+        <h3>Clients ({{ clients|length }})</h3>
         <div style="display:flex;gap:6px">
-            <button class="btn btn-outline btn-sm" onclick="document.getElementById('importM').classList.add('active')">📥 Import Excel</button>
-            <button class="btn btn-primary btn-sm" onclick="document.getElementById('addModal').classList.add('active')">+ Ajouter un client</button>
+            <button class="btn btn-outline btn-sm" onclick="document.getElementById('importM').classList.add('active')">📥 Import</button>
+            <button class="btn btn-primary btn-sm" onclick="document.getElementById('addModal').classList.add('active')">+ Client</button>
         </div>
     </div>
-    <div class="card-body">
+    <div class="card-body" style="padding:0">
         {% if clients %}
-        <div class="table-wrap">
-            <div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher un client..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><table id="dataTable">
-                <thead><tr><th>Nom</th><th>Contact</th><th>Tél</th><th>Email</th><th>Actions</th></tr></thead>
-                <tbody>
-                {% for c in clients %}
-                <tr>
-                    <td><strong>{{ c.name }}</strong></td>
-                    <td>{{ c.contact_name or '-' }}</td>
-                    <td>{{ c.tel or '-' }}</td>
-                    <td>{{ c.email or '-' }}</td>
-                    <td style="display:flex;gap:6px">
-                        <a href="/clients/edit/{{ c.id }}" class="btn btn-outline btn-sm">✏️</a>
-                        <a href="/clients/delete/{{ c.id }}" class="btn btn-danger btn-sm" onclick="return confirm('Supprimer ce client ?')">🗑️</a>
-                    </td>
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
+        <div style="margin:10px;display:flex;justify-content:flex-end"><input type="text" id="searchCli" placeholder="🔍 Rechercher..." onkeyup="searchClients()" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:250px"></div>
+        <div class="table-wrap"><table id="cliTable">
+            <thead><tr><th>Société</th><th>Point focal</th><th>Téléphone</th><th>Email</th><th>Adresse</th><th>Actions</th></tr></thead>
+            <tbody>
+            {% for c in clients %}
+            <tr class="cli-row">
+                <td><a href="/clients/{{ c.id }}" style="color:#1a3a5c;font-weight:700;text-decoration:none">{{ c.name }}</a></td>
+                <td>{{ c.contact_name or '-' }}</td>
+                <td>{{ c.tel or '-' }}</td>
+                <td style="font-size:11px">{{ c.email or '-' }}</td>
+                <td style="font-size:11px">{{ c.address or '-' }}</td>
+                <td style="white-space:nowrap">
+                    <a href="/clients/{{ c.id }}" class="btn btn-sm btn-outline" style="font-size:9px">👁️</a>
+                    <a href="/clients/edit/{{ c.id }}" class="btn btn-sm btn-outline" style="font-size:9px">✏️</a>
+                    <a href="/clients/delete/{{ c.id }}" class="btn btn-sm" style="color:#c53030;font-size:9px" onclick="return confirm('Supprimer ?')">🗑️</a>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table></div>
+        <div style="padding:10px;display:flex;justify-content:center;gap:8px;align-items:center" id="cliPager">
+            <button class="btn btn-outline btn-sm" onclick="cliPage(-1)">◀ Précédent</button>
+            <span id="cliPageInfo" style="font-size:12px;color:#888"></span>
+            <button class="btn btn-outline btn-sm" onclick="cliPage(1)">Suivant ▶</button>
         </div>
+        <script>
+        var cliCurrentPage=1, cliPerPage=25;
+        function cliPaginate(){
+            var rows=document.querySelectorAll('.cli-row');
+            var visible=[]; rows.forEach(function(r){if(r.style.display!='none'||!r.dataset.hidden) visible.push(r)});
+            var total=visible.length, pages=Math.ceil(total/cliPerPage)||1;
+            if(cliCurrentPage>pages)cliCurrentPage=pages;if(cliCurrentPage<1)cliCurrentPage=1;
+            rows.forEach(function(r){r.style.display='none'});
+            visible.forEach(function(r,i){r.style.display=(i>=(cliCurrentPage-1)*cliPerPage&&i<cliCurrentPage*cliPerPage)?'':'none'});
+            document.getElementById('cliPageInfo').textContent='Page '+cliCurrentPage+' / '+pages+' ('+total+' clients)';
+        }
+        function cliPage(dir){cliCurrentPage+=dir;cliPaginate()}
+        function searchClients(){
+            var f=document.getElementById('searchCli').value.toLowerCase();
+            document.querySelectorAll('.cli-row').forEach(function(r){
+                r.dataset.hidden=r.textContent.toLowerCase().includes(f)?'':'1';
+                r.style.display='';
+            });
+            cliCurrentPage=1;cliPaginate();
+        }
+        cliPaginate();
+        </script>
         {% else %}
-        <p style="text-align:center;color:#999;padding:30px">Aucun client enregistré</p>
+        <p style="text-align:center;color:#999;padding:30px">Aucun client</p>
         {% endif %}
     </div>
 </div>
 
 <!-- Modal ajout -->
 <div class="modal-bg" id="addModal">
-    <div class="modal" style="max-width:650px;max-height:85vh;overflow-y:auto">
+    <div class="modal" style="max-width:550px">
         <h3>➕ Ajouter un client</h3>
         <form method="post" action="/clients/add">
-            <h4 style="font-size:12px;color:#1a7a6d;margin:8px 0 6px;border-bottom:1px solid #1a7a6d;padding-bottom:3px">🏢 Entreprise</h4>
-            <div class="form-group">
-                <label>Nom de l'entreprise *</label>
-                <input type="text" name="name" required placeholder="Ex: MAKENA SPA">
+            <div class="form-group"><label>Société *</label><input type="text" name="name" required placeholder="Nom de l'entreprise"></div>
+            <div class="form-row">
+                <div class="form-group"><label>Point focal</label><input type="text" name="contact_name" placeholder="Nom du responsable"></div>
+                <div class="form-group"><label>Téléphone</label><input type="text" name="tel" placeholder="07 XX XX XX XX"></div>
             </div>
             <div class="form-row">
-                <div class="form-group"><label>Secteur d'activité</label><input type="text" name="sector" placeholder="Hôtellerie, BTP, Commerce..."></div>
-                <div class="form-group"><label>Ville</label><input type="text" name="city" placeholder="Abidjan"></div>
-                <div class="form-group"><label>Pays</label><input type="text" name="country" value="Côte d'Ivoire"></div>
+                <div class="form-group"><label>Email</label><input type="email" name="email"></div>
+                <div class="form-group"><label>Adresse</label><input type="text" name="address"></div>
             </div>
-            <div class="form-row">
-                <div class="form-group"><label>Adresse</label><input type="text" name="address" placeholder="Cocody, Riviera 3"></div>
-                <div class="form-group"><label>Site web</label><input type="text" name="website" placeholder="www.exemple.ci"></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>N° Registre Commerce</label><input type="text" name="rc_number" placeholder="CI-ABJ-2024-..."></div>
-                <div class="form-group"><label>N° CNPS</label><input type="text" name="cnps_number"></div>
-            </div>
-            
-            <h4 style="font-size:12px;color:#e8672a;margin:10px 0 6px;border-bottom:1px solid #e8672a;padding-bottom:3px">👤 Contact principal</h4>
-            <div class="form-row">
-                <div class="form-group"><label>Titre</label><select name="contact_title"><option value="">—</option><option>M.</option><option>Mme</option><option>Dr</option><option>Ing.</option></select></div>
-                <div class="form-group"><label>Nom du contact</label><input type="text" name="contact_name" placeholder="KOUASSI Jean"></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Téléphone 1</label><input type="text" name="tel" placeholder="07 68 13 55 68"></div>
-                <div class="form-group"><label>Téléphone 2</label><input type="text" name="contact_tel2"></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Email principal</label><input type="email" name="email" placeholder="rh@makena.ci"></div>
-                <div class="form-group"><label>Email secondaire</label><input type="email" name="contact_email2"></div>
-            </div>
-
-            <h4 style="font-size:12px;color:#B8860B;margin:10px 0 6px;border-bottom:1px solid #B8860B;padding-bottom:3px">💼 Commercial</h4>
-            <div class="form-row">
-                <div class="form-group"><label>Source</label><select name="source"><option value="">—</option><option>prospect</option><option>recommandation</option><option>salon</option><option>site_web</option><option>appel</option><option>partenaire</option></select></div>
-                <div class="form-group"><label>Conditions paiement</label><select name="payment_terms"><option value="">—</option><option>comptant</option><option>30 jours</option><option>60 jours</option><option>90 jours</option></select></div>
-                <div class="form-group"><label>Encours max (F)</label><input type="number" name="credit_limit" step="1" value="0"></div>
-            </div>
-            <div class="form-group">
-                <label>Notes</label>
-                <textarea name="notes" rows="2" style="width:100%;padding:9px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:14px" placeholder="Informations complémentaires"></textarea>
-            </div>
-            <div style="display:flex;gap:10px;justify-content:flex-end">
-                <button type="button" class="btn btn-outline" onclick="document.getElementById('addModal').classList.remove('active')">Annuler</button>
-                <button type="submit" class="btn btn-primary">Enregistrer</button>
+            <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px"></textarea></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+                <button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
+                <button type="submit" class="btn btn-primary">Ajouter</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Import Excel Modal -->
+<!-- Import Modal -->
 <div class="modal-bg" id="importM">
-    <div class="modal">
-        <h3>📥 Importer des clients depuis Excel</h3>
+    <div class="modal" style="max-width:450px">
+        <h3>📥 Importer des clients (Excel)</h3>
         <form method="post" action="/clients/import" enctype="multipart/form-data">
-            <p style="font-size:12px;color:#888;margin-bottom:12px">Le fichier Excel doit contenir 4 colonnes dans cet ordre :<br><strong>Nom | Contact | Téléphone | Email</strong></p>
-            <div class="form-group">
-                <label>Fichier Excel (.xlsx)</label>
-                <input type="file" name="file" accept=".xlsx,.xls" required style="padding:10px;border:1.5px dashed #ccc;border-radius:8px;width:100%">
-            </div>
+            <div class="form-group"><label>Fichier Excel (.xlsx)</label><input type="file" name="file" accept=".xlsx,.xls" required style="padding:6px;border:1.5px solid #ddd;border-radius:7px;width:100%"></div>
             <div style="display:flex;gap:8px;justify-content:flex-end">
                 <button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
                 <button type="submit" class="btn btn-primary">📥 Importer</button>

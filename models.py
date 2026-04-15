@@ -2649,3 +2649,32 @@ def migrate_v35():
         try: conn.execute(f"ALTER TABLE payslips ADD COLUMN {col} {typ}")
         except: pass
     conn.commit(); conn.close()
+
+def migrate_v36():
+    """Client profile tables."""
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS client_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER, content TEXT,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS client_attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER, filename TEXT,
+            original_name TEXT, file_type TEXT DEFAULT 'document',
+            category TEXT DEFAULT 'general', notes TEXT DEFAULT '',
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS client_reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER, title TEXT,
+            date TEXT, done INTEGER DEFAULT 0, created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    conn.commit(); conn.close()
+
+def migrate_v37():
+    """Add signature_file to employees for imported signatures."""
+    conn = get_db()
+    try: conn.execute("ALTER TABLE employees ADD COLUMN signature_file TEXT DEFAULT ''")
+    except: pass
+    conn.commit(); conn.close()

@@ -397,6 +397,167 @@ new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes'
 {% endif %}
 
 
+
+{% elif page == 'client_profile' %}
+<div class="page-header"><h1>🏢 {{ client.name }}</h1>
+<a href="/clients" class="btn btn-outline btn-sm">← Retour</a></div>
+
+<div style="display:flex;gap:4px;margin-bottom:14px;flex-wrap:wrap;overflow-x:auto">
+{% for t,icon,label in [
+('profil','👤','Profil'),('notes','📝','Notes'),('visites','📋','Rapport visite'),
+('factures','💰','Factures'),('devis','📄','Devis'),
+('depenses','💸','Dépenses'),('contrats','📑','Contrats'),
+('projets','📁','Projets'),('tickets','🛠️','Tickets'),
+('attachments','📎','Pièces jointes'),('reminders','⏰','Rappels')] %}
+<a href="/clients/{{ client.id }}?tab={{ t }}" class="btn {% if tab==t %}btn-primary{% else %}btn-outline{% endif %}" style="font-size:11px;padding:4px 10px">{{ icon }} {{ label }}</a>
+{% endfor %}
+</div>
+
+{% if tab == 'profil' %}
+<div class="g2">
+<div class="card"><div class="card-header"><h3>👤 Informations</h3><a href="/clients/edit/{{ client.id }}" class="btn btn-outline btn-sm">✏️ Modifier</a></div>
+<div class="card-body" style="font-size:13px;line-height:2">
+<b>Société :</b> {{ client.name }}<br>
+<b>Point focal :</b> {{ client.contact_name or '-' }}<br>
+<b>Téléphone :</b> {{ client.tel or '-' }}<br>
+<b>Email :</b> {{ client.email or '-' }}<br>
+<b>Adresse :</b> {{ client.address or '-' }}<br>
+<b>Notes :</b> {{ client.notes or '-' }}
+</div></div>
+<div class="card"><div class="card-header"><h3>📊 Résumé</h3></div>
+<div class="card-body">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+<div style="padding:10px;background:#e8f5e9;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#2e7d32">{{ factures|length }}</div><div style="color:#888">Factures</div></div>
+<div style="padding:10px;background:#e3f2fd;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#1565c0">{{ devis|length }}</div><div style="color:#888">Devis</div></div>
+<div style="padding:10px;background:#fff3e0;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#e8672a">{{ visites|length }}</div><div style="color:#888">Visites</div></div>
+<div style="padding:10px;background:#f3e5f5;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#7b1fa2">{{ tickets|length }}</div><div style="color:#888">Tickets</div></div>
+</div></div></div>
+</div>
+
+{% elif tab == 'notes' %}
+<div class="card"><div class="card-header"><h3>📝 Notes</h3></div><div class="card-body">
+<form method="post" action="/clients/{{ client.id }}/note/add" style="margin-bottom:14px">
+<textarea name="content" rows="3" required placeholder="Ajouter une note..." style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px"></textarea>
+<button type="submit" class="btn btn-primary btn-sm" style="margin-top:6px">💾 Enregistrer</button>
+</form>
+{% for n in notes %}
+<div style="padding:10px;background:#f8faf9;border-radius:8px;margin-bottom:8px;border-left:3px solid #1A7A6D">
+<div style="font-size:12px">{{ n.content }}</div>
+<div style="font-size:10px;color:#888;margin-top:4px">Par {{ n.author or '?' }} — {{ n.created_at[:16] if n.created_at else '' }}</div>
+</div>
+{% endfor %}
+{% if not notes %}<p style="text-align:center;color:#999;font-size:12px">Aucune note</p>{% endif %}
+</div></div>
+
+{% elif tab == 'visites' %}
+<div class="card"><div class="card-header"><h3>📋 Rapports de visite technique</h3></div><div class="card-body" style="padding:0">
+{% if visites %}
+<div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Technicien</th><th>Statut</th><th>Notes</th></tr></thead>
+<tbody>{% for v in visites %}<tr><td>{{ v.date or v.created_at[:10] }}</td><td>{{ v.visit_type or '-' }}</td><td>{{ v.technician or '-' }}</td>
+<td><span class="badge-status {{ v.status or '' }}">{{ v.status or '-' }}</span></td><td style="font-size:11px">{{ (v.notes or '-')[:50] }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucune visite</p>{% endif %}
+</div></div>
+
+{% elif tab == 'factures' %}
+<div class="card"><div class="card-header"><h3>💰 Factures</h3></div><div class="card-body" style="padding:0">
+{% if factures %}
+<div class="table-wrap"><table><thead><tr><th>Réf</th><th>Date</th><th>Montant</th><th>Statut</th><th>Actions</th></tr></thead>
+<tbody>{% for f in factures %}<tr><td><strong>{{ f.reference }}</strong></td><td>{{ f.created_at[:10] if f.created_at else '-' }}</td>
+<td style="text-align:right;font-weight:700">{{ '{:,.0f}'.format(f.amount or 0) }} F</td>
+<td><span class="badge-status {{ f.status }}">{{ f.status }}</span></td>
+<td><a href="/comptabilite/facture/view/{{ f.id }}" class="btn btn-sm btn-outline" style="font-size:9px">👁️</a></td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucune facture</p>{% endif %}
+</div></div>
+
+{% elif tab == 'devis' %}
+<div class="card"><div class="card-header"><h3>📄 Devis</h3></div><div class="card-body" style="padding:0">
+{% if devis %}
+<div class="table-wrap"><table><thead><tr><th>Réf</th><th>Date</th><th>Montant TTC</th><th>Statut</th><th>Actions</th></tr></thead>
+<tbody>{% for d in devis %}<tr><td><strong>{{ d.reference }}</strong></td><td>{{ d.created_at[:10] if d.created_at else '-' }}</td>
+<td style="text-align:right;font-weight:700">{{ '{:,.0f}'.format(d.total_ttc or 0) }} F</td>
+<td><span class="badge-status {{ d.status }}">{{ d.status }}</span></td>
+<td><a href="/devis/preview/{{ d.id }}" class="btn btn-sm btn-outline" style="font-size:9px">👁️</a></td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucun devis</p>{% endif %}
+</div></div>
+
+{% elif tab == 'depenses' %}
+<div class="card"><div class="card-header"><h3>💸 Dépenses liées</h3></div><div class="card-body" style="padding:0">
+{% if depenses %}
+<div class="table-wrap"><table><thead><tr><th>Réf</th><th>Date</th><th>Description</th><th>Montant</th><th>Catégorie</th></tr></thead>
+<tbody>{% for d in depenses %}<tr><td>{{ d.reference }}</td><td>{{ d.date }}</td><td>{{ d.description or '-' }}</td>
+<td style="text-align:right;font-weight:700">{{ '{:,.0f}'.format(d.amount or 0) }} F</td><td>{{ d.category or '-' }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucune dépense</p>{% endif %}
+</div></div>
+
+{% elif tab == 'contrats' %}
+<div class="card"><div class="card-header"><h3>📑 Contrats</h3></div><div class="card-body" style="padding:0">
+{% if contrats %}
+<div class="table-wrap"><table><thead><tr><th>Réf</th><th>Début</th><th>Fin</th><th>Montant</th><th>Statut</th></tr></thead>
+<tbody>{% for ct in contrats %}<tr><td><strong>{{ ct.reference or '-' }}</strong></td><td>{{ ct.start_date or '-' }}</td><td>{{ ct.end_date or '-' }}</td>
+<td style="text-align:right">{{ '{:,.0f}'.format(ct.amount or ct.total or 0) }} F</td><td>{{ ct.status or '-' }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucun contrat</p>{% endif %}
+</div></div>
+
+{% elif tab == 'projets' %}
+<div class="card"><div class="card-header"><h3>📁 Projets</h3></div><div class="card-body" style="padding:0">
+{% if projets %}
+<div class="table-wrap"><table><thead><tr><th>Nom</th><th>Statut</th><th>Début</th><th>Fin</th></tr></thead>
+<tbody>{% for p in projets %}<tr><td><strong>{{ p.name }}</strong></td><td><span class="badge-status {{ p.status }}">{{ p.status }}</span></td>
+<td>{{ p.start_date or '-' }}</td><td>{{ p.end_date or '-' }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucun projet</p>{% endif %}
+</div></div>
+
+{% elif tab == 'tickets' %}
+<div class="card"><div class="card-header"><h3>🛠️ Tickets support</h3></div><div class="card-body" style="padding:0">
+{% if tickets %}
+<div class="table-wrap"><table><thead><tr><th>N°</th><th>Sujet</th><th>Priorité</th><th>Statut</th><th>Date</th></tr></thead>
+<tbody>{% for t in tickets %}<tr><td>#{{ t.id }}</td><td><strong>{{ t.subject or t.title or '-' }}</strong></td>
+<td>{{ t.priority or '-' }}</td><td><span class="badge-status {{ t.status }}">{{ t.status }}</span></td>
+<td>{{ t.created_at[:10] if t.created_at else '-' }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucun ticket</p>{% endif %}
+</div></div>
+
+{% elif tab == 'attachments' %}
+<div class="card"><div class="card-header"><h3>📎 Pièces jointes & Coffre-fort</h3></div><div class="card-body">
+<form method="post" action="/clients/{{ client.id }}/attachment/add" enctype="multipart/form-data" style="margin-bottom:14px;padding:12px;background:#f8faf9;border-radius:8px">
+<div class="form-row">
+<div class="form-group"><label>Fichier</label><input type="file" name="file" required style="padding:6px;border:1.5px solid #ddd;border-radius:7px;width:100%"></div>
+<div class="form-group"><label>Catégorie</label><select name="category"><option value="general">Général</option><option value="contrat">Contrat</option><option value="facture">Facture</option><option value="devis_manuscript">Devis manuscript</option><option value="rapport">Rapport cotation</option><option value="note_credit">Note de crédit</option><option value="coffre_fort">Coffre-fort</option></select></div>
+</div>
+<div class="form-group"><label>Notes</label><input type="text" name="notes" placeholder="Description..."></div>
+<button type="submit" class="btn btn-primary btn-sm">📎 Ajouter</button>
+</form>
+{% if attachments %}
+{% for a in attachments %}
+<div style="display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #f0f0f0">
+<span style="font-size:20px">📄</span>
+<div style="flex:1"><div style="font-size:12px;font-weight:700">{{ a.original_name }}</div>
+<div style="font-size:10px;color:#888">{{ a.category }} — {{ a.created_at[:16] if a.created_at else '' }}{% if a.notes %} — {{ a.notes }}{% endif %}</div></div>
+<a href="/uploads/clients/{{ a.filename }}" target="_blank" class="btn btn-outline btn-sm" style="font-size:9px">📥</a>
+</div>
+{% endfor %}
+{% else %}<p style="text-align:center;color:#999;font-size:12px">Aucune pièce jointe</p>{% endif %}
+</div></div>
+
+{% elif tab == 'reminders' %}
+<div class="card"><div class="card-header"><h3>⏰ Rappels</h3></div><div class="card-body">
+<form method="post" action="/clients/{{ client.id }}/reminder/add" style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap">
+<input type="text" name="title" required placeholder="Titre du rappel..." style="flex:1;padding:8px;border:1.5px solid #ddd;border-radius:7px">
+<input type="date" name="date" required style="padding:8px;border:1.5px solid #ddd;border-radius:7px">
+<button type="submit" class="btn btn-primary btn-sm">+ Ajouter</button>
+</form>
+{% for r in reminders %}
+<div style="display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #f0f0f0;{% if r.done %}opacity:0.5{% endif %}">
+<span style="font-size:16px">{% if r.done %}✅{% else %}⏰{% endif %}</span>
+<div style="flex:1"><div style="font-size:12px;font-weight:600;{% if r.done %}text-decoration:line-through{% endif %}">{{ r.title }}</div>
+<div style="font-size:10px;color:#888">{{ r.date }}</div></div>
+{% if not r.done %}<a href="/clients/{{ client.id }}/reminder/done/{{ r.id }}" class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;font-size:9px">✅ Fait</a>{% endif %}
+</div>
+{% endfor %}
+{% if not reminders %}<p style="text-align:center;color:#999;font-size:12px">Aucun rappel</p>{% endif %}
+</div></div>
+{% endif %}
+
 {% elif page == 'rh_calendrier' %}
 <div class="page-header"><h1>📅 Calendrier RH</h1>
 <div style="display:flex;gap:6px">
