@@ -45,7 +45,8 @@ from models import (init_db, create_user, authenticate_user, get_user_by_id,
 from rapport_core import generate_devis_pdf
 
 app = Flask(__name__, template_folder=BASE_DIR, static_folder=BASE_DIR, static_url_path='/static')
-app.secret_key = os.environ.get('SECRET_KEY', 'ramya-tech-2026-secret-v3')
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(32).hex())
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600 * 8  # 8 hours
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 PERSISTENT_DIR = os.environ.get('PERSISTENT_DIR', BASE_DIR)
 app.config['UPLOAD_FOLDER'] = os.path.join(PERSISTENT_DIR, 'uploads')
@@ -196,7 +197,7 @@ app.register_blueprint(modules_bp)
 # Ensure admin and concierge roles have default permissions
 try:
     update_role_permissions('admin', ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general',
-                   'envoyer', 'logs', 'concierge',
+                   'envoyer', 'logs', 'concierge', 'concierge_edit',
                    'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit',
                    'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis',
                    'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking'])
@@ -211,7 +212,7 @@ init_devis_tables()
 
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
 ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general',
-                   'envoyer', 'logs', 'concierge',
+                   'envoyer', 'logs', 'concierge', 'concierge_edit',
                    'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit',
                    'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis',
                    'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking']
@@ -220,7 +221,7 @@ ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin',
 PERM_CATEGORIES = {
     'Comptabilité': [('comptabilite', 'Lecture'), ('comptabilite_edit', 'Modification'), ('convertir_devis', 'Convertir devis'), ('caisse_sortie', 'Caisse')],
     'Commercial / CRM': [('clients', 'Clients lecture'), ('clients_edit', 'Clients modification'), ('proforma', 'Devis lecture'), ('proforma_edit', 'Devis modification'), ('visites', 'Visites lecture'), ('visites_edit', 'Visites modification')],
-    'Concierge': [('concierge', 'Accès conciergerie')],
+    'Concierge': [('concierge', 'Consultation'), ('concierge_edit', 'Création/Modification')],
     'Technique': [('centre_technique', 'Centre technique'), ('centre_technique_edit', 'Centre tech. modif'), ('traitement', 'Traitement/DPCI')],
     'Projets': [('resp_projet', 'Resp. projet lecture'), ('resp_projet_edit', 'Resp. projet modif'), ('projets', 'Projets info')],
     'RH & Admin': [('fichiers', 'Employés/RH'), ('contrats', 'Contrats'), ('envoyer', 'Envoi paie'), ('logs', 'Logs')],
@@ -339,11 +340,15 @@ def internal_error(e):
     return f"<h1>Erreur serveur</h1><p>{str(e)}</p><a href='/'>Retour</a>", 500
 
 @app.after_request
-def add_no_cache(response):
+def add_security_headers(response):
     if 'text/html' in response.content_type:
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     return response
 
 @app.errorhandler(404)
@@ -501,7 +506,10 @@ def dashboard_general():
     data['tickets'] = conn.execute("SELECT COUNT(*) FROM tickets").fetchone()[0] if 'tickets' in _get_tables() else 0
     
     # Recent activity
-    data['recent_logs'] = [dict(r) for r in conn.execute("""SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT 15""").fetchall()] if 'activity_log' in _get_tables() else []
+    data['recent_logs'] = []
+    try:
+        data['recent_logs'] = [dict(r) for r in conn.execute("SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 15").fetchall()]
+    except: pass
     
     # Monthly revenue chart
     data['monthly_rev'] = [dict(r) for r in conn.execute("""SELECT strftime('%Y-%m', created_at) as month, SUM(amount) as total 
@@ -922,7 +930,7 @@ def clients_delete(cid):
 def admin_page():
     users = get_all_users()
     stats = get_dashboard_stats()
-    role_perms = {r: get_role_permissions(r) for r in ['admin', 'dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique', 'resp_projet', 'gestionnaire_projet', 'concierge']}
+    role_perms = {r: get_role_permissions(r) for r in ['admin', 'dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique', 'resp_projet', 'concierge']}
     conn = _gdb()
     try:
         tenders = [dict(r) for r in conn.execute("SELECT * FROM tender_links ORDER BY active DESC, deadline ASC").fetchall()]
@@ -1036,7 +1044,7 @@ def admin_delete_user(uid):
 @app.route('/admin/permissions', methods=['POST'])
 @permission_required('admin')
 def admin_permissions():
-    for role in ['dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique', 'resp_projet', 'gestionnaire_projet', 'concierge']:
+    for role in ['dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique', 'resp_projet', 'concierge']:
         perms = [p for p in ALL_PERMISSIONS if request.form.get(f'{role}_{p}')]
         update_role_permissions(role, perms)
     # Admin always has all
@@ -2850,6 +2858,12 @@ def rh_dashboard():
     recent_paie = [dict(r) for r in conn.execute("""SELECT p.*, e.first_name||' '||e.last_name as employee_name
         FROM payslips p LEFT JOIN employees e ON p.employee_id=e.id
         ORDER BY p.period DESC, e.last_name LIMIT 5""").fetchall()]
+    # Recent RH activities
+    try:
+        rh_activities = [dict(r) for r in conn.execute("""SELECT * FROM activity_logs 
+            WHERE action IN ('Personnel','Paie','Absence','Email Paie','Import','Connexion','Utilisateur')
+            ORDER BY created_at DESC LIMIT 10""").fetchall()]
+    except: rh_activities = []
     conn.close()
     return render_template('rh_dashboard.html', page='rh', emp_stats=emp_stats,
         leaves_pending=leaves_pending, leaves_approved=leaves_approved,
@@ -2857,7 +2871,7 @@ def rh_dashboard():
         emp_total_all=emp_total_all, emp_actif=emp_actif,
         emp_demission=emp_demission, emp_renvoye=emp_renvoye, emp_inactif=emp_inactif,
         new_hires=new_hires, expired_contracts=expired_contracts, expiring_soon=expiring_soon,
-        birthdays=birthdays, recent_paie=recent_paie)
+        birthdays=birthdays, recent_paie=recent_paie, rh_activities=rh_activities)
 
 @app.route('/rh/personnel')
 @permission_required('fichiers')
@@ -3284,18 +3298,31 @@ def rh_paie_pdf(pid):
     story.extend([ht, Spacer(1, 3*mm)])
     
     # === EMPLOYEE INFO ===
+    cnps_display = p.get('cnps_number','') or '-'
+    if not p.get('cnps_declared'):
+        cnps_display = 'Non déclaré'
+    assurance_display = ''
+    if p.get('insurance') or p.get('insurance_number'):
+        ins_name = p.get('insurance','') or ''
+        ins_num = p.get('insurance_number','') or ''
+        assurance_display = f"{ins_name} {ins_num}".strip() or '-'
+    
     ei = [[
         Paragraph(f"<b>Employé :</b> {p['employee_name']}", scb),
         Paragraph(f"<b>Matricule :</b> {p.get('matricule','') or '-'}", sc),
-        Paragraph(f"<b>N° CNPS :</b> {p.get('cnps_number','') or p.get('insurance_number','') or '-'}", sc),
+        Paragraph(f"<b>N° CNPS :</b> {cnps_display}", sc),
     ],[
         Paragraph(f"<b>Poste :</b> {p.get('position','') or '-'}", sc),
         Paragraph(f"<b>Département :</b> {(p.get('department','') or '-').upper()}", sc),
-        Paragraph(f"<b>Embauche :</b> {p.get('hire_date','') or '-'}", sc),
+        Paragraph(f"<b>Assurance :</b> {assurance_display or '-'}", sc),
     ],[
+        Paragraph(f"<b>Embauche :</b> {p.get('hire_date','') or '-'}", sc),
         Paragraph(f"<b>Jours travaillés :</b> {p.get('jours_travailles',26)}", sc),
         Paragraph(f"<b>Absences :</b> {p.get('jours_absence',0)} j", sc),
+    ],[
         Paragraph(f"<b>Paiement :</b> {p.get('mode_paiement','virement')}", sc),
+        Paragraph('', sc),
+        Paragraph('', sc),
     ]]
     et = Table(ei, colWidths=[pw*0.4, pw*0.3, pw*0.3])
     et.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.3,HexColor('#ddd')),('BACKGROUND',(0,0),(-1,-1),LIGHT),
@@ -3341,7 +3368,7 @@ def rh_paie_pdf(pid):
     story.extend([apt, Spacer(1,3*mm)])
     
     # === RETENUES ===
-    has_cnps = bool(p.get('cnps_declared')) or bool((p.get('cnps_number') or '').strip()) or bool((p.get('insurance_number') or '').strip())
+    has_cnps = bool(p.get('cnps_declared')) and bool((p.get('cnps_number') or '').strip())
     plafond = min(brut, 2700000)
     if has_cnps:
         cnps_sal = g('cnps_retraite_sal') or round(plafond * 0.063)

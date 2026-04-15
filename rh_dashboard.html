@@ -101,6 +101,21 @@
 </div></div>
 </div>
 
+<!-- Activités RH récentes -->
+{% if rh_activities %}
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3>🕐 Dernières activités RH</h3></div>
+<div class="card-body" style="padding:0;max-height:250px;overflow-y:auto">
+{% for log in rh_activities %}
+<div style="padding:6px 14px;border-bottom:1px solid #f5f5f5;display:flex;gap:8px;align-items:center;font-size:11px">
+    <span style="color:#aaa;min-width:100px">{{ log.created_at[:16] if log.created_at else '' }}</span>
+    <strong style="min-width:80px;color:#1a3a5c">{{ log.user_name or '' }}</strong>
+    <span style="background:{% if 'Paie' in (log.action or '') %}#e8f5e9{% elif 'Personnel' in (log.action or '') %}#f3e5f5{% elif 'Connexion' in (log.action or '') %}#e3f2fd{% else %}#fff3e0{% endif %};padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">{{ log.action or '' }}</span>
+    <span style="flex:1;color:#555">{{ (log.detail or '')[:50] }}</span>
+</div>
+{% endfor %}
+</div></div>
+{% endif %}
+
 <!-- Quick links -->
 <div class="stats-grid">
     <a href="/rh/personnel" class="card" style="text-decoration:none;padding:14px;text-align:center;border-left:4px solid #1565c0">
