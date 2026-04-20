@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block title %}WannyGest - Alertes GPS{% endblock %}{% block content %}
+<div class="page-header"><h1>🔔 Alertes tracking</h1></div>
+
+{% if alerts %}
+<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<thead><tr><th>Date</th><th>Véhicule</th><th>Type</th><th>Message</th><th>Position</th><th>Statut</th><th>Action</th></tr></thead>
+<tbody>{% for a in alerts %}<tr style="{% if not a.acknowledged %}background:#fef9e7{% endif %}">
+<td style="font-size:10px">{{ (a.created_at or '')[:16] }}</td>
+<td><strong>{{ a.immatriculation or '?' }}</strong><br><span style="font-size:10px;color:#888">{{ a.marque or '' }} {{ a.modele or '' }}</span></td>
+<td><span class="badge-status {% if a.alert_type=='vitesse' %}{% elif a.alert_type=='geofence' %}pending{% endif %}">{% if a.alert_type=='vitesse' %}⚡ Vitesse{% elif a.alert_type=='geofence' %}📍 Géofence{% else %}🔔 {{ a.alert_type }}{% endif %}</span></td>
+<td style="font-size:12px">{{ a.message }}</td>
+<td style="font-size:10px">{% if a.lat %}{{ '%.4f'|format(a.lat) }}, {{ '%.4f'|format(a.lng) }}{% else %}-{% endif %}</td>
+<td>{% if a.acknowledged %}<span style="color:#2e7d32;font-size:11px">✅ Acquitté</span>{% else %}<span style="color:#e8672a;font-size:11px;font-weight:600">⏳ Nouveau</span>{% endif %}</td>
+<td>{% if not a.acknowledged %}<a href="/tracking/alertes/{{ a.id }}/ack" class="btn btn-sm" style="font-size:10px;padding:2px 8px;background:#e8f5e9;color:#2e7d32">✅ Acquitter</a>{% endif %}</td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:40px">Aucune alerte</div></div>{% endif %}
+{% endblock %}

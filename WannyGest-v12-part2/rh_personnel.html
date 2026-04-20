@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}WannyGest - Personnel{% endblock %}
+{% block content %}
+<div class="page-header"><h1>👤 Gestion du personnel</h1></div>
+<div class="card"><div class="card-header"><h3>Employés ({{ employees|length }})</h3><a href="/rh/personnel/add" class="btn btn-primary btn-sm">+ Ajouter</a></div><div class="card-body">
+{% if employees %}<div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher un employé..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:250px"></div><div class="table-wrap"><table id="dataTable">
+<thead><tr>
+<th style="cursor:pointer" onclick="sortTable('dataTable',0,'text')">Matricule <span class="sort-arrow" style="font-size:9px;color:#888">⇅</span></th>
+<th style="cursor:pointer" onclick="sortTable('dataTable',1,'text')">Nom <span class="sort-arrow" style="font-size:9px;color:#888">⇅</span></th>
+<th style="cursor:pointer" onclick="sortTable('dataTable',2,'text')">Poste <span class="sort-arrow" style="font-size:9px;color:#888">⇅</span></th>
+<th style="cursor:pointer" onclick="sortTable('dataTable',3,'text')">Département <span class="sort-arrow" style="font-size:9px;color:#888">⇅</span></th>
+<th>Contrat</th>
+<th style="cursor:pointer" onclick="sortTable('dataTable',5,'text')">Statut <span class="sort-arrow" style="font-size:9px;color:#888">⇅</span></th>
+<th style="cursor:pointer" onclick="sortTable('dataTable',6,'num')">Salaire <span class="sort-arrow" style="font-size:9px;color:#888">⇅</span></th>
+<th>Actions</th></tr></thead>
+<tbody>{% for e in employees %}<tr>
+<td>{{ e.matricule or '-' }}</td>
+<td><strong>{{ e.first_name }} {{ e.last_name }}</strong><br><span style="font-size:11px;color:#888">{{ e.email or '' }}</span></td>
+<td>{{ e.position or '-' }}</td><td>{{ e.department or '-' }}</td>
+<td><span class="badge-status {% if e.contract_type=='CDI' %}sent{% else %}pending{% endif %}">{{ e.contract_type }}</span></td>
+<td>
+{% set st = e.status or 'actif' %}
+<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;
+{% if st == 'actif' %}background:#e8f5e9;color:#2e7d32{% elif st == 'inactif' %}background:#f5f5f5;color:#888{% elif st == 'suspendu' %}background:#fff3e0;color:#e8672a{% elif st == 'démissionné' %}background:#e3f2fd;color:#1565c0{% elif st == 'renvoyé' %}background:#fde8e8;color:#c53030{% elif st == 'congé' %}background:#f3e5f5;color:#7b1fa2{% else %}background:#f5f5f5;color:#888{% endif %}">
+<span style="width:6px;height:6px;border-radius:50%;{% if st == 'actif' %}background:#2e7d32{% elif st == 'renvoyé' %}background:#c53030{% elif st == 'démissionné' %}background:#1565c0{% elif st == 'congé' %}background:#7b1fa2{% else %}background:#888{% endif %}"></span>
+{{ st|capitalize }}
+</span>
+</td>
+<td>{{ '{:,.0f}'.format(e.salary) }} F</td>
+<td style="white-space:nowrap">
+    <a href="/rh/personnel/edit/{{ e.id }}" class="btn btn-outline btn-sm">✏️</a>
+    <a href="/rh/personnel/{{ e.id }}/files" class="btn btn-outline btn-sm" title="Pièces jointes">📎</a>
+    <a href="/rh/personnel/delete/{{ e.id }}" class="btn btn-sm" style="color:#c53030" onclick="return confirm('Supprimer cet employé ?')">🗑️</a>
+</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun employé. <a href="/rh/personnel/add" style="color:#1a4a6c">Ajouter le premier →</a></p>{% endif %}
+</div></div>
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends "base.html" %}{% block title %}WannyGest - {{ vehicle.immatriculation }}{% endblock %}{% block content %}
+<div class="page-header"><h1>🚗 {{ vehicle.immatriculation }} — {{ vehicle.marque }} {{ vehicle.modele }}</h1>
+<div style="display:flex;gap:6px">
+<a href="/tracking/vehicules/edit/{{ vehicle.id }}" class="btn btn-primary btn-sm">✏️ Modifier</a>
+<a href="/tracking/vehicules" class="btn btn-outline btn-sm">← Retour</a>
+</div></div>
+
+<div class="g2g" style="margin-bottom:14px">
+<div class="card"><div class="card-header"><h3>🚗 Informations véhicule</h3></div><div class="card-body">
+    <div class="g2" style="gap:6px;font-size:12px">
+        <div><span style="color:#888">Immatriculation:</span> <strong>{{ vehicle.immatriculation }}</strong></div>
+        <div><span style="color:#888">Type:</span> {{ vehicle.type }}</div>
+        <div><span style="color:#888">Marque / Modèle:</span> {{ vehicle.marque }} {{ vehicle.modele }}</div>
+        <div><span style="color:#888">Couleur / Année:</span> {{ vehicle.couleur }} {{ vehicle.annee }}</div>
+        <div><span style="color:#888">Propriétaire:</span> {{ vehicle.proprietaire or '-' }}</div>
+        <div><span style="color:#888">Tél:</span> {{ vehicle.tel_proprietaire or '-' }}</div>
+        <div><span style="color:#888">Statut:</span> <span class="badge-status {% if vehicle.status=='actif' %}sent{% endif %}">{{ vehicle.status }}</span></div>
+    </div>
+</div></div>
+<div class="card"><div class="card-header"><h3>📡 Balise GPS</h3></div><div class="card-body">
+    <div class="g2" style="gap:6px;font-size:12px">
+        <div><span style="color:#888">Marque:</span> {{ vehicle.gps_brand }}</div>
+        <div><span style="color:#888">Modèle:</span> {{ vehicle.gps_model or '-' }}</div>
+        <div><span style="color:#888">Device ID:</span> <strong>{{ vehicle.gps_device_id or '-' }}</strong></div>
+        <div><span style="color:#888">IMEI:</span> {{ vehicle.gps_imei or '-' }}</div>
+        <div><span style="color:#888">SIM:</span> {{ vehicle.gps_sim or '-' }}</div>
+        <div><span style="color:#888">Installation:</span> {{ vehicle.installation_date or '-' }} ({{ vehicle.installation_tech or '-' }})</div>
+    </div>
+    {% if vehicle.last_update %}
+    <div style="margin-top:10px;padding:10px;background:#e8f5e9;border-radius:8px">
+        <strong style="color:#2e7d32">Dernière position:</strong> {{ vehicle.last_update }}
+        <br>📍 {{ vehicle.last_address or 'N/A' }} — {{ '%.0f'|format(vehicle.last_speed or 0) }} km/h
+        <br>GPS: {{ vehicle.last_lat }}, {{ vehicle.last_lng }}
+    </div>
+    {% endif %}
+</div></div>
+</div>
+
+{% if vehicle.last_lat and vehicle.last_lng %}
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3>🗺️ Position actuelle</h3></div><div class="card-body" style="padding:0">
+<div id="map" style="height:350px;border-radius:0 0 12px 12px"></div>
+</div></div>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var map = L.map('map').setView([{{ vehicle.last_lat }}, {{ vehicle.last_lng }}], 15);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'OpenStreetMap'}).addTo(map);
+L.marker([{{ vehicle.last_lat }}, {{ vehicle.last_lng }}]).addTo(map)
+    .bindPopup('<b>{{ vehicle.immatriculation }}</b><br>{{ vehicle.marque }} {{ vehicle.modele }}<br>{{ "%.0f"|format(vehicle.last_speed or 0) }} km/h').openPopup();
+</script>
+{% endif %}
+
+<!-- Historique -->
+<div class="card"><div class="card-header"><h3>📋 Historique des positions ({{ history|length }})</h3></div><div class="card-body" style="padding:0">
+{% if history %}
+<div class="table-wrap"><table><thead><tr><th>Date</th><th>Position</th><th>Vitesse</th><th>Adresse</th><th>Événement</th></tr></thead>
+<tbody>{% for h in history %}<tr>
+<td style="font-size:10px">{{ h.created_at[:16] if h.created_at else '' }}</td>
+<td style="font-size:10px">{{ '%.5f'|format(h.lat) }}, {{ '%.5f'|format(h.lng) }}</td>
+<td style="font-weight:600;color:{% if h.speed > 100 %}#c53030{% elif h.speed > 60 %}#e8672a{% else %}#2e7d32{% endif %}">{{ '%.0f'|format(h.speed) }} km/h</td>
+<td style="font-size:10px">{{ h.address or '-' }}</td>
+<td style="font-size:10px">{{ h.event_type }}</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucun historique</p>{% endif %}
+</div></div>
+{% endblock %}
