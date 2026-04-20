@@ -6,7 +6,7 @@
     <div style="flex:1;padding:12px 16px;border-right:1px solid #eee;text-align:center"><strong>{{ systems|length }}</strong> <span style="color:#888;font-size:12px">Nombre total</span></div>
     <div style="flex:1;padding:12px 16px;border-right:1px solid #eee;text-align:center"><strong style="color:#2e7d32">{{ systems|selectattr('status','equalto','actif')|list|length }}</strong> <span style="color:#2e7d32;font-size:12px">Actifs</span></div>
     <div style="flex:1;padding:12px 16px;border-right:1px solid #eee;text-align:center"><strong style="color:#c53030">{{ due|length }}</strong> <span style="color:#c53030;font-size:12px">Maintenance due</span></div>
-    <div style="flex:1;padding:12px 16px;text-align:center"><strong style="color:#1565c0">{{ systems|rejectattr('status','equalto','actif')|list|length }}</strong> <span style="color:#e8672a;font-size:12px">Inactifs</span></div>
+    <div style="flex:1;padding:12px 16px;text-align:center"><strong style="color:#1A7A6D">{{ systems|rejectattr('status','equalto','actif')|list|length }}</strong> <span style="color:#e8672a;font-size:12px">Inactifs</span></div>
 </div>
 
 <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">

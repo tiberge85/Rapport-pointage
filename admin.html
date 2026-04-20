@@ -34,6 +34,7 @@
                         <option value="dg">Directeur Général</option><option value="resp_projet">Responsable Projet</option>
                         <option value="informatique">Informatique / IT</option><option value="moyens_generaux">Moyens Généraux</option>
                         <option value="resp_projet">Resp. Projet</option><option value="rh">RH</option><option value="admin">Admin</option>
+                        <option value="proprietaire">Propriétaire</option><option value="secretaire">Secrétaire</option>
                     </select></div></div>
                     <button type="submit" class="btn btn-primary" style="width:100%">✅ Créer l'utilisateur</button>
                 </form>
@@ -251,7 +252,7 @@
 {% if 'Connexion' in (l.action or '') %}background:#e8f5e9;color:#2e7d32
 {% elif 'Supprim' in (l.action or '') %}background:#fde8e8;color:#c53030
 {% elif 'Email' in (l.action or '') %}background:#fff3e0;color:#e8672a
-{% else %}background:#e3f2fd;color:#1565c0{% endif %}">{{ l.action }}</span></td>
+{% else %}background:#e3f2fd;color:#1A7A6D{% endif %}">{{ l.action }}</span></td>
 <td style="font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis">{{ l.detail or '-' }}</td>
 <td style="font-size:10px;color:#888">{{ l.ip_address or '-' }}</td>
 </tr>{% endfor %}</tbody></table></div>

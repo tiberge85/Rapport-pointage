@@ -21,7 +21,7 @@
                     <td style="white-space:nowrap;font-size:12px">{{ log.created_at[:19] }}</td>
                     <td><strong>{{ log.user_name or '-' }}</strong></td>
                     <td>
-                        {% if log.action == 'Connexion' %}<span class="badge-status" style="background:#e3f2fd;color:#1565c0">🔐 {{ log.action }}</span>
+                        {% if log.action == 'Connexion' %}<span class="badge-status" style="background:#e3f2fd;color:#1A7A6D">🔐 {{ log.action }}</span>
                         {% elif log.action == 'Traitement' %}<span class="badge-status" style="background:#e8f5e9;color:#2e7d32">⚙️ {{ log.action }}</span>
                         {% elif log.action == 'Envoi' %}<span class="badge-status sent">✅ {{ log.action }}</span>
                         {% elif log.action == 'Réinitialisation' %}<span class="badge-status" style="background:#fde8e8;color:#c53030">🚨 {{ log.action }}</span>

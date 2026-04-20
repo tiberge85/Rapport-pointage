@@ -34,7 +34,7 @@
 {% set today = import('datetime').datetime.now().strftime('%Y-%m-%d') if false else '' %}
 <tr>
 <td>{{ c.code or c.contract_type+'-'+(c.start_date or '')[:7] }}</td>
-<td><a href="/rh/contrats-rh/edit/{{ c.id }}" style="color:#1565c0">{{ c.id }}</a></td>
+<td><a href="/rh/contrats-rh/edit/{{ c.id }}" style="color:#1A7A6D">{{ c.id }}</a></td>
 <td><strong>{{ c.employee_name }}</strong></td>
 <td><span class="badge-status {% if c.contract_type=='CDI' %}sent{% else %}pending{% endif %}">{{ c.contract_type }}</span></td>
 <td>{{ c.department or '-' }}</td>

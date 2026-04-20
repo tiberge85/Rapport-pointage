@@ -26,7 +26,7 @@ new Chart(document.getElementById('revenueChart'),{type:'bar',data:{
 {% if chart.exp_cats %}
 new Chart(document.getElementById('expenseChart'),{type:'doughnut',data:{
     labels:{{ chart.exp_cats | tojson }},
-    datasets:[{data:{{ chart.exp_cat_vals | tojson }},backgroundColor:['#e8672a','#1a7a6d','#B8860B','#1565c0','#c53030','#6a1b9a','#00838f','#ef6c00']}]
+    datasets:[{data:{{ chart.exp_cat_vals | tojson }},backgroundColor:['#e8672a','#1a7a6d','#B8860B','#1A7A6D','#c53030','#6a1b9a','#00838f','#ef6c00']}]
 },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});
 {% endif %}
 </script>
@@ -56,7 +56,7 @@ new Chart(document.getElementById('expenseChart'),{type:'doughnut',data:{
             <td>{{ inv.reference or '-' }}</td>
             <td>{{ '{:,.0f}'.format(inv.amount) }} FCFA</td>
             <td>{% if inv.status == 'a_envoyer' %}<span class="badge-status pending">📤 À envoyer</span>
-                {% elif inv.status == 'envoyee' %}<span class="badge-status" style="background:#e3f2fd;color:#1565c0">📧 Envoyée</span>
+                {% elif inv.status == 'envoyee' %}<span class="badge-status" style="background:#e3f2fd;color:#1A7A6D">📧 Envoyée</span>
                 {% elif inv.status == 'en_attente_paiement' %}<span class="badge-status pending">⏳ Attente paiement</span>
                 {% elif inv.status == 'payee' %}<span class="badge-status sent">✅ Payée</span>{% endif %}</td>
             <td style="display:flex;gap:4px;flex-wrap:wrap">
@@ -80,7 +80,7 @@ new Chart(document.getElementById('expenseChart'),{type:'doughnut',data:{
 <td>{{ d.reference }}</td><td>{{ d.client_name }}</td><td style="font-size:11px">{{ d.objet or '-' }}</td>
 <td style="text-align:right;font-weight:600">{{ '{:,.0f}'.format(d.total_ttc) }} F</td>
 <td><span class="badge-status {% if d.status=='accepte' %}sent{% elif d.status=='envoye' %}pending{% endif %}">{{ d.status }}</span></td>
-<td>{% if 'convertir_devis' in permissions or 'admin' in permissions %}<a href="/devis/convert/{{ d.id }}" class="btn btn-sm" style="background:#1565c0;color:#fff;font-size:10px" onclick="return confirm('Convertir en facture ?')">💰 Facture</a>{% endif %}</td>
+<td>{% if 'convertir_devis' in permissions or 'admin' in permissions %}<a href="/devis/convert/{{ d.id }}" class="btn btn-sm" style="background:#1A7A6D;color:#fff;font-size:10px" onclick="return confirm('Convertir en facture ?')">💰 Facture</a>{% endif %}</td>
 </tr>{% endfor %}</tbody></table></div>
 </div></div>
 {% endif %}

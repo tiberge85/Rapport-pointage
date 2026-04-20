@@ -10,7 +10,7 @@
 .org-card.lv0{border-top-color:#B8860B;min-width:200px}
 .org-card.lv1{border-top-color:#1a7a6d}
 .org-card.lv2{border-top-color:#e8672a}
-.org-card.lv3{border-top-color:#1565c0}
+.org-card.lv3{border-top-color:#1A7A6D}
 .org-avatar{width:52px;height:52px;border-radius:50%;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;overflow:hidden}
 .org-avatar img{width:100%;height:100%;object-fit:cover}
 .org-card.lv0 .org-avatar{width:64px;height:64px;font-size:22px}
@@ -39,7 +39,7 @@
 <!-- PYRAMID VIEW -->
 <div id="view-pyramid">
 <div class="org-pyramid">
-{% set colors = {0:'#B8860B', 1:'#1a7a6d', 2:'#e8672a', 3:'#1565c0'} %}
+{% set colors = {0:'#B8860B', 1:'#1a7a6d', 2:'#e8672a', 3:'#1A7A6D'} %}
 {% for level in [0,1,2,3] %}
 {% if hierarchy[level] %}
     <div class="org-level">
@@ -77,7 +77,7 @@
 
 <!-- DEPARTMENT VIEW -->
 <div id="view-dept" style="display:none">
-{% set dept_colors = ['#1a3a5c','#e8672a','#2e7d32','#7b1fa2','#1565c0','#c53030','#8d6e63','#00838f'] %}
+{% set dept_colors = ['#1a3a5c','#e8672a','#2e7d32','#7b1fa2','#1A7A6D','#c53030','#8d6e63','#00838f'] %}
 {% for dept, members in depts.items() %}
 <div style="background:#fff;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,0.06);overflow:hidden;margin-bottom:16px">
     <div style="padding:12px 18px;font-weight:700;color:#fff;font-size:14px;background:{{ dept_colors[loop.index0 % 8] }}">{{ dept }} ({{ members|length }})</div>

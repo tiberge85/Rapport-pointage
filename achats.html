@@ -5,7 +5,7 @@
     <div class="stat-card"><div class="stat-icon blue">🏢</div><div class="stat-info"><div class="stat-num">{{ fournisseurs|length }}</div><div class="stat-label">Fournisseurs</div></div></div>
     <div class="stat-card"><div class="stat-icon green">📦</div><div class="stat-info"><div class="stat-num">{{ commandes|length }}</div><div class="stat-label">Commandes</div></div></div>
     <div class="stat-card"><div class="stat-icon" style="background:#f3e5f5;color:#7b1fa2">🗃️</div><div class="stat-info"><div class="stat-num">{{ stock_items|length }}</div><div class="stat-label">Articles en stock</div></div></div>
-    <div class="stat-card"><div class="stat-icon" style="background:#e3f2fd;color:#1565c0">💰</div><div class="stat-info"><div class="stat-num">{{ '{:,.0f}'.format(total_commandes) }}</div><div class="stat-label">Total achats (F)</div></div></div>
+    <div class="stat-card"><div class="stat-icon" style="background:#e3f2fd;color:#1A7A6D">💰</div><div class="stat-info"><div class="stat-num">{{ '{:,.0f}'.format(total_commandes) }}</div><div class="stat-label">Total achats (F)</div></div></div>
 </div>
 <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
 {% for t,icon,label in [('fournisseurs','🏢','Fournisseurs'),('stock','📦','Stock'),('demandes','📋','Demandes'),('devis','📄','Devis fournisseur'),('commandes','🚚','Bon de commande'),('contrats','📑','Contrats'),('rapports','📊','Rapports'),('parametres','⚙️','Paramètres')] %}
@@ -332,7 +332,7 @@ function filterStockCat(cat){
 <div class="g3" style="margin-bottom:16px">
     <div style="padding:16px;background:#f8faf9;border-radius:10px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ fournisseurs|length }}</div><div style="font-size:11px;color:#555">Fournisseurs actifs</div></div>
     <div style="padding:16px;background:#fff3e0;border-radius:10px;text-align:center"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ commandes|length }}</div><div style="font-size:11px;color:#555">Commandes passées</div></div>
-    <div style="padding:16px;background:#e3f2fd;border-radius:10px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ '{:,.0f}'.format(total_commandes) }} F</div><div style="font-size:11px;color:#555">Total achats</div></div>
+    <div style="padding:16px;background:#e3f2fd;border-radius:10px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1A7A6D">{{ '{:,.0f}'.format(total_commandes) }} F</div><div style="font-size:11px;color:#555">Total achats</div></div>
 </div>
 </div></div>
 

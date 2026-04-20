@@ -25,7 +25,7 @@
 <!-- Stats -->
 <div class="g4" style="gap:8px;margin-bottom:14px">
     <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#1a7a6d">{{ total_reports }}</div><div style="font-size:10px;color:#888">Rapports</div></div>
-    <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#1565c0">{{ total_users }}</div><div style="font-size:10px;color:#888">Actifs</div></div>
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#1A7A6D">{{ total_users }}</div><div style="font-size:10px;color:#888">Actifs</div></div>
     <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#B8860B">{{ assidus }}</div><div style="font-size:10px;color:#888">🏆 Assidus</div></div>
     <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#c53030">{{ ranking|length - total_users }}</div><div style="font-size:10px;color:#888">Sans rapport</div></div>
 </div>
@@ -54,8 +54,8 @@
 <div class="rank-card" style="background:{% if loop.index <= 3 and r.taux >= 80 %}#FFFDE7{% elif r.nb_rapports == 0 %}#fde8e8{% else %}#fff{% endif %};border:1px solid {% if r.taux >= 100 %}#B8860B{% elif r.taux >= 80 %}#a5d6a7{% elif r.nb_rapports == 0 %}#ef9a9a{% else %}#eee{% endif %}">
     <div class="rank-num" style="background:{% if loop.index == 1 and r.taux >= 80 %}#B8860B{% elif loop.index == 2 and r.taux >= 80 %}#9E9E9E{% elif loop.index == 3 and r.taux >= 80 %}#8D6E63{% elif r.nb_rapports == 0 %}#c53030{% else %}#1a7a6d{% endif %}">{{ loop.index }}</div>
     <div style="min-width:130px"><strong style="font-size:12px">{{ r.full_name }}</strong><div style="font-size:9px;color:#888">{{ r.role }}</div></div>
-    <div style="text-align:center;min-width:55px"><div style="font-size:18px;font-weight:800;color:{% if r.taux >= 100 %}#B8860B{% elif r.nb_rapports == 0 %}#c53030{% else %}#1565c0{% endif %}">{{ r.nb_rapports }}</div><div style="font-size:8px;color:#888">/ {{ r.expected }}</div></div>
-    <div style="flex:1;min-width:80px"><div class="rank-bar"><div class="rank-fill" style="width:{{ r.taux }}%;background:{% if r.taux >= 100 %}#B8860B{% elif r.taux >= 80 %}#2e7d32{% elif r.taux >= 60 %}#1565c0{% else %}#c53030{% endif %}"></div></div><div style="font-size:9px;color:#888;margin-top:1px">{{ r.taux }}%</div></div>
+    <div style="text-align:center;min-width:55px"><div style="font-size:18px;font-weight:800;color:{% if r.taux >= 100 %}#B8860B{% elif r.nb_rapports == 0 %}#c53030{% else %}#1A7A6D{% endif %}">{{ r.nb_rapports }}</div><div style="font-size:8px;color:#888">/ {{ r.expected }}</div></div>
+    <div style="flex:1;min-width:80px"><div class="rank-bar"><div class="rank-fill" style="width:{{ r.taux }}%;background:{% if r.taux >= 100 %}#B8860B{% elif r.taux >= 80 %}#2e7d32{% elif r.taux >= 60 %}#1A7A6D{% else %}#c53030{% endif %}"></div></div><div style="font-size:9px;color:#888;margin-top:1px">{{ r.taux }}%</div></div>
     <span style="padding:3px 8px;border-radius:5px;font-size:9px;font-weight:700;color:#fff;background:{{ r.badge_color }}">{{ r.badge }}</span>
 </div>
 {% endfor %}
@@ -67,19 +67,19 @@
 {% if best_admin and best_admin.taux >= 80 %}
 <div style="background:linear-gradient(135deg,#E3F2FD,#E8EAF6);padding:14px;display:flex;align-items:center;gap:14px;border-bottom:1px solid #eee">
     <div style="font-size:28px">🏆</div>
-    <div><div style="font-size:10px;color:#1565c0;font-weight:700;text-transform:uppercase;letter-spacing:1px">Administratif le plus assidu</div>
+    <div><div style="font-size:10px;color:#1A7A6D;font-weight:700;text-transform:uppercase;letter-spacing:1px">Administratif le plus assidu</div>
     <div style="font-size:16px;font-weight:800">{{ best_admin.full_name }}</div>
     <div style="font-size:11px;color:#555">{{ best_admin.nb_rapports }} rapports — {{ best_admin.taux }}%</div></div>
-    <div style="margin-left:auto;font-size:28px;font-weight:800;color:#1565c0">{{ best_admin.taux }}%</div>
+    <div style="margin-left:auto;font-size:28px;font-weight:800;color:#1A7A6D">{{ best_admin.taux }}%</div>
 </div>
 {% endif %}
 <div style="padding:8px">
 {% for r in ranking_admin %}
-<div class="rank-card" style="background:{% if loop.index <= 3 and r.taux >= 80 %}#E3F2FD{% elif r.nb_rapports == 0 %}#fde8e8{% else %}#fff{% endif %};border:1px solid {% if r.taux >= 100 %}#1565c0{% elif r.taux >= 80 %}#a5d6a7{% elif r.nb_rapports == 0 %}#ef9a9a{% else %}#eee{% endif %}">
-    <div class="rank-num" style="background:{% if loop.index == 1 and r.taux >= 80 %}#1565c0{% elif loop.index == 2 and r.taux >= 80 %}#9E9E9E{% elif loop.index == 3 and r.taux >= 80 %}#8D6E63{% elif r.nb_rapports == 0 %}#c53030{% else %}#1a7a6d{% endif %}">{{ loop.index }}</div>
+<div class="rank-card" style="background:{% if loop.index <= 3 and r.taux >= 80 %}#E3F2FD{% elif r.nb_rapports == 0 %}#fde8e8{% else %}#fff{% endif %};border:1px solid {% if r.taux >= 100 %}#1A7A6D{% elif r.taux >= 80 %}#a5d6a7{% elif r.nb_rapports == 0 %}#ef9a9a{% else %}#eee{% endif %}">
+    <div class="rank-num" style="background:{% if loop.index == 1 and r.taux >= 80 %}#1A7A6D{% elif loop.index == 2 and r.taux >= 80 %}#9E9E9E{% elif loop.index == 3 and r.taux >= 80 %}#8D6E63{% elif r.nb_rapports == 0 %}#c53030{% else %}#1a7a6d{% endif %}">{{ loop.index }}</div>
     <div style="min-width:130px"><strong style="font-size:12px">{{ r.full_name }}</strong><div style="font-size:9px;color:#888">{{ r.role }}</div></div>
-    <div style="text-align:center;min-width:55px"><div style="font-size:18px;font-weight:800;color:{% if r.taux >= 100 %}#1565c0{% elif r.nb_rapports == 0 %}#c53030{% else %}#1a7a6d{% endif %}">{{ r.nb_rapports }}</div><div style="font-size:8px;color:#888">/ {{ r.expected }}</div></div>
-    <div style="flex:1;min-width:80px"><div class="rank-bar"><div class="rank-fill" style="width:{{ r.taux }}%;background:{% if r.taux >= 100 %}#1565c0{% elif r.taux >= 80 %}#2e7d32{% elif r.taux >= 60 %}#1a7a6d{% else %}#c53030{% endif %}"></div></div><div style="font-size:9px;color:#888;margin-top:1px">{{ r.taux }}%</div></div>
+    <div style="text-align:center;min-width:55px"><div style="font-size:18px;font-weight:800;color:{% if r.taux >= 100 %}#1A7A6D{% elif r.nb_rapports == 0 %}#c53030{% else %}#1a7a6d{% endif %}">{{ r.nb_rapports }}</div><div style="font-size:8px;color:#888">/ {{ r.expected }}</div></div>
+    <div style="flex:1;min-width:80px"><div class="rank-bar"><div class="rank-fill" style="width:{{ r.taux }}%;background:{% if r.taux >= 100 %}#1A7A6D{% elif r.taux >= 80 %}#2e7d32{% elif r.taux >= 60 %}#1a7a6d{% else %}#c53030{% endif %}"></div></div><div style="font-size:9px;color:#888;margin-top:1px">{{ r.taux }}%</div></div>
     <span style="padding:3px 8px;border-radius:5px;font-size:9px;font-weight:700;color:#fff;background:{{ r.badge_color }}">{{ r.badge }}</span>
 </div>
 {% endfor %}

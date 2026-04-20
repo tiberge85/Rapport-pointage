@@ -27,7 +27,7 @@
     <div class="overview-card">
         <h4>📋 Aperçu des factures</h4>
         {% set inv = data.get('inv_stats', {}) %}
-        {% for status, label, color, pct in [('a_envoyer','À envoyer','#1565c0',0),('envoyee','Envoyée','#2e7d32',0),('en_attente_paiement','En attente','#e8672a',0),('payee','Payée','#2e7d32',0)] %}
+        {% for status, label, color, pct in [('a_envoyer','À envoyer','#1A7A6D',0),('envoyee','Envoyée','#2e7d32',0),('en_attente_paiement','En attente','#e8672a',0),('payee','Payée','#2e7d32',0)] %}
         <div class="ov-row"><span style="color:{{ color }}">{{ inv.get(status, 0) }} {{ label }}</span><span style="color:#888">{% if data.invoices > 0 %}{{ (inv.get(status,0)*100/data.invoices)|round(1) }}%{% else %}0%{% endif %}</span></div>
         <div class="ov-bar" style="background:#eee"><div style="width:{% if data.invoices > 0 %}{{ inv.get(status,0)*100/data.invoices }}{% else %}0{% endif %}%;height:100%;background:{{ color }};border-radius:3px"></div></div>
         {% endfor %}
@@ -41,7 +41,7 @@
     <div class="overview-card">
         <h4>📝 Aperçu des devis</h4>
         {% set ds = data.get('devis_stats', {}) %}
-        {% for status, label, color in [('brouillon','Brouillon','#888'),('envoye','Envoyé','#1565c0'),('accepte','Accepté','#2e7d32'),('refuse','Refusé','#c53030')] %}
+        {% for status, label, color in [('brouillon','Brouillon','#888'),('envoye','Envoyé','#1A7A6D'),('accepte','Accepté','#2e7d32'),('refuse','Refusé','#c53030')] %}
         <div class="ov-row"><span style="color:{{ color }}">{{ ds.get(status, 0) }} {{ label }}</span><span style="color:#888">{% if data.devis > 0 %}{{ (ds.get(status,0)*100/data.devis)|round(1) }}%{% else %}0%{% endif %}</span></div>
         <div class="ov-bar" style="background:#eee"><div style="width:{% if data.devis > 0 %}{{ ds.get(status,0)*100/data.devis }}{% else %}0{% endif %}%;height:100%;background:{{ color }};border-radius:3px"></div></div>
         {% endfor %}
@@ -70,7 +70,7 @@
     <div style="padding:8px 14px;border-bottom:1px solid #f5f5f5;display:flex;gap:8px;align-items:center;font-size:11px">
         <span style="color:#aaa;min-width:110px">{{ log.created_at[:16] if log.created_at else '' }}</span>
         <strong style="min-width:90px;color:#1a3a5c">{{ log.user_name or '' }}</strong>
-        <span style="background:#e3f2fd;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;color:#1565c0">{{ log.action or '' }}</span>
+        <span style="background:#e3f2fd;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;color:#1A7A6D">{{ log.action or '' }}</span>
         <span style="flex:1;color:#555">{{ (log.detail or '')[:60] }}</span>
     </div>
     {% endfor %}

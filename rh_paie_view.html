@@ -17,7 +17,7 @@ th{text-align:left;font-weight:600}
 .net-bar{background:#1A7A6D;color:#fff;padding:12px 18px;display:flex;justify-content:space-between;font-weight:800;font-size:16px;border-radius:8px;margin:10px 0}
 .actions-bar{display:flex;gap:8px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
 .badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
-.badge.brouillon{background:#e3f2fd;color:#1565c0}.badge.valide{background:#e8f5e9;color:#2e7d32}.badge.envoye{background:#fff3e0;color:#e8672a}
+.badge.brouillon{background:#e3f2fd;color:#1A7A6D}.badge.valide{background:#e8f5e9;color:#2e7d32}.badge.envoye{background:#fff3e0;color:#e8672a}
 @media print{.actions-bar,.page-header{display:none!important}.main{padding:0!important;margin:0!important}.slip{box-shadow:none;border-radius:0;max-width:100%}.slip-hdr img{height:35px!important;width:auto!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.slip-hdr,.sec-hdr,.brut-bar,.net-bar{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 {% set fmt = '{:,.0f}'.format %}
@@ -29,7 +29,7 @@ th{text-align:left;font-weight:600}
     <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimer</button>
     <a href="/rh/paie/{{ p.id }}/pdf" class="btn" style="background:#1A7A6D;color:#fff">📥 PDF</a>
     <a href="/rh/paie/{{ p.id }}/email" class="btn btn-orange">📧 Email</a>
-    {% if p.status == 'brouillon' %}<a href="/rh/paie/{{ p.id }}/status/en_attente_compta" class="btn" style="background:#1565c0;color:#fff">📋 Envoyer à la comptabilité</a>{% endif %}
+    {% if p.status == 'brouillon' %}<a href="/rh/paie/{{ p.id }}/status/en_attente_compta" class="btn" style="background:#1A7A6D;color:#fff">📋 Envoyer à la comptabilité</a>{% endif %}
     {% if p.status == 'valide_compta' %}<a href="/rh/paie/{{ p.id }}/email" class="btn btn-orange">📧 Envoyer à l'employé</a>{% endif %}
     <span class="badge {{ p.status }}">{{ p.status }}</span>
 </div>

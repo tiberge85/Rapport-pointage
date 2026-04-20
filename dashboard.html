@@ -10,7 +10,7 @@
 <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
     <div class="stat-card" style="border-left:4px solid #e8672a"><div class="stat-icon orange">🧾</div><div class="stat-info"><div class="stat-num">{{ inv_stats.en_attente_paiement }}</div><div class="stat-label">Factures en attente</div></div></div>
     <div class="stat-card" style="border-left:4px solid #2e7d32"><div class="stat-icon green">🎯</div><div class="stat-info"><div class="stat-num">{{ d_stats.accepte if d_stats else 0 }}</div><div class="stat-label">Devis acceptés</div></div></div>
-    <div class="stat-card" style="border-left:4px solid #1565c0"><div class="stat-icon blue">📁</div><div class="stat-info"><div class="stat-num">{{ stats.total_jobs }}</div><div class="stat-label">Projets / Rapports</div></div></div>
+    <div class="stat-card" style="border-left:4px solid #1A7A6D"><div class="stat-icon blue">📁</div><div class="stat-info"><div class="stat-num">{{ stats.total_jobs }}</div><div class="stat-label">Projets / Rapports</div></div></div>
     <div class="stat-card" style="border-left:4px solid #7b1fa2"><div class="stat-icon purple">👥</div><div class="stat-info"><div class="stat-num">{{ emp_stats.total if emp_stats else 0 }}</div><div class="stat-label">Employés</div></div></div>
 </div>
 
@@ -95,7 +95,7 @@ new Chart(document.getElementById('c2'),{type:'bar',data:{labels:['Brouillons','
 {% if user_role == 'comptable' %}
 <div class="stats-grid">
     <div class="stat-card" style="border-left:4px solid #e8672a"><div class="stat-icon orange">📤</div><div class="stat-info"><div class="stat-num">{{ inv_stats.a_envoyer }}</div><div class="stat-label">À envoyer</div></div></div>
-    <div class="stat-card" style="border-left:4px solid #1565c0"><div class="stat-icon blue">📧</div><div class="stat-info"><div class="stat-num">{{ inv_stats.envoyee }}</div><div class="stat-label">Envoyées</div></div></div>
+    <div class="stat-card" style="border-left:4px solid #1A7A6D"><div class="stat-icon blue">📧</div><div class="stat-info"><div class="stat-num">{{ inv_stats.envoyee }}</div><div class="stat-label">Envoyées</div></div></div>
     <div class="stat-card" style="border-left:4px solid #f57f17"><div class="stat-icon orange">⏳</div><div class="stat-info"><div class="stat-num">{{ inv_stats.en_attente_paiement }}</div><div class="stat-label">Attente paiement</div></div></div>
     <div class="stat-card" style="border-left:4px solid #2e7d32"><div class="stat-icon green">✅</div><div class="stat-info"><div class="stat-num">{{ inv_stats.payee }}</div><div class="stat-label">Payées</div></div></div>
 </div>
@@ -114,7 +114,7 @@ new Chart(document.getElementById('c2'),{type:'bar',data:{labels:['Brouillons','
     <div class="stat-card" style="border-left:4px solid #1a3a5c"><div class="stat-icon teal">👤</div><div class="stat-info"><div class="stat-num">{{ emp_stats.total if emp_stats else 0 }}</div><div class="stat-label">Employés</div></div></div>
     <div class="stat-card" style="border-left:4px solid #e8672a"><div class="stat-icon orange">🏖️</div><div class="stat-info"><div class="stat-num">{{ emp_stats.pending_leaves if emp_stats else 0 }}</div><div class="stat-label">Congés en attente</div></div></div>
     <div class="stat-card" style="border-left:4px solid #2e7d32"><div class="stat-icon green">📄</div><div class="stat-info"><div class="stat-num">{{ stats.pending_jobs }}</div><div class="stat-label">Fichiers à envoyer</div></div></div>
-    <div class="stat-card" style="border-left:4px solid #1565c0"><div class="stat-icon blue">📑</div><div class="stat-info"><div class="stat-num">{{ emp_stats.cdi if emp_stats else 0 }}</div><div class="stat-label">CDI</div></div></div>
+    <div class="stat-card" style="border-left:4px solid #1A7A6D"><div class="stat-icon blue">📑</div><div class="stat-info"><div class="stat-num">{{ emp_stats.cdi if emp_stats else 0 }}</div><div class="stat-label">CDI</div></div></div>
 </div>
 <div class="card" style="margin-bottom:16px"><div class="card-body" style="height:160px"><canvas id="crh"></canvas></div></div>
 <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">

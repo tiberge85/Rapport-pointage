@@ -87,7 +87,7 @@
 <tbody>{% for e in ecritures %}<tr>
 <td style="font-size:11px">{{ e.date }}</td><td style="text-align:center"><span class="badge-status">{{ e.journal }}</span></td>
 <td style="font-size:10px">{{ e.piece or '-' }}</td>
-<td style="font-size:11px;color:#1565c0">{{ e.compte_debit }}</td><td style="font-size:11px;color:#c53030">{{ e.compte_credit }}</td>
+<td style="font-size:11px;color:#1A7A6D">{{ e.compte_debit }}</td><td style="font-size:11px;color:#c53030">{{ e.compte_credit }}</td>
 <td>{{ e.libelle }}</td><td style="text-align:right;font-weight:600">{{ '{:,.0f}'.format(e.montant) }} F</td>
 <td style="font-size:10px;color:#888">{{ e.full_name or '-' }}</td>
 </tr>{% endfor %}</tbody></table></div></div></div>
@@ -102,8 +102,8 @@
 
 <div class="g2" style="margin-bottom:14px">
 <!-- ACTIF -->
-<div class="card"><div class="card-header" style="background:#e3f2fd"><h3 style="color:#1565c0">ACTIF</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table style="font-size:12px">
-<thead><tr style="background:#4472C4;color:#fff"><th>N°</th><th>Libellé</th><th style="text-align:right">Montant</th></tr></thead>
+<div class="card"><div class="card-header" style="background:#e3f2fd"><h3 style="color:#1A7A6D">ACTIF</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table style="font-size:12px">
+<thead><tr style="background:#1A7A6D;color:#fff"><th>N°</th><th>Libellé</th><th style="text-align:right">Montant</th></tr></thead>
 <tbody>
 <tr style="background:#e3f2fd"><td colspan="3"><strong>Actif immobilisé</strong></td></tr>
 {% for c in bilan.actif_immob %}{% if c.solde > 0 %}<tr><td>{{ c.numero }}</td><td>{{ c.libelle }}</td><td style="text-align:right">{{ '{:,.0f}'.format(c.solde) }}</td></tr>{% endif %}{% endfor %}
@@ -111,7 +111,7 @@
 {% for c in bilan.actif_circ %}{% if c.solde > 0 %}<tr><td>{{ c.numero }}</td><td>{{ c.libelle }}</td><td style="text-align:right">{{ '{:,.0f}'.format(c.solde) }}</td></tr>{% endif %}{% endfor %}
 <tr style="background:#e3f2fd"><td colspan="3"><strong>Trésorerie actif</strong></td></tr>
 {% for c in bilan.actif_treso %}{% if c.solde > 0 %}<tr><td>{{ c.numero }}</td><td>{{ c.libelle }}</td><td style="text-align:right">{{ '{:,.0f}'.format(c.solde) }}</td></tr>{% endif %}{% endfor %}
-<tr style="background:#1565c0;color:#fff;font-weight:700"><td colspan="2">TOTAL ACTIF</td><td style="text-align:right">{{ '{:,.0f}'.format(bilan.t_actif) }} F</td></tr>
+<tr style="background:#1A7A6D;color:#fff;font-weight:700"><td colspan="2">TOTAL ACTIF</td><td style="text-align:right">{{ '{:,.0f}'.format(bilan.t_actif) }} F</td></tr>
 </tbody></table></div></div></div>
 
 <!-- PASSIF -->

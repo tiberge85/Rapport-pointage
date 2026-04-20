@@ -12,7 +12,7 @@
 .atype{padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;white-space:nowrap}
 .atype.retard{background:#fff3e0;color:#e65100}
 .atype.absence{background:#fde8e8;color:#c53030}
-.atype.depart_anticipe{background:#e3f2fd;color:#1565c0}
+.atype.depart_anticipe{background:#e3f2fd;color:#1A7A6D}
 .atype.horaire_decale{background:#f3e5f5;color:#7b1fa2}
 .emp-select{width:100%;min-height:120px;padding:6px;border:1.5px solid #ddd;border-radius:8px;font-size:12px}
 </style>
@@ -23,7 +23,7 @@
     <div class="card" style="flex:1;min-width:130px;text-align:center;padding:14px"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ emp_schedules|length }}</div><div style="font-size:11px;color:#888">Plannings</div></div>
     <div class="card" style="flex:1;min-width:130px;text-align:center;padding:14px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ anomalies|selectattr('status','equalto','detectee')|list|length }}</div><div style="font-size:11px;color:#888">Anomalies</div></div>
     <div class="card" style="flex:1;min-width:130px;text-align:center;padding:14px"><div style="font-size:22px;font-weight:800;color:#2e7d32">{{ anomalies|selectattr('status','equalto','corrigee')|list|length }}</div><div style="font-size:11px;color:#888">Corrigées</div></div>
-    <div class="card" style="flex:1;min-width:130px;text-align:center;padding:14px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ employees|length }}</div><div style="font-size:11px;color:#888">Employés connus</div></div>
+    <div class="card" style="flex:1;min-width:130px;text-align:center;padding:14px"><div style="font-size:22px;font-weight:800;color:#1A7A6D">{{ employees|length }}</div><div style="font-size:11px;color:#888">Employés connus</div></div>
 </div>
 
 <!-- Planning Grid -->
@@ -150,7 +150,7 @@
     <div class="stat-card" style="border-left:4px solid #e8672a"><div class="stat-icon orange">👥</div><div class="stat-info"><div class="stat-num">{{ s.employes }}</div><div class="stat-label">Employés</div></div></div>
     <div class="stat-card" style="border-left:4px solid #2e7d32"><div class="stat-icon green">📄</div><div class="stat-info"><div class="stat-num">{{ s.rapports }}</div><div class="stat-label">Rapports</div></div></div>
     <div class="stat-card" style="border-left:4px solid #7b1fa2"><div class="stat-icon purple">🎯</div><div class="stat-info"><div class="stat-num">{{ s.prospects }}</div><div class="stat-label">Prospects</div></div></div>
-    <div class="stat-card" style="border-left:4px solid #1565c0"><div class="stat-icon blue">📋</div><div class="stat-info"><div class="stat-num">{{ s.devis_total }}</div><div class="stat-label">Devis émis</div></div></div>
+    <div class="stat-card" style="border-left:4px solid #1A7A6D"><div class="stat-icon blue">📋</div><div class="stat-info"><div class="stat-num">{{ s.devis_total }}</div><div class="stat-label">Devis émis</div></div></div>
 </div>
 
 <!-- Finance section -->
@@ -224,7 +224,7 @@
 </div></div>
 
 <script>
-new Chart(document.getElementById('cFin'),{type:'bar',data:{labels:['Facturé','Encaissé','Impayé','Recettes','Dépenses','Solde'],datasets:[{data:[{{s.montant_facture}},{{s.montant_paye}},{{s.montant_impaye}},{{s.recettes}},{{s.depenses}},{{s.solde}}],backgroundColor:['#1a3a5c','#2e7d32','#e8672a','#42a5f5','#ef5350','#7b1fa2'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+new Chart(document.getElementById('cFin'),{type:'bar',data:{labels:['Facturé','Encaissé','Impayé','Recettes','Dépenses','Solde'],datasets:[{data:[{{s.montant_facture}},{{s.montant_paye}},{{s.montant_impaye}},{{s.recettes}},{{s.depenses}},{{s.solde}}],backgroundColor:['#1a3a5c','#2e7d32','#e8672a','#1A7A6D','#ef5350','#7b1fa2'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
 new Chart(document.getElementById('cCom'),{type:'doughnut',data:{labels:['Acceptés','En attente','Refusés'],datasets:[{data:[{{s.devis_acceptes}},{{s.devis_total - s.devis_acceptes}},0],backgroundColor:['#2e7d32','#ff9800','#ef5350']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});
 new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes','Dépenses'],datasets:[{data:[{{s.recettes}},{{s.depenses}}],borderColor:'#1a3a5c',backgroundColor:'rgba(26,58,92,0.1)',fill:true,tension:0.4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
 </script>
@@ -428,7 +428,7 @@ new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes'
 <div class="card-body">
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
 <div style="padding:10px;background:#e8f5e9;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#2e7d32">{{ factures|length }}</div><div style="color:#888">Factures</div></div>
-<div style="padding:10px;background:#e3f2fd;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#1565c0">{{ devis|length }}</div><div style="color:#888">Devis</div></div>
+<div style="padding:10px;background:#e3f2fd;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#1A7A6D">{{ devis|length }}</div><div style="color:#888">Devis</div></div>
 <div style="padding:10px;background:#fff3e0;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#e8672a">{{ visites|length }}</div><div style="color:#888">Visites</div></div>
 <div style="padding:10px;background:#f3e5f5;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:800;color:#7b1fa2">{{ tickets|length }}</div><div style="color:#888">Tickets</div></div>
 </div></div></div>
@@ -534,6 +534,7 @@ new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes'
 <div style="flex:1"><div style="font-size:12px;font-weight:700">{{ a.original_name }}</div>
 <div style="font-size:10px;color:#888">{{ a.category }} — {{ a.created_at[:16] if a.created_at else '' }}{% if a.notes %} — {{ a.notes }}{% endif %}</div></div>
 <a href="/uploads/clients/{{ a.filename }}" target="_blank" class="btn btn-outline btn-sm" style="font-size:9px">📥</a>
+<a href="/clients/{{ client.id }}/attachment/delete/{{ a.id }}" class="btn btn-sm" style="color:#c53030;font-size:9px" onclick="return confirm('Supprimer cette pièce jointe ?')">🗑️</a>
 </div>
 {% endfor %}
 {% else %}<p style="text-align:center;color:#999;font-size:12px">Aucune pièce jointe</p>{% endif %}
@@ -624,7 +625,7 @@ new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes'
 </div></div>
 
 <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
-    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#e3f2fd;color:#1565c0">📋 Réunion</span>
+    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#e3f2fd;color:#1A7A6D">📋 Réunion</span>
     <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#fff3e0;color:#e8672a">⏰ Rappel</span>
     <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#fde8e8;color:#c53030">🔴 Deadline</span>
     <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#e8f5e9;color:#2e7d32">📍 Visite</span>
@@ -649,7 +650,7 @@ new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes'
     </div>
     <div style="flex:1">
         <div style="font-size:12px;font-weight:700">{{ ev.title }}</div>
-        {% if ev.event_time %}<div style="font-size:10px;color:#1565c0">🕐 {{ ev.event_time }}</div>{% endif %}
+        {% if ev.event_time %}<div style="font-size:10px;color:#1A7A6D">🕐 {{ ev.event_time }}</div>{% endif %}
         {% if ev.description %}<div style="font-size:10px;color:#888">{{ ev.description[:60] }}</div>{% endif %}
     </div>
     <a href="/rh/calendrier/delete/{{ ev.id }}" class="btn btn-sm" style="color:#c53030;font-size:9px" onclick="return confirm('Supprimer ?')">🗑️</a>

@@ -3,7 +3,7 @@
 .kanban-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .kanban{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;min-height:65vh}
 .kanban-col{background:#f5f7fa;border-radius:12px;padding:10px;min-height:300px;transition:background 0.2s}
-.kanban-col.drag-over{background:#e3f2fd;border:2px dashed #42a5f5}
+.kanban-col.drag-over{background:#e3f2fd;border:2px dashed #1A7A6D}
 .kanban-col-header{padding:10px 14px;border-radius:8px;color:#fff;font-weight:700;font-size:13px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
 .kanban-col-header .count{background:rgba(255,255,255,0.3);padding:2px 8px;border-radius:12px;font-size:11px}
 .k-card{background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;box-shadow:0 2px 6px rgba(0,0,0,0.06);border-left:4px solid #ddd;cursor:grab;transition:all 0.15s;user-select:none}
@@ -33,7 +33,7 @@
 
 <div class="kanban" id="kanbanBoard">
     {% set cols = [
-        ('a_faire', '📝 À faire', '#42a5f5'),
+        ('a_faire', '📝 À faire', '#1A7A6D'),
         ('en_cours', '🔄 En cours', '#ff9800'),
         ('en_revue', '👁️ En revue', '#7b1fa2'),
         ('termine', '✅ Terminé', '#2e7d32')

@@ -9,7 +9,7 @@
 <div style="display:flex;align-items:center;margin-bottom:8px;font-size:12px">
     <div style="min-width:180px;font-weight:600"><a href="/resp-projet/projet/{{ p.id }}" style="color:#1a3a5c">{{ p.name }}</a></div>
     <div style="flex:1;position:relative;height:24px;background:#f0f0f0;border-radius:4px;overflow:hidden">
-        <div style="position:absolute;left:0;top:0;height:100%;width:{% if p.status=='termine' %}100{% elif p.status=='en_cours' %}50{% else %}10{% endif %}%;background:{% if p.status=='termine' %}#2e7d32{% elif p.status=='en_cours' %}#1565c0{% else %}#ccc{% endif %};border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700">
+        <div style="position:absolute;left:0;top:0;height:100%;width:{% if p.status=='termine' %}100{% elif p.status=='en_cours' %}50{% else %}10{% endif %}%;background:{% if p.status=='termine' %}#2e7d32{% elif p.status=='en_cours' %}#1A7A6D{% else %}#ccc{% endif %};border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700">
             {{ p.start_date or '?' }} → {{ p.end_date or '?' }}
         </div>
     </div>

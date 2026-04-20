@@ -128,7 +128,7 @@
 <td style="text-align:right;font-weight:700;color:{% if a.current_balance >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(a.current_balance) }} F</td>
 <td>{% if a.status=='actif' %}<span style="color:#2e7d32">● Actif</span>{% else %}<span style="color:#c53030">● Inactif</span>{% endif %}</td>
 <td style="white-space:nowrap">
-    <a href="#" class="btn btn-sm" style="color:#1565c0" onclick="editAccount({{ a.id }},'{{ a.name|replace("'","") }}','{{ a.type }}','{{ a.bank_name or "" }}','{{ a.account_number or "" }}',{{ a.initial_balance }},'{{ a.notes or "" }}','{{ a.status }}','{{ a.subtype or "courant" }}');return false">✏️</a>
+    <a href="#" class="btn btn-sm" style="color:#1A7A6D" onclick="editAccount({{ a.id }},'{{ a.name|replace("'","") }}','{{ a.type }}','{{ a.bank_name or "" }}','{{ a.account_number or "" }}',{{ a.initial_balance }},'{{ a.notes or "" }}','{{ a.status }}','{{ a.subtype or "courant" }}');return false">✏️</a>
     <a href="/tresorerie/account/delete/{{ a.id }}" class="btn btn-sm" style="color:#c53030" onclick="return confirm('Supprimer ce compte ?')">🗑️</a>
 </td>
 </tr>{% endfor %}</tbody></table></div>

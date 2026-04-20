@@ -7,7 +7,7 @@ Auth + Rôles + Dashboard + Clients + Fichiers RH
 """
 
 import os, uuid, shutil, functools, smtplib, json
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -358,7 +358,7 @@ def inject_globals():
                 try:
                     today = datetime.now().strftime('%Y-%m-%d')
                     tenders = [dict(r) for r in _sc.execute(
-                        "SELECT * FROM tender_links WHERE active=1 AND (deadline='' OR deadline>=?) ORDER BY deadline", (today,)).fetchall()]
+                        "SELECT * FROM tender_links WHERE is_active=1 AND (deadline='' OR deadline>=?) ORDER BY deadline", (today,)).fetchall()]
                     ctx['active_tenders'] = tenders
                 except: pass
                 _sc.close()
@@ -406,13 +406,54 @@ def welcome():
         return redirect(url_for('dashboard'))
     return render_template('welcome.html')
 
+def check_reminder_notifications():
+    """Check all reminders (client + calendar) and create notifications for upcoming ones."""
+    try:
+        from models import get_db as _rdb
+        conn = _rdb()
+        today = datetime.now().strftime('%Y-%m-%d')
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # 1. Client reminders (due today or tomorrow)
+        reminders = conn.execute(
+            "SELECT cr.*, c.name as client_name FROM client_reminders cr LEFT JOIN clients c ON cr.client_id=c.id WHERE cr.done=0 AND cr.date IN (?,?)", (today, tomorrow)).fetchall()
+        for rem in [dict(r) for r in reminders]:
+            existing = conn.execute("SELECT id FROM notifications WHERE type='rappel' AND link=? AND created_at > datetime('now','-1 day')",
+                (f"/clients/{rem['client_id']}?tab=reminders",)).fetchone()
+            if not existing:
+                users = conn.execute("SELECT id FROM users WHERE is_active=1").fetchall()
+                prefix = "📅 Aujourd'hui" if rem['date'] == today else "⏰ Demain"
+                for u in users:
+                    conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
+                        (u['id'], 'rappel', f"{prefix} — {rem['title']}",
+                         f"Rappel client {rem.get('client_name','?')} : {rem['title']} ({rem['date']})",
+                         f"/clients/{rem['client_id']}?tab=reminders"))
+        
+        # 2. Calendar events (due today or tomorrow)
+        events = conn.execute("SELECT * FROM calendar_events WHERE start_date IN (?,?)", (today, tomorrow)).fetchall()
+        for ev in [dict(r) for r in events]:
+            existing = conn.execute("SELECT id FROM notifications WHERE type='rappel' AND title LIKE ? AND created_at > datetime('now','-1 day')",
+                (f"%{ev['title']}%",)).fetchone()
+            if not existing:
+                users = conn.execute("SELECT id FROM users WHERE is_active=1").fetchall()
+                prefix = "📅 Aujourd'hui" if ev.get('start_date','') == today else "⏰ Demain"
+                time_str = f" à {ev['event_time']}" if ev.get('event_time') else ''
+                for u in users:
+                    conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
+                        (u['id'], 'rappel', f"{prefix}{time_str} — {ev['title']}",
+                         f"{ev.get('description','') or ev['title']}", "/rh/calendrier"))
+        
+        conn.commit(); conn.close()
+    except Exception as e:
+        try: conn.close()
+        except: pass
+
 @app.before_request
 def check_session_timeout():
     """Déconnexion automatique après 30 min d'inactivité."""
     if 'user_id' in session:
         last = session.get('last_active')
         if last:
-            from datetime import datetime, timedelta
             try:
                 last_dt = datetime.fromisoformat(last)
                 if datetime.now() - last_dt > timedelta(minutes=30):
@@ -973,6 +1014,24 @@ def client_attachment_add(cid):
             (cid, fname, f.filename, request.form.get('category','general'), request.form.get('notes',''), session['user_id']))
         conn.commit(); conn.close()
         flash("Pièce jointe ajoutée","success")
+    return redirect(f'/clients/{cid}?tab=attachments')
+
+
+@app.route('/clients/<int:cid>/attachment/delete/<int:aid>')
+@permission_required('clients_edit')
+def client_attachment_delete(cid, aid):
+    conn = _gdb()
+    att = conn.execute("SELECT * FROM client_attachments WHERE id=? AND client_id=?", (aid, cid)).fetchone()
+    if att:
+        # Delete file
+        try:
+            fpath = os.path.join(app.config['UPLOAD_FOLDER'], 'clients', att['filename'])
+            if os.path.exists(fpath): os.remove(fpath)
+        except: pass
+        conn.execute("DELETE FROM client_attachments WHERE id=?", (aid,))
+        conn.commit()
+        flash("Pièce jointe supprimée", "success")
+    conn.close()
     return redirect(f'/clients/{cid}?tab=attachments')
 
 @app.route('/clients/<int:cid>/reminder/add', methods=['POST'])
@@ -4181,12 +4240,43 @@ def rh_paie_sign(pid):
 def api_notif_count():
     user = get_user_by_id(session['user_id'])
     try:
-        conn = _gdb()
+        from models import get_db as _ndb2
+        conn = _ndb2()
+        # === Check reminders and create notifications ===
+        today = datetime.now().strftime('%Y-%m-%d')
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Client reminders due today/tomorrow
+        for rem in [dict(r) for r in conn.execute(
+            "SELECT cr.*, c.name as client_name FROM client_reminders cr LEFT JOIN clients c ON cr.client_id=c.id WHERE cr.done=0 AND cr.date IN (?,?)", (today, tomorrow)).fetchall()]:
+            if not conn.execute("SELECT id FROM notifications WHERE type='rappel' AND link=? AND created_at > datetime('now','-1 day')",
+                (f"/clients/{rem['client_id']}?tab=reminders",)).fetchone():
+                prefix = "📅 Aujourd'hui" if rem['date'] == today else "⏰ Demain"
+                for u in conn.execute("SELECT id FROM users WHERE is_active=1").fetchall():
+                    conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
+                        (u['id'], 'rappel', f"{prefix} — {rem['title']}",
+                         f"Rappel client {rem.get('client_name','?')} : {rem['title']} ({rem['date']})",
+                         f"/clients/{rem['client_id']}?tab=reminders"))
+        
+        # Calendar events due today/tomorrow
+        for ev in [dict(r) for r in conn.execute("SELECT * FROM calendar_events WHERE start_date IN (?,?)", (today, tomorrow)).fetchall()]:
+            if not conn.execute("SELECT id FROM notifications WHERE type='rappel' AND title LIKE ? AND created_at > datetime('now','-1 day')",
+                (f"%{ev['title']}%",)).fetchone():
+                prefix = "📅 Aujourd'hui" if ev.get('start_date','') == today else "⏰ Demain"
+                time_str = f" à {ev['event_time']}" if ev.get('event_time') else ''
+                for u in conn.execute("SELECT id FROM users WHERE is_active=1").fetchall():
+                    conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
+                        (u['id'], 'rappel', f"{prefix}{time_str} — {ev['title']}",
+                         f"{ev.get('description','') or ev['title']}", "/rh/calendrier"))
+        
+        conn.commit()
+        # === Count unread ===
         cnt = conn.execute("SELECT COUNT(*) FROM notifications WHERE (user_id=? OR employee_id IN (SELECT id FROM employees WHERE email=?)) AND read=0",
             (user['id'], user.get('email',''))).fetchone()[0]
         conn.close()
         return jsonify({'count': cnt})
-    except:
+    except Exception as e:
+        import sys; print(f"NOTIF_API_ERR: {e}", file=sys.stderr)
         return jsonify({'count': 0})
 
 # ======================== NOTIFICATIONS ========================
