@@ -272,6 +272,8 @@ try:
         update_role_permissions('proprietaire', ['dashboard', 'dashboard_general', 'concierge', 'fichiers', 'clients', 'comptabilite', 'proforma', 'moyens_generaux', 'rapports_j', 'chat', 'tracking', 'logs'])
     if not _grp('secretaire'):
         update_role_permissions('secretaire', ['dashboard', 'clients', 'clients_edit', 'proforma', 'rapports_j', 'chat', 'concierge', 'concierge_edit', 'visites', 'contrats'])
+    if not _grp('client'):
+        update_role_permissions('client', ['dashboard'])
     if 'informatique' not in _grp('technicien'):
         update_role_permissions('technicien', ['dashboard', 'traitement', 'informatique', 'centre_technique', 'centre_technique_edit', 'visites', 'visites_edit', 'rapports_j', 'chat'])
     if 'centre_technique' not in _grp('resp_projet'):
@@ -512,14 +514,32 @@ def login():
         
         user = authenticate_user(username, request.form['password'])
         if user:
-            # Vérifier politique mot de passe
             record_login_attempt(username, True, ip)
             session['user_id'] = user['id']
             session['last_active'] = datetime.now().isoformat()
-            log_activity(user['id'], user['full_name'], 'Connexion', 
-                        f"Connexion réussie", ip)
+            log_activity(user['id'], user['full_name'], 'Connexion', f"Connexion réussie", ip)
             flash(f"Bienvenue {user['full_name']} !", "success")
+            if user['role'] == 'client':
+                return redirect('/portail/dashboard')
             return redirect(url_for('dashboard'))
+        
+        # Try client_users table
+        conn = _gdb()
+        import hashlib
+        cu = conn.execute("SELECT * FROM client_users WHERE username=? AND is_active=1", (username,)).fetchone()
+        if cu:
+            cu = dict(cu)
+            ph = hashlib.sha256((request.form['password'] + (cu.get('salt','') or '')).encode()).hexdigest()
+            if ph == cu['password_hash']:
+                session['client_user_id'] = cu['id']
+                session['client_id'] = cu['client_id']
+                session['client_name'] = cu['full_name']
+                conn.execute("UPDATE client_users SET last_login=? WHERE id=?", (datetime.now().isoformat(), cu['id']))
+                conn.commit(); conn.close()
+                record_login_attempt(username, True, ip)
+                flash(f"Bienvenue {cu['full_name']} !", "success")
+                return redirect('/portail/dashboard')
+        conn.close()
         
         record_login_attempt(username, False, ip)
         remaining = 5 - get_failed_attempts(username)
@@ -4503,8 +4523,19 @@ def portail_dashboard():
     data['invoices'] = [dict(r) for r in conn.execute("SELECT * FROM invoices WHERE client_id=? ORDER BY created_at DESC LIMIT 10", (cid,)).fetchall()]
     data['pending'] = len([r for r in data['requests'] if r['status'] in ('soumise','en_cours')])
     data['total_interventions'] = len(data['interventions'])
+    # Equipment / systems installed
+    try:
+        data['equipments'] = [dict(r) for r in conn.execute(
+            "SELECT * FROM tech_center WHERE client_id=? ORDER BY next_maintenance", (cid,)).fetchall()]
+    except: data['equipments'] = []
+    # Client info
+    try:
+        data['client'] = dict(conn.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone())
+    except: data['client'] = {}
     conn.close()
-    return render_template('extra_pages.html', page='portail_dashboard', data=data)
+    today_s = datetime.now().strftime('%Y-%m-%d')
+    tmrw_s = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    return render_template('extra_pages.html', page='portail_dashboard', data=data, today_str=today_s, tomorrow_str=tmrw_s)
 
 @app.route('/portail/demande', methods=['GET','POST'])
 @portail_required
@@ -4674,7 +4705,7 @@ def compta_caisse_detail(cid):
     caisse = dict(caisse)
     period = request.args.get('period', datetime.now().strftime('%Y-%m'))
     operations = [dict(r) for r in conn.execute(
-        "SELECT * FROM caisse_operations WHERE caisse_id=? AND strftime('%%Y-%%m',created_at)=? ORDER BY created_at DESC", (cid, period)).fetchall()]
+        "SELECT * FROM caisse_operations WHERE caisse_id=? AND strftime('%Y-%m',created_at)=? ORDER BY created_at DESC", (cid, period)).fetchall()]
     all_ops = [dict(r) for r in conn.execute("SELECT * FROM caisse_operations WHERE caisse_id=? ORDER BY created_at DESC", (cid,)).fetchall()]
     entrees = sum(o['amount'] for o in all_ops if o['type']=='entree')
     sorties = sum(o['amount'] for o in all_ops if o['type']=='sortie')
@@ -5222,11 +5253,34 @@ def resp_projet_comment(tid):
 @permission_required('resp_projet')
 def resp_projet_planning():
     conn = _gdb()
-    projects = [dict(r) for r in conn.execute("SELECT * FROM projects WHERE start_date != '' ORDER BY start_date").fetchall()]
-    tasks = [dict(r) for r in conn.execute("""SELECT t.*, p.name as project_name FROM tasks t 
-        LEFT JOIN projects p ON t.project_id=p.id WHERE t.due_date != '' ORDER BY t.due_date""").fetchall()]
+    import json as _json
+    month_param = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    try:
+        year = int(month_param[:4])
+        month = int(month_param[5:7])
+    except:
+        year = datetime.now().year; month = datetime.now().month
+    
+    month_names = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre']
+    prev_m = month - 1; prev_y = year
+    if prev_m < 1: prev_m = 12; prev_y -= 1
+    next_m = month + 1; next_y = year
+    if next_m > 12: next_m = 1; next_y += 1
+    
+    projects = [dict(r) for r in conn.execute("SELECT * FROM projects WHERE start_date IS NOT NULL AND start_date != '' ORDER BY start_date").fetchall()]
+    tasks = [dict(r) for r in conn.execute("""SELECT t.*, p.name as project_name, u.full_name as assigned_name 
+        FROM tasks t LEFT JOIN projects p ON t.project_id=p.id LEFT JOIN users u ON t.assigned_to=u.id
+        WHERE t.due_date IS NOT NULL AND t.due_date != '' ORDER BY t.due_date""").fetchall()]
     conn.close()
-    return render_template('resp_projet_planning.html', page='resp_planning', projects=projects, tasks=tasks, today=datetime.now().strftime('%Y-%m-%d'))
+    
+    tasks_json = _json.dumps([{'title':t['title'],'due':t.get('due_date',''),'status':t.get('status',''),'project':t.get('project_name','')} for t in tasks])
+    projects_json = _json.dumps([{'name':p['name'],'start':p.get('start_date',''),'end':p.get('end_date','')} for p in projects])
+    
+    return render_template('resp_projet_planning.html', page='resp_planning', 
+        projects=projects, tasks=tasks, today=datetime.now().strftime('%Y-%m-%d'),
+        year=year, month=month, month_name=month_names[month],
+        prev_month=f"{prev_y}-{prev_m:02d}", next_month=f"{next_y}-{next_m:02d}",
+        tasks_json=tasks_json, projects_json=projects_json)
 
 # ======================== CONTRATS RH ========================
 
