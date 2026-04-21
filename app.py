@@ -247,7 +247,7 @@ try:
     if not _grp('proprietaire'):
         update_role_permissions('proprietaire', ['dashboard', 'dashboard_general', 'concierge', 'fichiers', 'clients', 'comptabilite', 'proforma', 'moyens_generaux', 'rapports_j', 'chat', 'tracking', 'logs'])
     if not _grp('secretaire'):
-        update_role_permissions('secretaire', ['dashboard', 'clients', 'proforma', 'rapports_j', 'chat', 'concierge'])
+        update_role_permissions('secretaire', ['dashboard', 'clients', 'clients_edit', 'proforma', 'rapports_j', 'chat', 'concierge', 'concierge_edit', 'visites', 'contrats'])
 except: pass
 
 from models import (init_devis_tables, create_devis, get_all_devis, get_devis_by_id,
@@ -550,9 +550,35 @@ def dashboard():
     # Notifications for dashboard
     announcements = db_get_all('rh_announcements', order='created_at DESC', limit=5) if 'rh_announcements' in _get_tables() else []
     trainings_upcoming = db_get_all('rh_trainings', order='date ASC', limit=5) if 'rh_trainings' in _get_tables() else []
+    
+    # Secretaire-specific data
+    sec_data = {}
+    if role in ('secretaire', 'proprietaire', 'admin', 'dg'):
+        conn = _gdb()
+        today = datetime.now().strftime('%Y-%m-%d')
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        try: sec_data['today_events'] = [dict(r) for r in conn.execute("SELECT * FROM calendar_events WHERE start_date=? ORDER BY event_time", (today,)).fetchall()]
+        except: sec_data['today_events'] = []
+        try: sec_data['tomorrow_events'] = [dict(r) for r in conn.execute("SELECT * FROM calendar_events WHERE start_date=? ORDER BY event_time", (tomorrow,)).fetchall()]
+        except: sec_data['tomorrow_events'] = []
+        try: sec_data['pending_reminders'] = [dict(r) for r in conn.execute("SELECT cr.*, c.name as client_name FROM client_reminders cr LEFT JOIN clients c ON cr.client_id=c.id WHERE cr.done=0 ORDER BY cr.date ASC LIMIT 10").fetchall()]
+        except: sec_data['pending_reminders'] = []
+        try: sec_data['recent_clients'] = [dict(r) for r in conn.execute("SELECT * FROM clients ORDER BY id DESC LIMIT 5").fetchall()]
+        except: sec_data['recent_clients'] = []
+        try: sec_data['total_clients'] = conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0]
+        except: sec_data['total_clients'] = 0
+        try: sec_data['visiteurs_today'] = conn.execute("SELECT COUNT(*) FROM concierge_visiteurs WHERE date_visite=?", (today,)).fetchone()[0]
+        except: sec_data['visiteurs_today'] = 0
+        try: sec_data['courrier_today'] = conn.execute("SELECT COUNT(*) FROM concierge_courrier WHERE date_reception=?", (today,)).fetchone()[0]
+        except: sec_data['courrier_today'] = 0
+        try: sec_data['colis_pending'] = conn.execute("SELECT COUNT(*) FROM concierge_colis WHERE statut='en_attente' OR statut IS NULL").fetchone()[0]
+        except: sec_data['colis_pending'] = 0
+        conn.close()
+    
     return render_template('dashboard.html', page='dashboard', stats=stats, 
                           inv_stats=inv_stats, v_stats=v_stats, d_stats=d_stats,
-                          emp_stats=emp_stats, user_role=role,
+                          emp_stats=emp_stats, user_role=role, sec_data=sec_data,
+                          today_str=datetime.now().strftime('%Y-%m-%d'),
                           announcements=announcements, trainings_upcoming=trainings_upcoming)
 
 @app.route('/dashboard-general')
