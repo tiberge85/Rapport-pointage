@@ -2112,7 +2112,7 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
         canv.restoreState()
     
     doc = SimpleDocTemplate(output_path, pagesize=A4,
-        leftMargin=15*mm, rightMargin=15*mm, topMargin=8*mm, bottomMargin=28*mm)
+        leftMargin=15*mm, rightMargin=15*mm, topMargin=8*mm, bottomMargin=20*mm)
     
     story = []
     
@@ -2159,6 +2159,13 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     total_ttc = float(devis_data.get('total_ttc', 0) or 0)
     main_oeuvre = float(devis_data.get('main_oeuvre', 0) or 0)
     remise = float(devis_data.get('remise', 0) or 0)
+    # TVA optionnelle
+    tva_active = bool(devis_data.get('tva_active', False))
+    tva_rate = float(devis_data.get('tva_rate', 18) or 18)  # 18% par défaut en CI
+    tva_amount = float(devis_data.get('tva_amount', 0) or 0)
+    # Si TVA active mais montant non calculé, on le calcule
+    if tva_active and not tva_amount and total_ht:
+        tva_amount = round(total_ht * tva_rate / 100, 0)
     
     # =========================================================
     # HEADER : Logo + nom société + liste services (comme modèle)
@@ -2192,25 +2199,35 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
         ('RIGHTPADDING', (0,0), (-1,-1), 0),
     ]))
     story.append(ht)
-    story.append(Spacer(1, 6*mm))
+    story.append(Spacer(1, 4*mm))
     
     # =========================================================
     # TITRE DEVIS + référence à droite
     # =========================================================
-    right_info = Paragraph(
-        f"<font size='26' color='#4B4B4B'><b>{doc_type}</b></font><br/>"
-        f"<font size='9'># {ref}</font><br/>"
+    right_info_parts = [
+        f"<font size='26' color='#4B4B4B'><b>{doc_type}</b></font>",
+        f"<font size='9'># {ref}</font>",
         f"<font size='9'>Date: {date_str}</font>"
-        + (f"<br/><font size='9'>Contact commercial: {contact}</font>" if contact else ""),
-        ParagraphStyle('right_info', alignment=TA_RIGHT, leading=16)
-    )
+    ]
+    if contact:
+        right_info_parts.append(f"<font size='9'>Contact commercial: {contact}</font>")
+    # Rédacteur + horodatage en petit, sous la date
+    redacteur = devis_data.get('redacteur', '')
+    redacteur_date = devis_data.get('redacteur_date', '')
+    if redacteur:
+        rparts = [f"<i>Établi par :</i> <b>{redacteur}</b>"]
+        if redacteur_date: rparts.append(f"<i>le</i> {redacteur_date}")
+        right_info_parts.append(f"<font size='8' color='#888'>{' '.join(rparts)}</font>")
+    
+    right_info = Paragraph("<br/>".join(right_info_parts),
+        ParagraphStyle('right_info', alignment=TA_RIGHT, leading=16))
     title_data = [['', right_info]]
     tt = Table(title_data, colWidths=[90*mm, 90*mm])
     tt.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),
                              ('LEFTPADDING',(0,0),(-1,-1),0),
                              ('RIGHTPADDING',(0,0),(-1,-1),0)]))
     story.append(tt)
-    story.append(Spacer(1, 4*mm))
+    story.append(Spacer(1, 3*mm))
     
     # =========================================================
     # CLIENT (À gauche)
@@ -2218,16 +2235,16 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     story.append(Paragraph("<b>À</b>", ParagraphStyle('a', fontSize=10, fontName='Helvetica-Bold')))
     story.append(Paragraph(f"<b>{client_name}</b>",
         ParagraphStyle('cl', fontSize=11, fontName='Helvetica-Bold')))
-    story.append(Spacer(1, 3*mm))
+    story.append(Spacer(1, 2*mm))
     if client_code:
         story.append(Paragraph(f"Code client: {client_code}",
             ParagraphStyle('cc', fontSize=10, textColor=HexColor('#333'))))
-    story.append(Spacer(1, 3*mm))
+    story.append(Spacer(1, 2*mm))
     
     if objet:
         story.append(Paragraph(f"<b>Objet :</b> {objet}",
             ParagraphStyle('obj', fontSize=10, fontName='Helvetica-Bold')))
-    story.append(Spacer(1, 4*mm))
+    story.append(Spacer(1, 3*mm))
     
     # =========================================================
     # TABLEAU DES ARTICLES — header ORANGE
@@ -2271,31 +2288,36 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), RAMYA_ORANGE),
         ('TEXTCOLOR', (0, 0), (-1, 0), white),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('FONTSIZE', (0, 0), (-1, -1), 8.5),
         ('LINEBELOW', (0, 0), (-1, 0), 1, RAMYA_ORANGE),
         ('LINEABOVE', (0, 1), (-1, -1), 0.25, HexColor('#eeeeee')),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, 0), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-        ('TOPPADDING', (0, 1), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, 0), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
+        ('TOPPADDING', (0, 1), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 2),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [white, ROW_BG]),
-        ('LEFTPADDING', (0,0), (-1,-1), 6),
-        ('RIGHTPADDING', (0,0), (-1,-1), 6),
+        ('LEFTPADDING', (0,0), (-1,-1), 5),
+        ('RIGHTPADDING', (0,0), (-1,-1), 5),
     ]))
     story.append(t)
-    story.append(Spacer(1, 3*mm))
+    story.append(Spacer(1, 1*mm))
     
     # =========================================================
     # TOTAUX : Total HT, petites fournitures, puis Total TTC en VERT
     # =========================================================
-    totaux_data = [
+    # Totaux lignes (conditionnelles : on n'affiche que les lignes non nulles)
+    totaux_rows = [
         ['', Paragraph("<b>Total HT</b>", s_right),
          Paragraph(f"<b>{fmt(total_ht)}XOF</b>", s_right)],
-        ['', Paragraph("petites fournitures", s_right),
-         Paragraph(f"{fmt(petites_fourn)}XOF", s_right)],
     ]
-    tot_t = Table(totaux_data, colWidths=[110*mm, 32*mm, 38*mm])
+    if petites_fourn > 0:
+        totaux_rows.append(['', Paragraph("petites fournitures", s_right),
+                            Paragraph(f"{fmt(petites_fourn)}XOF", s_right)])
+    if tva_active and tva_amount > 0:
+        totaux_rows.append(['', Paragraph(f"TVA ({tva_rate:.0f}%)", s_right),
+                            Paragraph(f"{fmt(tva_amount)}XOF", s_right)])
+    tot_t = Table(totaux_rows, colWidths=[110*mm, 32*mm, 38*mm])
     tot_t.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('TOPPADDING', (0,0), (-1,-1), 2),
@@ -2363,7 +2385,7 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
         ('LINEBELOW', (0, 0), (-1, 0), 0.25, RAMYA_ORANGE),
     ]))
     story.append(bar)
-    story.append(Spacer(1, 5*mm))
+    story.append(Spacer(1, 3*mm))
     
     # =========================================================
     # MONTANT EN LETTRES
@@ -2371,35 +2393,34 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     words = number_to_words_fr(int(total_ttc))
     story.append(Paragraph(
         f"<b>Sauf erreur, arrêté à la somme de: {words} Francs CFA</b>",
-        ParagraphStyle('words', fontSize=10, alignment=TA_CENTER, textColor=HexColor('#000'))
+        ParagraphStyle('words', fontSize=9.5, alignment=TA_CENTER, textColor=HexColor('#000'))
     ))
+    story.append(Spacer(1, 4*mm))
     
     # =========================================================
-    # ===== PAGE 2 : Note + Visa client + Signature =====
+    # BAS DE PAGE : Note (haut) + Signature(gauche)+Visa(droite) en dessous
+    # Même structure que le modèle fourni : tout sur une seule page
     # =========================================================
-    from reportlab.platypus import PageBreak as _PB
-    story.append(_PB())
-    # Re-inject decorative header band for page 2? The canvas callback handles corners.
-    story.append(Spacer(1, 6*mm))
-    # Logo + co + services reprises en haut (identique)
-    story.append(ht)
-    story.append(Spacer(1, 18*mm))
+    story.append(Paragraph(
+        "<b>Note:</b>",
+        ParagraphStyle('noteL', fontSize=10, fontName='Helvetica-Bold')
+    ))
+    story.append(Paragraph(
+        "<font size='9'>MODE DE REGLEMENT (Espèce, Chèque, Virement, Mobile money)</font>",
+        ParagraphStyle('noteD', fontSize=9, textColor=HexColor('#333'))
+    ))
+    story.append(Spacer(1, 5*mm))
     
-    note_line = Paragraph(
-        "<b>Note:</b><br/><font size='9'>MODE DE REGLEMENT (Espèce, Chèque, Virement, Mobile money)</font>",
-        ParagraphStyle('note', fontSize=10, leading=14)
-    )
-    visa = Paragraph("<b>Visa Client</b>",
-        ParagraphStyle('visa', fontSize=10, fontName='Helvetica-Bold', alignment=TA_RIGHT))
-    
-    sig_row = [[note_line, '', visa]]
-    sig_t = Table(sig_row, colWidths=[110*mm, 10*mm, 60*mm])
+    # Signature gauche, Visa droite
+    sig_row = [[
+        Paragraph("<i>Signature autorisée</i>",
+            ParagraphStyle('sigL', fontSize=10, fontName='Helvetica-Oblique')),
+        Paragraph("<b>Visa Client</b>",
+            ParagraphStyle('visa', fontSize=10, fontName='Helvetica-Bold', alignment=TA_RIGHT))
+    ]]
+    sig_t = Table(sig_row, colWidths=[110*mm, 70*mm])
     sig_t.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
     story.append(sig_t)
-    story.append(Spacer(1, 15*mm))
-    
-    story.append(Paragraph("<i>Signature autorisée</i>",
-        ParagraphStyle('sigauth', fontSize=10, fontName='Helvetica-Oblique')))
     
     # ==== FOOTER via canvas ====
     def _footer(canv, doc_):

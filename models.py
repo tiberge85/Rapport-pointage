@@ -196,16 +196,16 @@ def init_db():
     
     # Permissions par défaut — tous les rôles
     default_perms = {
-        'admin': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking'],
-        'dg': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking'],
+        'admin': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking', 'grand_livre', 'balance', 'client_users_approve', 'caisse_multi', 'gps_itineraire'],
+        'dg': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking', 'grand_livre', 'balance', 'caisse_multi', 'gps_itineraire'],
         'rh': ['fichiers', 'clients', 'dashboard', 'envoyer', 'contrats', 'rapports_j', 'chat'],
-        'technicien': ['traitement', 'dashboard', 'visites', 'rapports_j', 'centre_technique', 'chat'],
+        'technicien': ['traitement', 'dashboard', 'visites', 'rapports_j', 'centre_technique', 'chat', 'gps_itineraire'],
         'commercial': ['dashboard', 'clients', 'clients_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'contrats', 'rapports_j', 'chat'],
-        'comptable': ['dashboard', 'comptabilite', 'comptabilite_edit', 'clients', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'chat'],
+        'comptable': ['dashboard', 'comptabilite', 'comptabilite_edit', 'clients', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'chat', 'grand_livre', 'balance', 'caisse_multi'],
         'moyens_generaux': ['dashboard', 'moyens_generaux', 'moyens_generaux_edit', 'clients', 'rapports_j', 'chat'],
-        'informatique': ['dashboard', 'informatique', 'traitement', 'visites', 'projets', 'rapports_j', 'centre_technique', 'chat'],
-        'resp_projet': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'rapports_j', 'proforma', 'chat'],
-        'gestionnaire_projet': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'clients_edit', 'rapports_j', 'proforma', 'proforma_edit', 'visites', 'centre_technique', 'chat'],
+        'informatique': ['dashboard', 'informatique', 'traitement', 'visites', 'projets', 'rapports_j', 'centre_technique', 'chat', 'gps_itineraire'],
+        'resp_projet': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'rapports_j', 'proforma', 'chat', 'gps_itineraire'],
+        'gestionnaire_projet': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'clients_edit', 'rapports_j', 'proforma', 'proforma_edit', 'visites', 'centre_technique', 'chat', 'gps_itineraire'],
     }
     for role, perms in default_perms.items():
         for perm in perms:
@@ -2926,3 +2926,71 @@ def generate_next_client_code():
         except: pass
     conn.close()
     return f"C {(max_num + 1):03d}"
+
+def migrate_v47():
+    """v47 : multi-caisses liées, validation admin comptes clients, géoloc demandes, profil portail."""
+    conn = get_db()
+    # 1) Rattacher une dépense (pièce de caisse) à une caisse
+    try: conn.execute("ALTER TABLE pieces_caisse ADD COLUMN caisse_id INTEGER")
+    except: pass
+    # 2) Statut de validation du compte client (pending / approved / rejected)
+    try: conn.execute("ALTER TABLE client_users ADD COLUMN account_status TEXT DEFAULT 'pending'")
+    except: pass
+    try: conn.execute("ALTER TABLE client_users ADD COLUMN approved_by INTEGER DEFAULT 0")
+    except: pass
+    try: conn.execute("ALTER TABLE client_users ADD COLUMN approved_at TEXT DEFAULT ''")
+    except: pass
+    try: conn.execute("ALTER TABLE client_users ADD COLUMN reject_reason TEXT DEFAULT ''")
+    except: pass
+    # 3) Photo de profil + infos perso pour le compte client
+    try: conn.execute("ALTER TABLE client_users ADD COLUMN photo TEXT DEFAULT ''")
+    except: pass
+    try: conn.execute("ALTER TABLE client_users ADD COLUMN tel TEXT DEFAULT ''")
+    except: pass
+    try: conn.execute("ALTER TABLE client_users ADD COLUMN address TEXT DEFAULT ''")
+    except: pass
+    # 4) Géolocalisation sur les demandes clients
+    try: conn.execute("ALTER TABLE client_requests ADD COLUMN gps_lat REAL")
+    except: pass
+    try: conn.execute("ALTER TABLE client_requests ADD COLUMN gps_lng REAL")
+    except: pass
+    try: conn.execute("ALTER TABLE client_requests ADD COLUMN gps_accuracy REAL")
+    except: pass
+    # Géolocalisation héritée sur les interventions (pour que le technicien l'ait aussi)
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN gps_lat REAL")
+    except: pass
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN gps_lng REAL")
+    except: pass
+    # 5) TVA optionnelle sur devis et factures
+    for tbl in ('devis', 'invoices'):
+        try: conn.execute(f"ALTER TABLE {tbl} ADD COLUMN tva_active INTEGER DEFAULT 0")
+        except: pass
+        try: conn.execute(f"ALTER TABLE {tbl} ADD COLUMN tva_rate REAL DEFAULT 18")
+        except: pass
+        try: conn.execute(f"ALTER TABLE {tbl} ADD COLUMN tva_amount REAL DEFAULT 0")
+        except: pass
+        try: conn.execute(f"ALTER TABLE {tbl} ADD COLUMN redacteur TEXT DEFAULT ''")
+        except: pass
+        try: conn.execute(f"ALTER TABLE {tbl} ADD COLUMN redacteur_date TEXT DEFAULT ''")
+        except: pass
+    # 6) Les clients déjà existants doivent être approuvés (sinon ils ne pourraient plus se connecter)
+    try: conn.execute("UPDATE client_users SET account_status='approved' WHERE account_status IS NULL OR account_status=''")
+    except: pass
+    
+    # 7) Ajouter les nouvelles permissions aux rôles concernés (idempotent via INSERT OR IGNORE)
+    new_perms_by_role = {
+        'admin': ['grand_livre', 'balance', 'client_users_approve', 'caisse_multi'],
+        'dg':    ['grand_livre', 'balance', 'caisse_multi'],
+        'comptable': ['grand_livre', 'balance', 'caisse_multi'],
+        'commercial': [],
+        'rh':    [],
+        'technicien': ['gps_itineraire'],  # accès bouton itinéraire GPS
+        'resp_projet': ['gps_itineraire'],
+        'informatique': ['gps_itineraire'],
+    }
+    for role, perms in new_perms_by_role.items():
+        for perm in perms:
+            try: conn.execute("INSERT OR IGNORE INTO permissions (role, permission) VALUES (?, ?)", (role, perm))
+            except: pass
+    
+    conn.commit(); conn.close()

@@ -6,7 +6,7 @@ Application Web v3 — Gestion des Rapports de Pointage
 Auth + Rôles + Dashboard + Clients + Fichiers RH
 """
 
-import os, uuid, shutil, functools, smtplib, json
+import os, uuid, shutil, functools, smtplib, json, time
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -277,6 +277,8 @@ from models import migrate_v45
 migrate_v45()
 from models import migrate_v46
 migrate_v46()
+from models import migrate_v47
+migrate_v47()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -401,6 +403,10 @@ def inject_globals():
                     from models import get_db as _gdb
                     _c = _gdb()
                     ctx['caisse_pending'] = _c.execute("SELECT COUNT(*) FROM caisse_sorties WHERE status='en_attente'").fetchone()[0]
+                    # Comptes clients en attente de validation
+                    try:
+                        ctx['pending_clients_count'] = _c.execute("SELECT COUNT(*) FROM client_users WHERE account_status='pending'").fetchone()[0]
+                    except: ctx['pending_clients_count'] = 0
                     _c.close()
                 except: pass
             # Weekly champion
@@ -2411,11 +2417,21 @@ def invoice_new():
         ref = f"FAC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         amount = float(request.form.get('amount',0) or 0)
         total_ht = float(request.form.get('total_ht',0) or 0)
-        tva = float(request.form.get('tva',0) or 0)
+        tva_active = 1 if request.form.get('tva_active') in ('1','true','on','yes') else 0
+        tva_rate = float(request.form.get('tva_rate', 18) or 18)
+        # If TVA active, (re)compute tva amount from HT
+        if tva_active and total_ht:
+            tva = round(total_ht * tva_rate / 100, 0)
+        else:
+            tva = float(request.form.get('tva',0) or 0)
         total_ttc = float(request.form.get('total_ttc',0) or 0)
         # Fallback: if totals are empty, use amount as the TTC
         if not total_ttc and amount: total_ttc = amount
         if not total_ht and total_ttc: total_ht = total_ttc - tva
+        # Rédacteur
+        cur_u = get_user_by_id(session['user_id'])
+        redacteur_name = (cur_u['full_name'] if cur_u else '') or 'Utilisateur'
+        redacteur_dt = datetime.now().strftime('%d/%m/%Y à %H:%M')
         conn = _gdb()
         conn.execute("""INSERT INTO invoices (reference, client_name, client_id, amount, objet, 
             description, due_date, payment_method, status, total_ht, tva, total_ttc, notes)
@@ -2425,6 +2441,11 @@ def invoice_new():
              request.form.get('description',''), request.form.get('due_date',''),
              request.form.get('payment_method',''), 'a_envoyer',
              total_ht, tva, total_ttc, request.form.get('notes','')))
+        inv_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        try:
+            conn.execute("UPDATE invoices SET tva_active=?, tva_rate=?, tva_amount=?, redacteur=?, redacteur_date=? WHERE id=?",
+                         (tva_active, tva_rate, tva, redacteur_name, redacteur_dt, inv_id))
+        except: pass
         # Écriture auto : 411 (clients) DÉBIT / 701 (ventes) CRÉDIT HT — 443 (TVA) CRÉDIT si TVA
         today = datetime.now().strftime('%Y-%m-%d')
         try:
@@ -2435,7 +2456,7 @@ def invoice_new():
                 auto_ecriture(conn, today, f"TVA collectée sur {ref}", '411', '443', tva, ref)
         except: pass
         conn.commit(); conn.close()
-        flash(f"Facture {ref} créée — écriture auto : 411 → 701 ({total_ht:,.0f} F HT)", "success")
+        flash(f"Facture {ref} créée — écriture auto : 411 → 701 ({total_ht:,.0f} F HT){'  +TVA ' + f'{tva:,.0f} F' if tva > 0 else ''}", "success")
         return redirect(url_for('comptabilite_page'))
     clients = get_all_clients()
     return render_template('invoice_new.html', page='comptabilite', clients=clients)
@@ -3207,10 +3228,19 @@ def devis_new():
         main_oeuvre = float(request.form.get('main_oeuvre', 0) or 0)
         petites_fourn = float(request.form.get('petites_fournitures', 0) or 0)
         remise_glob = float(request.form.get('remise', 0) or 0)
-        total_ttc = total_ht + petites_fourn - remise_glob
+        # TVA optionnelle
+        tva_active = 1 if request.form.get('tva_active') in ('1','true','on','yes') else 0
+        tva_rate = float(request.form.get('tva_rate', 18) or 18)
+        tva_amount = round((total_ht - remise_glob) * tva_rate / 100, 0) if tva_active else 0
+        total_ttc = total_ht + petites_fourn - remise_glob + tva_amount
         
         client_id = request.form.get('client_id', '')
         client_id = int(client_id) if client_id else None
+        
+        # Rédacteur = utilisateur connecté + horodatage
+        cur_u = get_user_by_id(session['user_id'])
+        redacteur_name = (cur_u['full_name'] if cur_u else '') or 'Utilisateur'
+        redacteur_dt = datetime.now().strftime('%d/%m/%Y à %H:%M')
         
         did, ref = create_devis(
             client_id, request.form.get('client_name', ''),
@@ -3223,11 +3253,18 @@ def devis_new():
             session['user_id'],
             request.form.get('doc_type', 'devis')
         )
+        # Post-update extra columns (TVA + rédacteur) — defensive (columns added by v47)
+        try:
+            conn = _gdb()
+            conn.execute("UPDATE devis SET tva_active=?, tva_rate=?, tva_amount=?, redacteur=?, redacteur_date=? WHERE id=?",
+                         (tva_active, tva_rate, tva_amount, redacteur_name, redacteur_dt, did))
+            conn.commit(); conn.close()
+        except Exception: pass
         
         user = get_user_by_id(session['user_id'])
         log_activity(session['user_id'], user['full_name'] if user else '?',
-                    'Devis', f"{ref} créé pour {request.form.get('client_name', '')}", request.remote_addr)
-        flash(f"Devis {ref} créé — {total_ttc:,.0f} FCFA TTC", "success")
+                    'Devis', f"{ref} créé pour {request.form.get('client_name', '')}" + (f" (TVA {tva_rate:.0f}%)" if tva_active else ""), request.remote_addr)
+        flash(f"Devis {ref} créé — {total_ttc:,.0f} FCFA TTC" + (f" (dont {tva_amount:,.0f} F TVA)" if tva_active else ""), "success")
         return redirect(url_for('devis_page'))
     
     clients = get_all_clients()
@@ -3253,6 +3290,20 @@ def devis_pdf(did):
     output = os.path.join(export_dir, f"{devis['reference']}.pdf")
     
     devis['date'] = devis.get('created_at', '')[:10]
+    # PDF options: prefer DB-stored values; fallback to sensible defaults
+    devis.setdefault('tva_active', devis.get('tva_active') or False)
+    devis.setdefault('tva_rate', devis.get('tva_rate') or 18)
+    devis.setdefault('tva_amount', devis.get('tva_amount') or 0)
+    if not devis.get('redacteur'):
+        u = get_user_by_id(devis.get('created_by')) if devis.get('created_by') else None
+        devis['redacteur'] = u['full_name'] if u else ''
+    if not devis.get('redacteur_date'):
+        ca = devis.get('created_at', '') or ''
+        if ca:
+            try:
+                dt = datetime.strptime(ca[:19], '%Y-%m-%d %H:%M:%S')
+                devis['redacteur_date'] = dt.strftime('%d/%m/%Y à %H:%M')
+            except: devis['redacteur_date'] = ca[:16]
     logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_wannygest.png"] if os.path.exists(os.path.join(BASE_DIR, n))), None)
     generate_devis_pdf(devis, output, logo_path=logo_r)
     
@@ -3307,7 +3358,10 @@ def devis_edit(did):
         main_oeuvre = float(request.form.get('main_oeuvre', 0) or 0)
         petites_fourn = float(request.form.get('petites_fournitures', 0) or 0)
         remise_glob = float(request.form.get('remise', 0) or 0)
-        total_ttc = total_ht + petites_fourn - remise_glob
+        tva_active = 1 if request.form.get('tva_active') in ('1','true','on','yes') else 0
+        tva_rate = float(request.form.get('tva_rate', 18) or 18)
+        tva_amount = round((total_ht - remise_glob) * tva_rate / 100, 0) if tva_active else 0
+        total_ttc = total_ht + petites_fourn - remise_glob + tva_amount
         
         conn = _gdb()
         # Re-link to client if client_id provided (user changed client selection)
@@ -3319,8 +3373,12 @@ def devis_edit(did):
             request.form.get('contact_commercial',''), request.form.get('objet',''),
             json.dumps(items), total_ht, petites_fourn, total_ttc, main_oeuvre, remise_glob,
             request.form.get('notes',''), did))
+        try:
+            conn.execute("UPDATE devis SET tva_active=?, tva_rate=?, tva_amount=? WHERE id=?",
+                         (tva_active, tva_rate, tva_amount, did))
+        except: pass
         conn.commit(); conn.close()
-        flash("Devis modifié", "success"); return redirect(url_for('devis_page'))
+        flash("Devis modifié" + (f" (TVA {tva_rate:.0f}% = {tva_amount:,.0f} F)" if tva_active else ""), "success"); return redirect(url_for('devis_page'))
     
     items = json.loads(devis.get('items_json', '[]')) if isinstance(devis.get('items_json'), str) else []
     clients = get_all_clients()
@@ -4700,6 +4758,18 @@ def portail_login():
         import hashlib
         ph = hashlib.sha256((password + (cu.get('salt','') or '')).encode()).hexdigest()
         if ph == cu['password_hash']:
+            # Check account approval status
+            status = cu.get('account_status') or 'approved'
+            if status == 'pending':
+                conn.close()
+                flash("⏳ Votre compte est en attente de validation par l'administrateur. Vous recevrez un email dès l'activation.", "warning")
+                return redirect('/portail')
+            if status == 'rejected':
+                reason = cu.get('reject_reason','')
+                conn.close()
+                flash(f"❌ Votre demande d'inscription a été refusée. {('Motif : ' + reason) if reason else 'Contactez l''administrateur.'}", "error")
+                return redirect('/portail')
+            # approved → login OK
             session['client_user_id'] = cu['id']
             session['client_id'] = cu['client_id']
             session['client_name'] = cu['full_name']
@@ -4753,9 +4823,75 @@ def portail_dashboard():
     try:
         data['client'] = dict(conn.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone())
     except: data['client'] = {}
+    # Current user profile (with photo)
+    try:
+        data['me'] = dict(conn.execute("SELECT * FROM client_users WHERE id=?", (session['client_user_id'],)).fetchone())
+    except: data['me'] = {}
     conn.close()
     tmrw_s = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
     return render_template('extra_pages.html', page='portail_dashboard', data=data, today_str=today, tomorrow_str=tmrw_s)
+
+
+@app.route('/portail/profile', methods=['GET','POST'])
+@portail_required
+def portail_profile():
+    """Page profil client : photo + infos éditables."""
+    conn = _gdb()
+    cuid = session['client_user_id']
+    if request.method == 'POST':
+        # Handle photo upload
+        photo_file = request.files.get('photo')
+        photo_name = None
+        if photo_file and photo_file.filename:
+            ext = os.path.splitext(photo_file.filename)[1].lower()
+            if ext in ('.jpg','.jpeg','.png','.webp'):
+                photo_name = f"client_{cuid}_{int(time.time())}{ext}"
+                fdir = os.path.join(app.config['UPLOAD_FOLDER'], 'client_photos')
+                os.makedirs(fdir, exist_ok=True)
+                photo_file.save(os.path.join(fdir, photo_name))
+        # Password change?
+        new_pw = request.form.get('new_password', '').strip()
+        old_pw = request.form.get('old_password', '').strip()
+        pw_changed = False
+        if new_pw:
+            cu = dict(conn.execute("SELECT * FROM client_users WHERE id=?", (cuid,)).fetchone())
+            import hashlib
+            old_ph = hashlib.sha256((old_pw + (cu.get('salt','') or '')).encode()).hexdigest()
+            if old_ph == cu['password_hash']:
+                new_ph = hashlib.sha256((new_pw + (cu.get('salt','') or '')).encode()).hexdigest()
+                conn.execute("UPDATE client_users SET password_hash=? WHERE id=?", (new_ph, cuid))
+                pw_changed = True
+            else:
+                flash("❌ Ancien mot de passe incorrect", "error")
+                conn.close()
+                return redirect('/portail/profile')
+        # Update basic info
+        updates = {
+            'full_name': request.form.get('full_name','').strip(),
+            'email': request.form.get('email','').strip(),
+            'tel': request.form.get('tel','').strip(),
+            'address': request.form.get('address','').strip(),
+        }
+        sets = ", ".join(f"{k}=?" for k in updates)
+        params = list(updates.values())
+        try:
+            if photo_name:
+                sets += ", photo=?"
+                params.append(photo_name)
+            params.append(cuid)
+            conn.execute(f"UPDATE client_users SET {sets} WHERE id=?", tuple(params))
+            conn.commit()
+            session['client_name'] = updates['full_name']
+        except Exception as e:
+            conn.rollback()
+        conn.close()
+        flash("✅ Profil mis à jour" + (" (mot de passe modifié)" if pw_changed else ""), "success")
+        return redirect('/portail/profile')
+    # GET
+    me = dict(conn.execute("SELECT * FROM client_users WHERE id=?", (cuid,)).fetchone() or {})
+    client = dict(conn.execute("SELECT * FROM clients WHERE id=?", (session['client_id'],)).fetchone() or {})
+    conn.close()
+    return render_template('extra_pages.html', page='portail_profile', me=me, client=client)
 
 
 @app.route('/portail/planning')
@@ -4787,20 +4923,37 @@ def portail_planning():
 @portail_required
 def portail_demande():
     if request.method == 'POST':
+        # GPS fields (may be empty if geolocation refused)
+        gps_lat = request.form.get('gps_lat', '').strip()
+        gps_lng = request.form.get('gps_lng', '').strip()
+        gps_acc = request.form.get('gps_accuracy', '').strip()
+        try: gps_lat = float(gps_lat) if gps_lat else None
+        except: gps_lat = None
+        try: gps_lng = float(gps_lng) if gps_lng else None
+        except: gps_lng = None
+        try: gps_acc = float(gps_acc) if gps_acc else None
+        except: gps_acc = None
+        
         conn = _gdb()
-        conn.execute("INSERT INTO client_requests (client_id, client_user_id, title, type, priority, description, site_address) VALUES (?,?,?,?,?,?,?)",
+        conn.execute("""INSERT INTO client_requests
+            (client_id, client_user_id, title, type, priority, description, site_address, gps_lat, gps_lng, gps_accuracy)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (session['client_id'], session['client_user_id'], request.form.get('title',''),
              request.form.get('type','intervention'), request.form.get('priority','normale'),
-             request.form.get('description',''), request.form.get('site_address','')))
+             request.form.get('description',''), request.form.get('site_address',''),
+             gps_lat, gps_lng, gps_acc))
         req_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         # Notify admins/technicians
+        gps_info = ""
+        if gps_lat and gps_lng:
+            gps_info = f" 📍 GPS: {gps_lat:.6f}, {gps_lng:.6f}"
         users = conn.execute("SELECT id FROM users WHERE role IN ('admin','technicien','resp_projet') AND is_active=1").fetchall()
         for u in users:
             conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
-                (u['id'], 'client_request', f"📩 Nouvelle demande client — {session.get('client_name','')}",
-                 f"{request.form.get('title','')}", f"/admin/client-requests"))
+                (u['id'], 'client_request', f"📩 Nouvelle demande — {session.get('client_name','')}",
+                 f"{request.form.get('title','')}{gps_info}", f"/admin/client-requests"))
         conn.commit(); conn.close()
-        flash("Demande soumise avec succès", "success")
+        flash("Demande soumise avec succès" + (" (localisation GPS enregistrée)" if gps_lat else ""), "success")
         return redirect('/portail/dashboard')
     return render_template('extra_pages.html', page='portail_demande')
 
@@ -4874,13 +5027,22 @@ def admin_convert_request(rid):
          request.form.get('scheduled_date', datetime.now().strftime('%Y-%m-%d')),
          req.get('priority','normale'), req.get('description',''), session['user_id']))
     int_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    # Transférer les coordonnées GPS s'il y en a
+    if req.get('gps_lat') and req.get('gps_lng'):
+        try:
+            conn.execute("UPDATE interventions SET gps_lat=?, gps_lng=? WHERE id=?",
+                         (req['gps_lat'], req['gps_lng'], int_id))
+        except: pass
     conn.execute("UPDATE client_requests SET status='convertie', intervention_id=?, assigned_to=? WHERE id=?", (int_id, tech_id, rid))
-    # Notify technician
+    # Notify technician — include GPS info if available
     if tech_id:
+        msg = req['title']
+        if req.get('gps_lat') and req.get('gps_lng'):
+            msg += f" 📍 GPS : {req['gps_lat']:.5f}, {req['gps_lng']:.5f}"
         conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
-            (tech_id, 'intervention', f"🔧 Intervention {ref} — {client_name}", req['title'], '/interventions/tech'))
+            (tech_id, 'intervention', f"🔧 Intervention {ref} — {client_name}", msg, '/interventions/tech'))
     conn.commit(); conn.close()
-    flash(f"Demande convertie en intervention {ref}", "success")
+    flash(f"Demande convertie en intervention {ref}" + (" (coordonnées GPS transférées)" if req.get('gps_lat') else ""), "success")
     return redirect('/admin/client-requests')
 
 @app.route('/admin/client-users')
@@ -4889,9 +5051,65 @@ def admin_client_users():
     conn = _gdb()
     users_list = [dict(r) for r in conn.execute(
         "SELECT cu.*, c.name as client_name FROM client_users cu LEFT JOIN clients c ON cu.client_id=c.id ORDER BY cu.created_at DESC").fetchall()]
+    # Compte les pending pour le badge
+    pending = [u for u in users_list if (u.get('account_status') or 'approved') == 'pending']
     clients = [dict(r) for r in conn.execute("SELECT id, name FROM clients ORDER BY name").fetchall()]
     conn.close()
-    return render_template('extra_pages.html', page='client_users', users_list=users_list, clients=clients)
+    return render_template('extra_pages.html', page='client_users', users_list=users_list,
+                           clients=clients, pending_count=len(pending))
+
+@app.route('/admin/client-users/pending')
+@permission_required('admin')
+def admin_client_users_pending():
+    """Liste des comptes clients en attente de validation."""
+    conn = _gdb()
+    pending = [dict(r) for r in conn.execute(
+        """SELECT cu.*, c.name as client_name FROM client_users cu
+           LEFT JOIN clients c ON cu.client_id=c.id
+           WHERE cu.account_status='pending' ORDER BY cu.created_at DESC""").fetchall()]
+    conn.close()
+    return render_template('extra_pages.html', page='client_users_pending', pending=pending)
+
+@app.route('/admin/client-users/approve/<int:cuid>', methods=['POST','GET'])
+@permission_required('admin')
+def admin_client_user_approve(cuid):
+    """Approuve un compte client (l'active) et notifie."""
+    conn = _gdb()
+    cu = conn.execute("SELECT cu.*, c.name as client_name FROM client_users cu LEFT JOIN clients c ON cu.client_id=c.id WHERE cu.id=?", (cuid,)).fetchone()
+    if not cu:
+        flash("Compte introuvable", "error"); conn.close()
+        return redirect('/admin/client-users/pending')
+    cu = dict(cu)
+    now_iso = datetime.now().isoformat()
+    try:
+        conn.execute("""UPDATE client_users SET account_status='approved',
+                        approved_by=?, approved_at=?, reject_reason='' WHERE id=?""",
+                     (session['user_id'], now_iso, cuid))
+    except: pass
+    conn.commit(); conn.close()
+    user = get_user_by_id(session['user_id'])
+    log_activity(session['user_id'], user['full_name'] if user else '?', 'Admin',
+                 f"Compte client approuvé : {cu['username']} ({cu['client_name']})", request.remote_addr)
+    flash(f"✅ Compte de {cu['full_name']} ({cu['username']}) approuvé. Le client peut maintenant se connecter.", "success")
+    return redirect('/admin/client-users/pending')
+
+@app.route('/admin/client-users/reject/<int:cuid>', methods=['POST'])
+@permission_required('admin')
+def admin_client_user_reject(cuid):
+    reason = request.form.get('reason', '').strip()
+    conn = _gdb()
+    cu = conn.execute("SELECT username, full_name, client_id FROM client_users WHERE id=?", (cuid,)).fetchone()
+    if not cu: flash("Compte introuvable", "error"); conn.close(); return redirect('/admin/client-users/pending')
+    try:
+        conn.execute("UPDATE client_users SET account_status='rejected', reject_reason=? WHERE id=?",
+                     (reason, cuid))
+    except: pass
+    conn.commit(); conn.close()
+    user = get_user_by_id(session['user_id'])
+    log_activity(session['user_id'], user['full_name'] if user else '?', 'Admin',
+                 f"Compte client refusé : {cu['username']} (motif: {reason[:40]})", request.remote_addr)
+    flash(f"❌ Compte de {cu['full_name']} refusé.", "warning")
+    return redirect('/admin/client-users/pending')
 
 @app.route('/admin/client-users/add', methods=['POST'])
 @permission_required('admin')
@@ -4902,11 +5120,22 @@ def admin_client_user_add():
     ph = hashlib.sha256((pw + salt).encode()).hexdigest()
     conn = _gdb()
     try:
-        conn.execute("INSERT INTO client_users (client_id, username, password_hash, salt, full_name, email, tel) VALUES (?,?,?,?,?,?,?)",
-            (int(request.form.get('client_id',0)), request.form.get('username',''),
-             ph, salt, request.form.get('full_name',''),
-             request.form.get('email',''), request.form.get('tel','')))
-        conn.commit(); flash("Compte client créé", "success")
+        # Comptes créés par l'admin directement sont déjà approuvés
+        try:
+            conn.execute("""INSERT INTO client_users
+                (client_id, username, password_hash, salt, full_name, email, tel, account_status)
+                VALUES (?,?,?,?,?,?,?, 'approved')""",
+                (int(request.form.get('client_id',0)), request.form.get('username',''),
+                 ph, salt, request.form.get('full_name',''),
+                 request.form.get('email',''), request.form.get('tel','')))
+        except:
+            conn.execute("""INSERT INTO client_users
+                (client_id, username, password_hash, salt, full_name, email, tel)
+                VALUES (?,?,?,?,?,?,?)""",
+                (int(request.form.get('client_id',0)), request.form.get('username',''),
+                 ph, salt, request.form.get('full_name',''),
+                 request.form.get('email',''), request.form.get('tel','')))
+        conn.commit(); flash("Compte client créé (déjà approuvé)", "success")
     except: flash("Ce nom d'utilisateur existe déjà","error")
     conn.close()
     return redirect('/admin/client-users')
@@ -4969,24 +5198,39 @@ def portail_register():
                 (company, tel, email, full_name, '', 'Inscription portail'))
             client_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         
-        # Create client_user
+        # Create client_user with status 'pending' (requires admin approval)
         salt = secrets.token_hex(16)
         ph = hashlib.sha256((password + salt).encode()).hexdigest()
         try:
-            conn.execute("INSERT INTO client_users (client_id, username, password_hash, salt, full_name, email, tel) VALUES (?,?,?,?,?,?,?)",
-                (client_id, username, ph, salt, full_name, email, tel))
+            # Try with new v47 columns
+            try:
+                conn.execute("""INSERT INTO client_users
+                    (client_id, username, password_hash, salt, full_name, email, tel, account_status)
+                    VALUES (?,?,?,?,?,?,?,?)""",
+                    (client_id, username, ph, salt, full_name, email, tel, 'pending'))
+            except:
+                # Fallback if columns don't yet exist
+                conn.execute("""INSERT INTO client_users
+                    (client_id, username, password_hash, salt, full_name, email, tel)
+                    VALUES (?,?,?,?,?,?,?)""",
+                    (client_id, username, ph, salt, full_name, email, tel))
+            new_cu_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            # Notify admins about pending registration
+            try:
+                for u in conn.execute("SELECT id FROM users WHERE role IN ('admin','dg','comptable') AND is_active=1").fetchall():
+                    conn.execute("""INSERT INTO notifications (user_id, type, title, message, link)
+                        VALUES (?,?,?,?,?)""",
+                        (u['id'], 'client_register',
+                         f"⏳ Nouveau compte client à valider",
+                         f"{company} — {full_name} ({username})", "/admin/client-users/pending"))
+            except: pass
             conn.commit()
-            # Auto-login
-            cu = conn.execute("SELECT * FROM client_users WHERE username=?", (username,)).fetchone()
-            session['client_user_id'] = cu['id']
-            session['client_id'] = client_id
-            session['client_name'] = full_name
-            session['client_new'] = True  # Flag for welcome guide
             conn.close()
-            flash("Compte créé avec succès !", "success")
-            return redirect('/portail/dashboard')
-        except:
-            flash("Erreur lors de la création du compte", "error")
+            # NO auto-login anymore — admin must approve first
+            flash("✅ Votre inscription a été enregistrée avec succès. Un administrateur va valider votre compte sous peu. Vous serez notifié par email dès l'activation.", "success")
+            return redirect('/portail')
+        except Exception as e:
+            flash(f"Erreur lors de la création du compte", "error")
             conn.close()
             return redirect('/portail/register')
     
@@ -7478,10 +7722,15 @@ def rapports_attestation(champ_id):
 def pieces_caisse():
     conn = _gdb()
     pieces = [dict(r) for r in conn.execute("SELECT * FROM pieces_caisse ORDER BY date DESC").fetchall()]
+    # Enrich with caisse names
+    caisses_map = {r['id']: r['name'] for r in conn.execute("SELECT id, name FROM caisses").fetchall()}
+    for p in pieces:
+        p['caisse_nom'] = caisses_map.get(p.get('caisse_id'), '—')
     total = conn.execute("SELECT COALESCE(SUM(amount),0) FROM pieces_caisse").fetchone()[0]
     by_cat = [dict(r) for r in conn.execute("SELECT category, SUM(amount) as total, COUNT(*) as count FROM pieces_caisse GROUP BY category ORDER BY total DESC").fetchall()]
+    caisses = [dict(r) for r in conn.execute("SELECT * FROM caisses WHERE is_active=1 ORDER BY name").fetchall()]
     conn.close()
-    return render_template('pieces_caisse.html', page='pieces', pieces=pieces, total=total, by_cat=by_cat)
+    return render_template('pieces_caisse.html', page='pieces', pieces=pieces, total=total, by_cat=by_cat, caisses=caisses)
 
 @app.route('/comptabilite/pieces/add', methods=['POST'])
 @permission_required('comptabilite')
@@ -7503,15 +7752,36 @@ def pieces_caisse_add():
     supplier = request.form.get('supplier', '')
     description = request.form.get('description', '')
     date_op = request.form.get('date', datetime.now().strftime('%Y-%m-%d'))
+    # Caisse de rattachement
+    caisse_id_raw = request.form.get('caisse_id', '').strip()
+    caisse_id = int(caisse_id_raw) if caisse_id_raw.isdigit() else None
+    
     _dbi('pieces_caisse', reference=ref,
         date=date_op,
         description=description,
         amount=amount, category=category,
         supplier=supplier,
+        caisse_id=caisse_id,
         file_path=file_path, created_by=session['user_id'])
     
+    # Enregistrer aussi un mouvement de sortie sur la caisse choisie
+    caisse_nom = ''
+    if caisse_id:
+        conn_op = _gdb()
+        c_row = conn_op.execute("SELECT name FROM caisses WHERE id=?", (caisse_id,)).fetchone()
+        caisse_nom = c_row['name'] if c_row else ''
+        try:
+            conn_op.execute("""INSERT INTO caisse_operations (caisse_id, type, amount, description, reference, category, created_by)
+                VALUES (?,?,?,?,?,?,?)""",
+                (caisse_id, 'sortie', amount,
+                 f"Dépense {ref} — {description[:40]}" + (f" ({supplier})" if supplier else ""),
+                 ref, category, session['user_id']))
+            # Update caisse balance
+            conn_op.execute("UPDATE caisses SET solde_actuel = solde_actuel - ? WHERE id=?", (amount, caisse_id))
+        except Exception: pass
+        conn_op.commit(); conn_op.close()
+    
     # ==== AUTO-ÉCRITURE COMPTABLE (SYSCOHADA partie double) ====
-    # Mapping catégorie → compte de charge SYSCOHADA
     cat_to_account = {
         'achat':'601', 'achats':'601',
         'fournisseur':'401', 'fournisseurs':'401',
@@ -7531,17 +7801,18 @@ def pieces_caisse_add():
     credit_account = '401' if supplier else '571'
     try:
         conn2 = _gdb()
-        auto_ecriture(conn2, date_op,
-            f"Dépense {ref} — {description[:40]}" + (f" ({supplier})" if supplier else ""),
-            debit_account, credit_account, amount, ref)
+        libelle = f"Dépense {ref} — {description[:40]}"
+        if supplier: libelle += f" ({supplier})"
+        if caisse_nom: libelle += f" · Caisse {caisse_nom}"
+        auto_ecriture(conn2, date_op, libelle, debit_account, credit_account, amount, ref)
         conn2.commit(); conn2.close()
     except Exception as e:
         pass
     
     user = get_user_by_id(session['user_id'])
     log_activity(session['user_id'], user['full_name'] if user else '?', 'Caisse',
-                 f"Pièce {ref} — {amount:,.0f} F (compte {debit_account})", request.remote_addr)
-    flash(f"Pièce {ref} — {amount:,.0f} F enregistrée (écriture auto : {debit_account} → {credit_account})", "success")
+                 f"Pièce {ref} — {amount:,.0f} F (compte {debit_account}){' - Caisse '+caisse_nom if caisse_nom else ''}", request.remote_addr)
+    flash(f"Pièce {ref} — {amount:,.0f} F enregistrée (écriture : {debit_account} → {credit_account}){' · caisse ' + caisse_nom if caisse_nom else ''}", "success")
     return redirect('/comptabilite/pieces')
 
 @app.route('/comptabilite/pieces/edit/<int:pid>', methods=['GET','POST'])
