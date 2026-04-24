@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1a3a5c">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <link rel="manifest" href="/manifest.json">
-    <link rel="apple-touch-icon" href="/static/logo_wannygest.png">
+    <link rel="apple-touch-icon" href="/static/logo_ramya_round.png">
     <title>{% block title %}WannyGest{% endblock %}</title>
     <style>
         /* === BASE === */
@@ -192,7 +192,7 @@
     {% if current_user %}
     <nav class="sidebar">
         <div class="sidebar-header">
-            <img src="/static/logo_wannygest.png" alt="WannyGest" onerror="this.parentElement.innerHTML='<h2 style=color:#fff>WannyGest</h2>'">
+            <img src="/static/logo_ramya_round.png" alt="WannyGest" onerror="this.parentElement.innerHTML='<h2 style=color:#fff>WannyGest</h2>'">
         </div>
         <div class="sidebar-user">
             <div class="name">{{ current_user.full_name }}</div>
@@ -307,6 +307,7 @@
                     <a href="/comptabilite/dettes" class="{% if page == 'dettes' %}active{% endif %}">📤 Dettes fournisseurs</a>
                     <a href="/comptabilite/validation-paie" class="{% if page == 'compta_paie' %}active{% endif %}">💵 Validation paie</a>
                     <a href="/comptabilite/caisses" class="{% if page == 'caisses' or page == 'caisse_detail' %}active{% endif %}">💰 Multi-caisses</a>
+                    <a href="/comptabilite/virements" class="{% if page == 'virements_list' %}active{% endif %}">🏦 Virements banque{% if pending_virements_count and pending_virements_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ pending_virements_count }}</span>{% endif %}</a>
                     <a href="/comptabilite/ecritures" class="{% if page == 'ecritures' %}active{% endif %}">📝 Journal comptable</a>
                     <a href="/comptabilite/grand-livre" class="{% if page == 'grand_livre' %}active{% endif %}">📒 Grand Livre</a>
                     <a href="/comptabilite/balance" class="{% if page == 'balance' %}active{% endif %}">⚖️ Balance comptable</a>

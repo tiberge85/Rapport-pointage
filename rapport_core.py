@@ -2170,10 +2170,11 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     # =========================================================
     # HEADER : Logo + nom société + liste services (comme modèle)
     # =========================================================
+    # Logo with white background padding for visibility
     logo_el = Paragraph("", ParagraphStyle('empty', fontSize=1))
     if logo_path and os.path.exists(logo_path):
         try:
-            logo_el = RLImage(logo_path, width=22*mm, height=22*mm)
+            logo_el = RLImage(logo_path, width=26*mm, height=26*mm)
         except: pass
     
     company_name = Paragraph(
@@ -2182,30 +2183,38 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
                        textColor=RAMYA_TEAL, leading=14, alignment=TA_CENTER)
     )
     
+    # Services : smaller (8pt) + right-aligned
     services_html = (
         '<font color="#F29F2F"><b>■</b></font> <b>Caméras de surveillance,</b><br/>'
         '<font color="#F29F2F"><b>■</b></font> <b>Clôture électrique,</b><br/>'
         '<font color="#F29F2F"><b>■</b></font> <b>Kit visiophone alarme anti-intrusion,</b><br/>'
         '<font color="#F29F2F"><b>■</b></font> <b>Domotique, Poignées intelligentes</b>'
     )
-    services = Paragraph(services_html, ParagraphStyle('svc', fontSize=9, leading=13,
-                          textColor=HexColor('#333'), alignment=TA_LEFT))
+    services = Paragraph(services_html, ParagraphStyle('svc', fontSize=8, leading=11,
+                          textColor=HexColor('#333'), alignment=TA_RIGHT))
     
     header_data = [[logo_el, company_name, services]]
-    ht = Table(header_data, colWidths=[28*mm, 60*mm, 92*mm])
+    ht = Table(header_data, colWidths=[30*mm, 55*mm, 95*mm])
     ht.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('LEFTPADDING', (0,0), (-1,-1), 0),
         ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        # White background behind logo to make it visible
+        ('BACKGROUND', (0,0), (0,0), white),
+        ('BOX', (0,0), (0,0), 0, white),
+        ('TOPPADDING', (0,0), (0,0), 2),
+        ('BOTTOMPADDING', (0,0), (0,0), 2),
+        ('LEFTPADDING', (0,0), (0,0), 2),
+        ('RIGHTPADDING', (0,0), (0,0), 2),
     ]))
     story.append(ht)
     story.append(Spacer(1, 4*mm))
     
     # =========================================================
-    # TITRE DEVIS + référence à droite
+    # TITRE DEVIS + référence à droite — taille réduite
     # =========================================================
     right_info_parts = [
-        f"<font size='26' color='#4B4B4B'><b>{doc_type}</b></font>",
+        f"<font size='20' color='#4B4B4B'><b>{doc_type}</b></font>",
         f"<font size='9'># {ref}</font>",
         f"<font size='9'>Date: {date_str}</font>"
     ]
@@ -2220,7 +2229,7 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
         right_info_parts.append(f"<font size='8' color='#888'>{' '.join(rparts)}</font>")
     
     right_info = Paragraph("<br/>".join(right_info_parts),
-        ParagraphStyle('right_info', alignment=TA_RIGHT, leading=16))
+        ParagraphStyle('right_info', alignment=TA_RIGHT, leading=14))
     title_data = [['', right_info]]
     tt = Table(title_data, colWidths=[90*mm, 90*mm])
     tt.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),

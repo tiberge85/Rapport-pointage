@@ -279,6 +279,8 @@ from models import migrate_v46
 migrate_v46()
 from models import migrate_v47
 migrate_v47()
+from models import migrate_v48
+migrate_v48()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -407,6 +409,10 @@ def inject_globals():
                     try:
                         ctx['pending_clients_count'] = _c.execute("SELECT COUNT(*) FROM client_users WHERE account_status='pending'").fetchone()[0]
                     except: ctx['pending_clients_count'] = 0
+                    # Virements banque→caisse en attente
+                    try:
+                        ctx['pending_virements_count'] = _c.execute("SELECT COUNT(*) FROM caisse_virements WHERE status='en_attente'").fetchone()[0]
+                    except: ctx['pending_virements_count'] = 0
                     _c.close()
                 except: pass
             # Weekly champion
@@ -453,7 +459,7 @@ def robots_txt():
 
 @app.route('/favicon.ico')
 def favicon():
-    return send_from_directory(app.config.get('STATIC_FOLDER', 'static'), 'logo_wannygest.png', mimetype='image/png')
+    return send_from_directory(app.config.get('STATIC_FOLDER', 'static'), 'logo_ramya_round.png', mimetype='image/png')
 
 @app.errorhandler(500)
 def internal_error(e):
@@ -926,7 +932,7 @@ def traitement_generate():
                 logo_path = os.path.join(job_dir, 'custom_logo.png')
                 lf.save(logo_path)
         if not logo_path:
-            for n in ['logo_ramya.png', 'logo_wannygest.png']:
+            for n in ['logo_ramya.png', 'logo_ramya_round.png']:
                 c = os.path.join(BASE_DIR, n)
                 if os.path.exists(c):
                     logo_path = os.path.join(job_dir, n)
@@ -1543,8 +1549,8 @@ def pwa_manifest():
         "background_color": "#0d2137",
         "theme_color": "#1a3a5c",
         "icons": [
-            {"src": "/static/logo_wannygest.png", "sizes": "192x192", "type": "image/png"},
-            {"src": "/static/logo_wannygest.png", "sizes": "512x512", "type": "image/png"}
+            {"src": "/static/logo_ramya_round.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/static/logo_ramya_round.png", "sizes": "512x512", "type": "image/png"}
         ]
     }
     return jsonify(manifest)
@@ -2522,13 +2528,50 @@ def invoice_edit(fid):
 def caisse_entree_add():
     conn = _gdb()
     ref = f"CE-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    conn.execute("""INSERT INTO caisse_entrees (reference, date, source, montant, description, payment_method, created_by)
-        VALUES (?,?,?,?,?,?,?)""",
-        (ref, request.form.get('date',''), request.form.get('source',''),
-         float(request.form.get('montant',0) or 0), request.form.get('description',''),
-         request.form.get('payment_method',''), session['user_id']))
+    montant = float(request.form.get('montant', 0) or 0)
+    date_op = request.form.get('date', datetime.now().strftime('%Y-%m-%d'))
+    source = request.form.get('source', '')
+    description = request.form.get('description', '')
+    pay_method = request.form.get('payment_method', '')
+    caisse_id_raw = request.form.get('caisse_id', '').strip()
+    caisse_id = int(caisse_id_raw) if caisse_id_raw.isdigit() else None
+    
+    try:
+        conn.execute("""INSERT INTO caisse_entrees (reference, date, source, montant, description, payment_method, caisse_id, created_by)
+            VALUES (?,?,?,?,?,?,?,?)""",
+            (ref, date_op, source, montant, description, pay_method, caisse_id, session['user_id']))
+    except:
+        # Fallback if caisse_id column not yet added
+        conn.execute("""INSERT INTO caisse_entrees (reference, date, source, montant, description, payment_method, created_by)
+            VALUES (?,?,?,?,?,?,?)""",
+            (ref, date_op, source, montant, description, pay_method, session['user_id']))
+    
+    # Mettre à jour la caisse ciblée (opération + solde)
+    caisse_nom = ''
+    if caisse_id:
+        c = conn.execute("SELECT name FROM caisses WHERE id=?", (caisse_id,)).fetchone()
+        caisse_nom = c['name'] if c else ''
+        try:
+            conn.execute("""INSERT INTO caisse_operations (caisse_id, type, amount, description, reference, category, created_by)
+                VALUES (?,?,?,?,?,?,?)""",
+                (caisse_id, 'entree', montant,
+                 f"Entrée {ref} — {source}" + (f" : {description[:30]}" if description else ""),
+                 ref, 'entree', session['user_id']))
+            conn.execute("UPDATE caisses SET solde_actuel = solde_actuel + ? WHERE id=?", (montant, caisse_id))
+        except Exception: pass
+    
+    # Écriture comptable partie double : 571 (caisse) DÉBIT / 758 (produits divers) CRÉDIT
+    libelle = f"Entrée {ref} — {source}"
+    if caisse_nom: libelle += f" · Caisse {caisse_nom}"
+    try:
+        auto_ecriture(conn, date_op, libelle, '571', '758', montant, ref)
+    except: pass
+    
     conn.commit(); conn.close()
-    flash("Entrée de caisse enregistrée","success")
+    user = get_user_by_id(session['user_id'])
+    log_activity(session['user_id'], user['full_name'] if user else '?', 'Caisse',
+                 f"Entrée {ref} — {montant:,.0f} F{' · Caisse ' + caisse_nom if caisse_nom else ''}", request.remote_addr)
+    flash(f"Entrée {ref} enregistrée : {montant:,.0f} F{' · ' + caisse_nom if caisse_nom else ''}", "success")
     return redirect('/caisse-sortie?tab=entrees')
 
 # ======================== BILAN COMPTABLE ========================
@@ -3304,7 +3347,7 @@ def devis_pdf(did):
                 dt = datetime.strptime(ca[:19], '%Y-%m-%d %H:%M:%S')
                 devis['redacteur_date'] = dt.strftime('%d/%m/%Y à %H:%M')
             except: devis['redacteur_date'] = ca[:16]
-    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_wannygest.png"] if os.path.exists(os.path.join(BASE_DIR, n))), None)
+    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_ramya_round.png"] if os.path.exists(os.path.join(BASE_DIR, n))), None)
     generate_devis_pdf(devis, output, logo_path=logo_r)
     
     return send_file(output, as_attachment=True, download_name=f"{devis['reference']}.pdf")
@@ -3421,7 +3464,7 @@ def devis_preview(did):
     os.makedirs(export_dir, exist_ok=True)
     output = os.path.join(export_dir, f"preview_{devis['reference']}.pdf")
     devis['date'] = devis.get('created_at', '')[:10]
-    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_wannygest.png"] if os.path.exists(os.path.join(BASE_DIR, n))), None)
+    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_ramya_round.png"] if os.path.exists(os.path.join(BASE_DIR, n))), None)
     generate_devis_pdf(devis, output, logo_path=logo_r)
     return send_file(output, as_attachment=False, download_name=f"{devis['reference']}.pdf")
 
@@ -3989,7 +4032,7 @@ def _generate_bulletin_pdf(pid):
     
     # === HEADER WITH LOGO ===
     logo_path = None
-    for n in ['logo_ramya.png', 'logo_wannygest.png']:
+    for n in ['logo_ramya.png', 'logo_ramya_round.png']:
         lp = os.path.join(BASE_DIR, n)
         if os.path.exists(lp): logo_path = lp; break
     
@@ -5437,7 +5480,7 @@ def admin_modules_reset():
     
     table_map = {
         'comptabilite': ['invoices','pieces_caisse','caisse_entrees','caisse_sorties','ecritures_comptables',
-                         'bilans','bank_accounts','bank_transfers','caisses','caisse_operations','weekly_cash_reports'],
+                         'bilans','bank_accounts','bank_transfers','caisses','caisse_operations','weekly_cash_reports','caisse_virements'],
         'rh': ['employees','payslips','leaves','absences','rh_contracts','rh_trainings','rh_announcements'],
         'projets': ['projects','tasks','task_comments'],
         'centre_technique': ['interventions','intervention_daily_reports','tech_center','visit_reports'],
@@ -5504,6 +5547,195 @@ def compta_caisse_add():
     conn.commit(); conn.close()
     flash("Caisse créée", "success")
     return redirect('/comptabilite/caisses')
+
+
+@app.route('/comptabilite/caisses/<int:cid>/delete', methods=['POST','GET'])
+@permission_required('comptabilite_edit')
+def compta_caisse_delete(cid):
+    """Supprime une caisse — soft delete si des opérations existent, sinon DELETE."""
+    conn = _gdb()
+    ca = conn.execute("SELECT * FROM caisses WHERE id=?", (cid,)).fetchone()
+    if not ca:
+        flash("Caisse non trouvée", "error"); conn.close()
+        return redirect('/comptabilite/caisses')
+    ca = dict(ca)
+    # Check solde
+    if abs(ca.get('solde_actuel') or 0) > 0.01 and not request.args.get('force'):
+        flash(f"⚠️ Impossible de supprimer « {ca['name']} » : solde actuel = {ca['solde_actuel']:,.0f} F. Videz la caisse d'abord (transfert vers autre caisse) ou utilisez 'Forcer la suppression'.", "error")
+        conn.close()
+        return redirect('/comptabilite/caisses')
+    # Check opérations
+    nb_ops = conn.execute("SELECT COUNT(*) FROM caisse_operations WHERE caisse_id=?", (cid,)).fetchone()[0]
+    if nb_ops > 0 and not request.args.get('force'):
+        # Soft delete : désactive la caisse
+        conn.execute("UPDATE caisses SET is_active=0 WHERE id=?", (cid,))
+        conn.commit(); conn.close()
+        flash(f"✅ Caisse « {ca['name']} » désactivée ({nb_ops} opération(s) conservées en historique).", "success")
+        return redirect('/comptabilite/caisses')
+    # Hard delete : pas d'opérations ou force=1
+    try:
+        if request.args.get('force'):
+            conn.execute("DELETE FROM caisse_operations WHERE caisse_id=?", (cid,))
+        conn.execute("DELETE FROM caisses WHERE id=?", (cid,))
+        conn.commit()
+        flash(f"✅ Caisse « {ca['name']} » supprimée définitivement.", "success")
+    except Exception as e:
+        flash(f"Erreur: {e}", "error")
+    conn.close()
+    user = get_user_by_id(session['user_id'])
+    log_activity(session['user_id'], user['full_name'] if user else '?', 'Caisse',
+                 f"Suppression caisse {ca['name']} (force={bool(request.args.get('force'))})", request.remote_addr)
+    return redirect('/comptabilite/caisses')
+
+
+# ======================== VIREMENTS BANQUE → CAISSE (avec validation DG) ========================
+
+@app.route('/comptabilite/virements')
+@permission_required('comptabilite')
+def compta_virements_list():
+    """Liste de tous les virements banque → caisse avec leur statut."""
+    conn = _gdb()
+    virements = [dict(r) for r in conn.execute("SELECT * FROM caisse_virements ORDER BY created_at DESC LIMIT 100").fetchall()]
+    banks = [dict(r) for r in conn.execute("SELECT id, name FROM bank_accounts").fetchall()]
+    caisses = [dict(r) for r in conn.execute("SELECT id, name FROM caisses WHERE is_active=1 ORDER BY name").fetchall()]
+    conn.close()
+    return render_template('extra_pages.html', page='virements_list',
+                           virements=virements, banks=banks, caisses=caisses,
+                           now=datetime.now().strftime('%Y-%m-%d'))
+
+@app.route('/comptabilite/virement/new', methods=['POST'])
+@permission_required('comptabilite')
+def compta_virement_new():
+    """Crée une demande de virement banque → caisse (en attente validation DG)."""
+    conn = _gdb()
+    ref = f"VIR-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    amount = float(request.form.get('amount', 0) or 0)
+    if amount <= 0:
+        flash("Montant invalide", "error"); conn.close()
+        return redirect('/comptabilite/virements')
+    bank_id = int(request.form.get('bank_account_id', 0) or 0) or None
+    caisse_id = int(request.form.get('caisse_id', 0) or 0)
+    if not caisse_id:
+        flash("Choisissez une caisse de destination", "error"); conn.close()
+        return redirect('/comptabilite/virements')
+    # Libellés
+    bank_name = ''
+    if bank_id:
+        b = conn.execute("SELECT name FROM bank_accounts WHERE id=?", (bank_id,)).fetchone()
+        bank_name = b['name'] if b else ''
+    c = conn.execute("SELECT name FROM caisses WHERE id=?", (caisse_id,)).fetchone()
+    caisse_name = c['name'] if c else ''
+    user = get_user_by_id(session['user_id'])
+    date_op = request.form.get('date', datetime.now().strftime('%Y-%m-%d'))
+    motif = request.form.get('motif', '')
+    try:
+        conn.execute("""INSERT INTO caisse_virements
+            (reference, date, bank_account_id, bank_name, caisse_id, caisse_name, amount, motif,
+             status, requested_by, requested_by_name)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (ref, date_op, bank_id, bank_name, caisse_id, caisse_name, amount, motif,
+             'en_attente', session['user_id'], user['full_name'] if user else '?'))
+        # Notifier tous les DG/admin
+        for u in conn.execute("SELECT id FROM users WHERE role IN ('admin','dg','directeur') AND is_active=1").fetchall():
+            conn.execute("""INSERT INTO notifications (user_id, type, title, message, link)
+                VALUES (?,?,?,?,?)""",
+                (u['id'], 'virement',
+                 f"🏦 Virement banque→caisse à valider — {amount:,.0f} F",
+                 f"{ref} · {bank_name or 'Banque'} → {caisse_name} · {motif[:50]}",
+                 "/comptabilite/virements"))
+        conn.commit()
+    except Exception as e:
+        flash(f"Erreur : {e}", "error")
+    conn.close()
+    log_activity(session['user_id'], user['full_name'] if user else '?', 'Virement',
+                 f"Demande virement {ref} : {bank_name} → {caisse_name} · {amount:,.0f} F", request.remote_addr)
+    flash(f"🏦 Virement {ref} demandé ({amount:,.0f} F). En attente de validation du DG.", "success")
+    return redirect('/comptabilite/virements')
+
+@app.route('/comptabilite/virement/<int:vid>/valider', methods=['POST','GET'])
+@login_required
+def compta_virement_valider(vid):
+    """DG valide un virement : décrémente banque, crédite caisse, écritures comptables."""
+    user = get_user_by_id(session['user_id'])
+    if not user or user['role'] not in ('admin', 'dg', 'directeur'):
+        flash("Seul le DG peut valider les virements banque→caisse", "error")
+        return redirect('/comptabilite/virements')
+    conn = _gdb()
+    v = conn.execute("SELECT * FROM caisse_virements WHERE id=?", (vid,)).fetchone()
+    if not v:
+        flash("Virement introuvable", "error"); conn.close()
+        return redirect('/comptabilite/virements')
+    v = dict(v)
+    if v['status'] != 'en_attente':
+        flash(f"Ce virement est déjà {v['status']}", "error"); conn.close()
+        return redirect('/comptabilite/virements')
+    now_iso = datetime.now().isoformat()
+    try:
+        conn.execute("""UPDATE caisse_virements SET status='valide',
+            validated_by=?, validated_by_name=?, validated_at=? WHERE id=?""",
+            (session['user_id'], user['full_name'], now_iso, vid))
+        # Mouvements sur la caisse (entrée)
+        conn.execute("""INSERT INTO caisse_operations (caisse_id, type, amount, description, reference, category, bank_account_id, created_by)
+            VALUES (?,?,?,?,?,?,?,?)""",
+            (v['caisse_id'], 'entree', v['amount'],
+             f"Virement {v['reference']} depuis {v['bank_name'] or 'Banque'}",
+             v['reference'], 'virement', v['bank_account_id'], session['user_id']))
+        conn.execute("UPDATE caisses SET solde_actuel = solde_actuel + ? WHERE id=?", (v['amount'], v['caisse_id']))
+        # Décrémenter le compte bancaire si possible
+        if v['bank_account_id']:
+            try: conn.execute("UPDATE bank_accounts SET balance = COALESCE(balance,0) - ? WHERE id=?", (v['amount'], v['bank_account_id']))
+            except: pass
+        # Écriture partie double : 571 (caisse) DÉBIT / 521 (banque) CRÉDIT
+        try:
+            auto_ecriture(conn, v['date'] or datetime.now().strftime('%Y-%m-%d'),
+                f"Virement {v['reference']} : {v['bank_name']} → {v['caisse_name']}",
+                '571', '521', v['amount'], v['reference'])
+        except: pass
+        # Notifier le demandeur
+        if v.get('requested_by'):
+            conn.execute("""INSERT INTO notifications (user_id, type, title, message, link)
+                VALUES (?,?,?,?,?)""",
+                (v['requested_by'], 'virement',
+                 f"✅ Virement {v['reference']} validé",
+                 f"{v['amount']:,.0f} F transférés de {v['bank_name']} vers {v['caisse_name']}",
+                 "/comptabilite/virements"))
+        conn.commit()
+    except Exception as e:
+        flash(f"Erreur: {e}", "error")
+    conn.close()
+    log_activity(session['user_id'], user['full_name'], 'Virement',
+                 f"Validation virement {v['reference']} : {v['amount']:,.0f} F", request.remote_addr)
+    flash(f"✅ Virement {v['reference']} validé — {v['amount']:,.0f} F crédités sur {v['caisse_name']}", "success")
+    return redirect('/comptabilite/virements')
+
+@app.route('/comptabilite/virement/<int:vid>/refuser', methods=['POST','GET'])
+@login_required
+def compta_virement_refuser(vid):
+    user = get_user_by_id(session['user_id'])
+    if not user or user['role'] not in ('admin', 'dg', 'directeur'):
+        flash("Seul le DG peut refuser les virements", "error")
+        return redirect('/comptabilite/virements')
+    reason = request.form.get('reason', 'Refusé sans motif précisé')
+    conn = _gdb()
+    v = conn.execute("SELECT * FROM caisse_virements WHERE id=?", (vid,)).fetchone()
+    if not v: flash("Virement introuvable", "error"); conn.close(); return redirect('/comptabilite/virements')
+    v = dict(v)
+    try:
+        conn.execute("""UPDATE caisse_virements SET status='refuse',
+            validated_by=?, validated_by_name=?, validated_at=?, reject_reason=? WHERE id=? AND status='en_attente'""",
+            (session['user_id'], user['full_name'], datetime.now().isoformat(), reason, vid))
+        if v.get('requested_by'):
+            conn.execute("""INSERT INTO notifications (user_id, type, title, message, link)
+                VALUES (?,?,?,?,?)""",
+                (v['requested_by'], 'virement',
+                 f"❌ Virement {v['reference']} refusé",
+                 f"Motif : {reason[:60]}",
+                 "/comptabilite/virements"))
+        conn.commit()
+    except: pass
+    conn.close()
+    flash(f"Virement {v['reference']} refusé.", "warning")
+    return redirect('/comptabilite/virements')
 
 @app.route('/comptabilite/caisses/<int:cid>')
 @permission_required('comptabilite')
@@ -7045,9 +7277,16 @@ def caisse_sortie():
     conn = _gdb()
     entrees = [dict(r) for r in conn.execute("SELECT * FROM caisse_entrees WHERE strftime('%Y-%m',date)=? ORDER BY date DESC", (month,)).fetchall()]
     total_entrees = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_entrees WHERE strftime('%Y-%m',date)=?", (month,)).fetchone()[0]
+    caisses = [dict(r) for r in conn.execute("SELECT * FROM caisses WHERE is_active=1 ORDER BY name").fetchall()]
+    caisses_map = {r['id']: r['name'] for r in caisses}
+    # Enrichir les entrées/sorties avec le nom de la caisse
+    for e in entrees:
+        e['caisse_name'] = caisses_map.get(e.get('caisse_id'), '')
+    for s in sorties:
+        s['caisse_name'] = caisses_map.get(s.get('caisse_id'), '') if hasattr(s, 'get') else ''
     conn.close()
     return render_template('caisse_sortie.html', page='caisse_sortie', sorties=sorties, stats=stats, month=month,
-        tab=tab, entrees=entrees, total_entrees=total_entrees)
+        tab=tab, entrees=entrees, total_entrees=total_entrees, caisses=caisses)
 
 @app.route('/caisse-sortie/demande', methods=['GET','POST'])
 @login_required
@@ -7058,20 +7297,47 @@ def caisse_demande():
         ref = gen_caisse_ref()
         from models import get_db
         conn = get_db()
-        conn.execute("""INSERT INTO caisse_sorties (reference, date, beneficiaire, type_beneficiaire,
-            montant, nature, motif, demandeur_id, demandeur_name, sig_beneficiaire) VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (ref, request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
-             request.form['beneficiaire'], request.form.get('type_beneficiaire', 'particulier'),
-             float(request.form.get('montant', 0) or 0),
-             request.form.get('nature', 'espece'), request.form.get('motif', ''),
-             session['user_id'], user['full_name'] if user else '?',
-             request.form.get('sig_beneficiaire', '')))
+        montant = float(request.form.get('montant', 0) or 0)
+        caisse_id_raw = request.form.get('caisse_id', '').strip()
+        caisse_id = int(caisse_id_raw) if caisse_id_raw.isdigit() else None
+        try:
+            conn.execute("""INSERT INTO caisse_sorties (reference, date, beneficiaire, type_beneficiaire,
+                montant, nature, motif, demandeur_id, demandeur_name, sig_beneficiaire, caisse_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (ref, request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
+                 request.form['beneficiaire'], request.form.get('type_beneficiaire', 'particulier'),
+                 montant, request.form.get('nature', 'espece'), request.form.get('motif', ''),
+                 session['user_id'], user['full_name'] if user else '?',
+                 request.form.get('sig_beneficiaire', ''), caisse_id))
+        except:
+            # Fallback sans caisse_id
+            conn.execute("""INSERT INTO caisse_sorties (reference, date, beneficiaire, type_beneficiaire,
+                montant, nature, motif, demandeur_id, demandeur_name, sig_beneficiaire) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (ref, request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
+                 request.form['beneficiaire'], request.form.get('type_beneficiaire', 'particulier'),
+                 montant, request.form.get('nature', 'espece'), request.form.get('motif', ''),
+                 session['user_id'], user['full_name'] if user else '?',
+                 request.form.get('sig_beneficiaire', '')))
+        # Notifier DG et admin
+        try:
+            for u in conn.execute("SELECT id FROM users WHERE role IN ('admin','dg','directeur') AND is_active=1").fetchall():
+                conn.execute("""INSERT INTO notifications (user_id, type, title, message, link)
+                    VALUES (?,?,?,?,?)""",
+                    (u['id'], 'caisse_demande',
+                     f"💰 Demande sortie caisse — {montant:,.0f} F",
+                     f"{ref} · {request.form['beneficiaire']} · {request.form.get('motif','')[:50]}",
+                     "/caisse-sortie"))
+        except: pass
         conn.commit(); conn.close()
         log_activity(session['user_id'], user['full_name'] if user else '?',
-                    'Caisse', f"Demande sortie {ref} — {float(request.form.get('montant',0)):,.0f} F", request.remote_addr)
+                    'Caisse', f"Demande sortie {ref} — {montant:,.0f} F", request.remote_addr)
         flash(f"Demande de sortie de caisse {ref} envoyée au DG pour validation", "success")
         return redirect(url_for('caisse_sortie'))
-    return render_template('caisse_demande.html', page='caisse_sortie')
+    # GET : passer la liste des caisses au template
+    conn = _gdb()
+    caisses = [dict(r) for r in conn.execute("SELECT * FROM caisses WHERE is_active=1 ORDER BY name").fetchall()]
+    conn.close()
+    return render_template('caisse_demande.html', page='caisse_sortie', caisses=caisses)
 
 @app.route('/caisse-sortie/<int:sid>/valider')
 @login_required
@@ -7117,16 +7383,33 @@ def caisse_comptabiliser(sid):
     conn = get_db()
     conn.execute("UPDATE caisse_sorties SET comptabilise=1, comptabilise_at=? WHERE id=? AND status='valide'",
                  (datetime.now().isoformat(), sid))
-    # Ajouter dans la trésorerie comme dépense
     s = conn.execute("SELECT * FROM caisse_sorties WHERE id=?", (sid,)).fetchone()
     if s:
+        s = dict(s)
+        # Ajouter dans la trésorerie
         try:
             conn.execute("INSERT INTO treasury (type, amount, description, category, created_by, created_at) VALUES (?,?,?,?,?,?)",
                          ('depense', s['montant'], f"Sortie caisse {s['reference']} — {s['beneficiaire']} — {s['motif']}",
                           'sortie_caisse', session.get('user_id'), datetime.now().isoformat()))
         except: pass
+        # Si une caisse est rattachée : enregistrer l'opération + mettre à jour son solde
+        cid = s.get('caisse_id')
+        if cid:
+            try:
+                conn.execute("""INSERT INTO caisse_operations (caisse_id, type, amount, description, reference, category, created_by)
+                    VALUES (?,?,?,?,?,?,?)""",
+                    (cid, 'sortie', s['montant'],
+                     f"Sortie {s['reference']} — {s['beneficiaire']}",
+                     s['reference'], 'sortie_caisse', session.get('user_id')))
+                conn.execute("UPDATE caisses SET solde_actuel = solde_actuel - ? WHERE id=?", (s['montant'], cid))
+            except: pass
+        # Écriture comptable partie double : 658 (charges diverses) DÉBIT / 571 (caisse) CRÉDIT
+        try:
+            auto_ecriture(conn, s.get('date') or datetime.now().strftime('%Y-%m-%d'),
+                f"Sortie {s['reference']} — {s['beneficiaire']}", '658', '571', s['montant'], s['reference'])
+        except: pass
     conn.commit(); conn.close()
-    flash("Décaissement comptabilisé", "success")
+    flash("Décaissement comptabilisé" + (" (solde caisse mis à jour)" if s and s.get('caisse_id') else ""), "success")
     return redirect(url_for('caisse_sortie'))
 
 @app.route('/caisse-sortie/<int:sid>/edit', methods=['GET','POST'])

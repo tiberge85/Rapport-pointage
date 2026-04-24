@@ -196,15 +196,15 @@ def init_db():
     
     # Permissions par défaut — tous les rôles
     default_perms = {
-        'admin': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking', 'grand_livre', 'balance', 'client_users_approve', 'caisse_multi', 'gps_itineraire'],
-        'dg': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking', 'grand_livre', 'balance', 'caisse_multi', 'gps_itineraire'],
+        'admin': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking', 'grand_livre', 'balance', 'client_users_approve', 'caisse_multi', 'gps_itineraire', 'virement_demande', 'virement_valide', 'client_requests_view'],
+        'dg': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat', 'tracking', 'grand_livre', 'balance', 'caisse_multi', 'gps_itineraire', 'virement_valide', 'client_users_approve', 'client_requests_view'],
         'rh': ['fichiers', 'clients', 'dashboard', 'envoyer', 'contrats', 'rapports_j', 'chat'],
         'technicien': ['traitement', 'dashboard', 'visites', 'rapports_j', 'centre_technique', 'chat', 'gps_itineraire'],
-        'commercial': ['dashboard', 'clients', 'clients_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'contrats', 'rapports_j', 'chat'],
-        'comptable': ['dashboard', 'comptabilite', 'comptabilite_edit', 'clients', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'chat', 'grand_livre', 'balance', 'caisse_multi'],
+        'commercial': ['dashboard', 'clients', 'clients_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'contrats', 'rapports_j', 'chat', 'client_requests_view'],
+        'comptable': ['dashboard', 'comptabilite', 'comptabilite_edit', 'clients', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'chat', 'grand_livre', 'balance', 'caisse_multi', 'virement_demande'],
         'moyens_generaux': ['dashboard', 'moyens_generaux', 'moyens_generaux_edit', 'clients', 'rapports_j', 'chat'],
         'informatique': ['dashboard', 'informatique', 'traitement', 'visites', 'projets', 'rapports_j', 'centre_technique', 'chat', 'gps_itineraire'],
-        'resp_projet': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'rapports_j', 'proforma', 'chat', 'gps_itineraire'],
+        'resp_projet': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'rapports_j', 'proforma', 'chat', 'gps_itineraire', 'client_requests_view'],
         'gestionnaire_projet': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'clients_edit', 'rapports_j', 'proforma', 'proforma_edit', 'visites', 'centre_technique', 'chat', 'gps_itineraire'],
     }
     for role, perms in default_perms.items():
@@ -2989,6 +2989,54 @@ def migrate_v47():
         'informatique': ['gps_itineraire'],
     }
     for role, perms in new_perms_by_role.items():
+        for perm in perms:
+            try: conn.execute("INSERT OR IGNORE INTO permissions (role, permission) VALUES (?, ?)", (role, perm))
+            except: pass
+    
+    conn.commit(); conn.close()
+
+
+def migrate_v48():
+    """v48 : caisse_id sur entrées/sorties, table bank_transfers (virements banque→caisse avec validation DG)."""
+    conn = get_db()
+    # caisse_id sur entrées et sorties de caisse
+    for tbl in ('caisse_entrees', 'caisse_sorties'):
+        try: conn.execute(f"ALTER TABLE {tbl} ADD COLUMN caisse_id INTEGER")
+        except: pass
+    # Table des virements banque → caisse avec workflow validation DG (nouvelle)
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS caisse_virements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reference TEXT UNIQUE,
+                date TEXT,
+                bank_account_id INTEGER,
+                bank_name TEXT,
+                caisse_id INTEGER NOT NULL,
+                caisse_name TEXT,
+                amount REAL NOT NULL,
+                motif TEXT,
+                status TEXT DEFAULT 'en_attente',
+                requested_by INTEGER,
+                requested_by_name TEXT,
+                validated_by INTEGER DEFAULT 0,
+                validated_by_name TEXT,
+                validated_at TEXT,
+                reject_reason TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    except: pass
+    # Ajouter les nouvelles permissions pour virement et demandes/comptes à valider
+    new_perms = {
+        'admin': ['virement_demande', 'virement_valide', 'client_requests_view', 'client_users_approve'],
+        'dg':    ['virement_valide', 'client_users_approve', 'client_requests_view'],
+        'comptable': ['virement_demande', 'client_requests_view'],
+        'commercial': ['client_requests_view'],
+        'resp_projet': ['client_requests_view'],
+        'technicien': [],
+    }
+    for role, perms in new_perms.items():
         for perm in perms:
             try: conn.execute("INSERT OR IGNORE INTO permissions (role, permission) VALUES (?, ?)", (role, perm))
             except: pass

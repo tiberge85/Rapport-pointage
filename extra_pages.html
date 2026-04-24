@@ -828,7 +828,7 @@ function toggleDetail() {
 <div class="card" style="max-width:420px;width:100%;margin:20px">
 <div class="card-body" style="padding:30px">
     <div style="text-align:center;margin-bottom:16px">
-        <img src="/static/logo_ramya.png" style="height:50px;margin-bottom:8px" onerror="this.style.display='none'">
+        <img src="/static/logo_ramya_round.png" style="height:80px;margin-bottom:8px;background:#fff;border-radius:50%;padding:4px" onerror="this.style.display='none'">
         <h2 style="color:#1a3a5c;margin:0">Créer un compte</h2>
         <p style="color:#888;font-size:12px">Portail Client — RAMYA Technologie</p>
     </div>
@@ -966,16 +966,29 @@ function toggleDetail() {
 
 {% elif page == 'caisses' %}
 <div class="page-header"><h1>💰 Multi-caisses</h1>
-<button class="btn btn-primary btn-sm" onclick="document.getElementById('addCaisseM').classList.add('active')">+ Nouvelle caisse</button></div>
+<div style="display:flex;gap:6px;flex-wrap:wrap">
+<a href="/comptabilite/virements" class="btn btn-outline btn-sm">🏦 Virements banque → caisse</a>
+<button class="btn btn-primary btn-sm" onclick="document.getElementById('addCaisseM').classList.add('active')">+ Nouvelle caisse</button>
+</div></div>
 
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:16px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:16px">
 {% for ca in caisses %}
-<a href="/comptabilite/caisses/{{ ca.id }}" class="card" style="text-decoration:none;border-left:4px solid {% if ca.solde_calcule >= 0 %}#1A7A6D{% else %}#c53030{% endif %}">
+<div class="card" style="border-left:4px solid {% if ca.solde_calcule >= 0 %}#1A7A6D{% else %}#c53030{% endif %}{% if not ca.is_active %};opacity:0.6{% endif %}">
 <div class="card-body" style="padding:14px">
-    <div style="font-size:14px;font-weight:700;color:#1a3a5c;margin-bottom:4px">{{ ca.name }}</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+        <div style="font-size:14px;font-weight:700;color:#1a3a5c">{{ ca.name }}{% if not ca.is_active %} <span style="font-size:9px;color:#888;font-weight:400">(désactivée)</span>{% endif %}</div>
+        <div style="display:flex;gap:4px">
+            <a href="/comptabilite/caisses/{{ ca.id }}" class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 7px" title="Détails">👁️</a>
+            {% if current_user and current_user.role in ('admin','dg','directeur') %}
+            <form method="post" action="/comptabilite/caisses/{{ ca.id }}/delete" style="display:inline" onsubmit="return confirm('Supprimer la caisse « {{ ca.name|e }} » ? {% if ca.nb_ops > 0 %}({{ ca.nb_ops }} opération(s) seront conservées en historique, la caisse sera désactivée).{% else %}Cette action est définitive.{% endif %}')">
+                <button type="submit" class="btn btn-sm" style="background:#fde8e8;color:#c53030;font-size:10px;padding:3px 7px" title="Supprimer">🗑️</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
     <div style="font-size:22px;font-weight:800;color:{% if ca.solde_calcule >= 0 %}#1A7A6D{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(ca.solde_calcule) }} F</div>
     <div style="font-size:10px;color:#888;margin-top:4px">👤 {{ ca.responsible_name or '-' }} · {{ ca.nb_ops }} opérations</div>
-</div></a>
+</div></div>
 {% endfor %}
 </div>
 <div class="card"><div class="card-body" style="text-align:right;font-size:16px;font-weight:700">
@@ -994,6 +1007,93 @@ Total toutes caisses : <span style="color:#1A7A6D">{{ '{:,.0f}'.format(total) }}
     <button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
     <button type="submit" class="btn btn-primary">💰 Créer</button>
 </div></form></div></div>
+
+
+{% elif page == 'virements_list' %}
+<div class="page-header"><h1>🏦 Virements Banque → Caisse</h1>
+<div style="display:flex;gap:6px"><a href="/comptabilite/caisses" class="btn btn-outline btn-sm">← Caisses</a>
+<button class="btn btn-primary btn-sm" onclick="document.getElementById('newVirM').classList.add('active')">+ Nouveau virement</button></div></div>
+
+<div style="background:#f0f7f7;padding:12px 16px;border-left:4px solid #1A7A6D;border-radius:8px;margin-bottom:14px;font-size:13px">
+    <strong>💡 Workflow :</strong> Toute demande de virement banque → caisse doit être validée par le <strong>Directeur Général</strong> avant exécution. Le DG reçoit une notification à chaque demande.
+</div>
+
+{% if virements %}
+<div class="card"><div class="card-body" style="padding:0">
+<div class="table-wrap"><table>
+<thead><tr style="background:#1a3a5c;color:#fff">
+    <th>Réf</th><th>Date</th><th>De (Banque)</th><th>Vers (Caisse)</th>
+    <th style="text-align:right">Montant</th><th>Motif</th><th>Demandeur</th>
+    <th>Statut</th><th>Actions</th>
+</tr></thead>
+<tbody>{% for v in virements %}<tr style="border-bottom:1px solid #f0f0f0">
+    <td style="font-size:11px;font-weight:700">{{ v.reference }}</td>
+    <td style="font-size:11px">{{ v.date }}</td>
+    <td style="font-size:12px">🏦 {{ v.bank_name or '—' }}</td>
+    <td style="font-size:12px;color:#1a7a6d;font-weight:600">💰 {{ v.caisse_name }}</td>
+    <td style="text-align:right;font-weight:700;color:#1a3a5c">{{ '{:,.0f}'.format(v.amount) }} F</td>
+    <td style="font-size:11px">{{ (v.motif or '')[:40] }}</td>
+    <td style="font-size:11px;color:#666">{{ v.requested_by_name or '—' }}</td>
+    <td><span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;
+    {% if v.status == 'en_attente' %}background:#fff3e0;color:#b8561f
+    {% elif v.status == 'valide' %}background:#e8f5e9;color:#2e7d32
+    {% else %}background:#fde8e8;color:#c53030{% endif %}">
+        {% if v.status == 'en_attente' %}⏳ En attente{% elif v.status == 'valide' %}✅ Validé{% else %}❌ Refusé{% endif %}
+    </span>
+    {% if v.validated_by_name %}<br><span style="font-size:9px;color:#888">par {{ v.validated_by_name }}</span>{% endif %}
+    </td>
+    <td style="white-space:nowrap">
+        {% if v.status == 'en_attente' and current_user and current_user.role in ('admin','dg','directeur') %}
+        <form method="post" action="/comptabilite/virement/{{ v.id }}/valider" style="display:inline" onsubmit="return confirm('Valider ce virement de {{ v.amount|round|int }} F ?')">
+            <button type="submit" class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;font-size:10px">✅</button>
+        </form>
+        <button type="button" class="btn btn-sm" style="background:#fde8e8;color:#c53030;font-size:10px" onclick="document.getElementById('refV{{ v.id }}').style.display='block'">❌</button>
+        <form method="post" action="/comptabilite/virement/{{ v.id }}/refuser" id="refV{{ v.id }}" style="display:none;margin-top:4px;padding:6px;background:#fde8e8;border-radius:6px">
+            <input type="text" name="reason" required placeholder="Motif du refus" style="width:100%;padding:4px;font-size:11px;margin-bottom:4px">
+            <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px;width:100%">Confirmer refus</button>
+        </form>
+        {% endif %}
+        {% if v.reject_reason %}<div style="font-size:9px;color:#c53030;margin-top:2px">{{ v.reject_reason[:40] }}</div>{% endif %}
+    </td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}
+<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:30px">
+    <div style="font-size:40px;margin-bottom:8px">🏦</div>
+    Aucun virement enregistré
+</div></div>
+{% endif %}
+
+<div class="modal-bg" id="newVirM"><div class="modal" style="max-width:500px">
+<h3>🏦 Nouveau virement Banque → Caisse</h3>
+<form method="post" action="/comptabilite/virement/new">
+    <div class="form-row">
+        <div class="form-group"><label>Date *</label><input type="date" name="date" value="{{ now }}" required></div>
+        <div class="form-group"><label>Montant (F) *</label><input type="number" name="amount" step="1" min="1" required></div>
+    </div>
+    <div class="form-group"><label>🏦 Compte bancaire source *</label>
+        <select name="bank_account_id" required>
+            <option value="">— Choisir une banque —</option>
+            {% for b in banks %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+        </select>
+        {% if not banks %}<div style="font-size:11px;color:#c53030;margin-top:4px">⚠️ Aucun compte bancaire. <a href="/comptabilite" style="color:#1a7a6d">Créez-en un d'abord →</a></div>{% endif %}
+    </div>
+    <div class="form-group"><label>💰 Caisse de destination *</label>
+        <select name="caisse_id" required>
+            <option value="">— Choisir une caisse —</option>
+            {% for c in caisses %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+    </div>
+    <div class="form-group"><label>Motif du virement *</label>
+        <textarea name="motif" rows="2" required placeholder="Réapprovisionnement caisse principale..." style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px"></textarea>
+    </div>
+    <div style="background:#fff3e0;padding:10px;border-radius:8px;margin-bottom:12px;font-size:11px;color:#b8561f">
+        ⚠️ Cette demande sera envoyée au <strong>Directeur Général</strong> pour validation avant exécution effective.
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
+        <button type="submit" class="btn btn-primary">📤 Envoyer la demande</button>
+    </div>
+</form></div></div>
 
 {% elif page == 'caisse_detail' %}
 <div class="page-header"><h1>💰 {{ caisse.name }}</h1>
@@ -1054,7 +1154,7 @@ Total toutes caisses : <span style="color:#1A7A6D">{{ '{:,.0f}'.format(total) }}
 <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1a3a5c,#1A7A6D)">
 <div class="card" style="max-width:380px;width:100%;margin:20px">
 <div class="card-body" style="padding:30px;text-align:center">
-    <img src="/static/logo_ramya.png" style="height:60px;margin-bottom:14px" onerror="this.style.display='none'">
+    <img src="/static/logo_ramya_round.png" style="height:90px;margin-bottom:14px;background:#fff;border-radius:50%;padding:4px" onerror="this.style.display='none'">
     <h2 style="color:#1a3a5c;margin-bottom:4px">Portail Client</h2>
     <p style="color:#888;font-size:12px;margin-bottom:20px">RAMYA Technologie & Innovation</p>
     <form method="post" action="/portail/login">
@@ -1859,17 +1959,17 @@ Total créances : <span style="color:#e8672a">{{ '{:,.0f}'.format(total) }} FCFA
 </div></div>
 
 <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-    <div class="card" style="flex:1;min-width:200px;text-align:center;padding:14px;border-left:4px solid #c53030">
+    <div class="card" style="flex:1;min-width:200px;text-align:center;padding:14px;border-left:4px solid #1a7a6d">
         <div style="font-size:11px;color:#888">Total Débit</div>
-        <div style="font-size:22px;font-weight:800;color:#c53030">{{ '{:,.0f}'.format(total_debit) }} F</div>
+        <div style="font-size:22px;font-weight:800;color:#1a3a5c">{{ '{:,.0f}'.format(total_debit) }} F</div>
     </div>
-    <div class="card" style="flex:1;min-width:200px;text-align:center;padding:14px;border-left:4px solid #2e7d32">
+    <div class="card" style="flex:1;min-width:200px;text-align:center;padding:14px;border-left:4px solid #1a7a6d">
         <div style="font-size:11px;color:#888">Total Crédit</div>
-        <div style="font-size:22px;font-weight:800;color:#2e7d32">{{ '{:,.0f}'.format(total_credit) }} F</div>
+        <div style="font-size:22px;font-weight:800;color:#1a3a5c">{{ '{:,.0f}'.format(total_credit) }} F</div>
     </div>
-    <div class="card" style="flex:1;min-width:200px;text-align:center;padding:14px;border-left:4px solid {% if total_debit == total_credit %}#1A7A6D{% else %}#e8672a{% endif %}">
+    <div class="card" style="flex:1;min-width:200px;text-align:center;padding:14px;border-left:4px solid {% if total_debit == total_credit %}#2e7d32{% else %}#e8672a{% endif %}">
         <div style="font-size:11px;color:#888">Équilibre</div>
-        <div style="font-size:18px;font-weight:800;color:{% if total_debit == total_credit %}#1A7A6D{% else %}#e8672a{% endif %}">
+        <div style="font-size:16px;font-weight:800;color:{% if total_debit == total_credit %}#2e7d32{% else %}#b8561f{% endif %}">
             {% if total_debit == total_credit %}✅ ÉQUILIBRÉ{% else %}⚠️ {{ '{:,.0f}'.format((total_debit - total_credit)|abs) }} F d'écart{% endif %}
         </div>
     </div>
@@ -1881,30 +1981,30 @@ Total créances : <span style="color:#e8672a">{{ '{:,.0f}'.format(total) }} FCFA
 
 <div class="card"><div class="card-body" style="padding:0">
 {% if ecritures %}
-<div class="table-wrap"><table>
+<div class="table-wrap"><table style="color:#333">
 <thead><tr style="background:#1a3a5c;color:#fff">
 <th>Date</th>
 <th>N° Pièce</th>
 <th>Libellé</th>
 <th>Compte débit</th>
-<th style="text-align:right;background:#8b1a1a">DÉBIT</th>
+<th style="text-align:right">DÉBIT</th>
 <th>Compte crédit</th>
-<th style="text-align:right;background:#1b5e20">CRÉDIT</th>
+<th style="text-align:right">CRÉDIT</th>
 </tr></thead>
-<tbody>{% for e in ecritures %}<tr>
-<td style="font-size:11px;white-space:nowrap">{{ e.date }}</td>
-<td style="font-size:10px;color:#888;white-space:nowrap"><strong>{{ e.journal or 'OD' }}</strong> · {{ e.piece or '-' }}</td>
+<tbody>{% for e in ecritures %}<tr style="border-bottom:1px solid #f0f0f0">
+<td style="font-size:12px;white-space:nowrap">{{ e.date }}</td>
+<td style="font-size:11px;color:#888;white-space:nowrap"><strong>{{ e.journal or 'OD' }}</strong> · {{ e.piece or '-' }}</td>
 <td style="font-size:12px">{{ e.libelle }}</td>
-<td style="font-size:11px;white-space:nowrap"><strong style="color:#c53030">{{ e.compte_debit or '-' }}</strong>{% if e.debit_label %}<br><span style="font-size:9.5px;color:#888">{{ e.debit_label }}</span>{% endif %}</td>
-<td style="text-align:right;font-weight:700;color:#c53030;white-space:nowrap">{{ '{:,.0f}'.format(e.montant or 0) }}</td>
-<td style="font-size:11px;white-space:nowrap"><strong style="color:#2e7d32">{{ e.compte_credit or '-' }}</strong>{% if e.credit_label %}<br><span style="font-size:9.5px;color:#888">{{ e.credit_label }}</span>{% endif %}</td>
-<td style="text-align:right;font-weight:700;color:#2e7d32;white-space:nowrap">{{ '{:,.0f}'.format(e.montant or 0) }}</td>
+<td style="font-size:12px;white-space:nowrap"><strong style="color:#1a7a6d">{{ e.compte_debit or '-' }}</strong>{% if e.debit_label %}<br><span style="font-size:10px;color:#888">{{ e.debit_label }}</span>{% endif %}</td>
+<td style="text-align:right;font-weight:700;white-space:nowrap">{{ '{:,.0f}'.format(e.montant or 0) }}</td>
+<td style="font-size:12px;white-space:nowrap"><strong style="color:#1a7a6d">{{ e.compte_credit or '-' }}</strong>{% if e.credit_label %}<br><span style="font-size:10px;color:#888">{{ e.credit_label }}</span>{% endif %}</td>
+<td style="text-align:right;font-weight:700;white-space:nowrap">{{ '{:,.0f}'.format(e.montant or 0) }}</td>
 </tr>{% endfor %}</tbody>
-<tfoot><tr style="background:#f0f4f8;font-weight:700">
+<tfoot><tr style="background:#f5f7fa;font-weight:700;color:#1a3a5c;border-top:1.5px solid #1a7a6d">
 <td colspan="4" style="text-align:right">TOTAL</td>
-<td style="text-align:right;color:#c53030">{{ '{:,.0f}'.format(total_debit) }} F</td>
+<td style="text-align:right">{{ '{:,.0f}'.format(total_debit) }} F</td>
 <td></td>
-<td style="text-align:right;color:#2e7d32">{{ '{:,.0f}'.format(total_credit) }} F</td>
+<td style="text-align:right">{{ '{:,.0f}'.format(total_credit) }} F</td>
 </tr></tfoot>
 </table></div>
 {% else %}<p style="text-align:center;color:#999;padding:30px">Aucune écriture pour {{ period }}</p>{% endif %}
@@ -1955,44 +2055,47 @@ Total créances : <span style="color:#e8672a">{{ '{:,.0f}'.format(total) }} FCFA
 {% if grand_livre %}
 {% for gl in grand_livre %}
 <div class="card" style="margin-bottom:16px">
-    <div class="card-header" style="background:#f0f4f8;padding:10px 14px;border-bottom:2px solid #1A7A6D">
+    <div class="card-header" style="background:#f8faf9;padding:10px 14px;border-bottom:1.5px solid #1A7A6D">
         <h3 style="margin:0;font-size:14px">
             <span style="font-family:monospace;background:#1A7A6D;color:#fff;padding:3px 8px;border-radius:6px">{{ gl.compte }}</span>
-            <span style="margin-left:8px">{{ gl.libelle }}</span>
-            <span style="float:right;font-size:12px;font-weight:700;color:{% if gl.solde_final > 0 %}#c53030{% elif gl.solde_final < 0 %}#2e7d32{% else %}#888{% endif %}">
-                Solde : {{ '{:,.0f}'.format(gl.solde_final|abs) }} F {% if gl.solde_final > 0 %}DÉBITEUR{% elif gl.solde_final < 0 %}CRÉDITEUR{% else %}NUL{% endif %}
+            <span style="margin-left:8px;color:#1a3a5c">{{ gl.libelle }}</span>
+            <span style="float:right;font-size:12px;font-weight:700;color:#1a3a5c">
+                Solde : {{ '{:,.0f}'.format(gl.solde_final|abs) }} F
+                <span style="font-size:10px;padding:2px 6px;border-radius:6px;margin-left:4px;{% if gl.solde_final > 0 %}background:#fff0e6;color:#b8561f{% elif gl.solde_final < 0 %}background:#e8f5e9;color:#2e7d32{% else %}background:#f0f0f0;color:#777{% endif %}">
+                    {% if gl.solde_final > 0 %}DÉBITEUR{% elif gl.solde_final < 0 %}CRÉDITEUR{% else %}NUL{% endif %}
+                </span>
             </span>
         </h3>
     </div>
     <div class="card-body" style="padding:0">
-        <table style="width:100%;font-size:11px">
-            <thead><tr style="background:#fafafa">
-                <th style="padding:6px;text-align:left">Date</th>
-                <th style="padding:6px;text-align:left">N° Pièce</th>
-                <th style="padding:6px;text-align:left">Libellé</th>
-                <th style="padding:6px;text-align:left">Contrepartie</th>
-                <th style="padding:6px;text-align:right;background:#ffebee;color:#c53030">Débit</th>
-                <th style="padding:6px;text-align:right;background:#e8f5e9;color:#2e7d32">Crédit</th>
-                <th style="padding:6px;text-align:right">Solde</th>
+        <table style="width:100%;font-size:12px;color:#333">
+            <thead><tr style="background:#f5f7fa;color:#444">
+                <th style="padding:8px;text-align:left;font-weight:700">Date</th>
+                <th style="padding:8px;text-align:left;font-weight:700">N° Pièce</th>
+                <th style="padding:8px;text-align:left;font-weight:700">Libellé</th>
+                <th style="padding:8px;text-align:left;font-weight:700">Contrepartie</th>
+                <th style="padding:8px;text-align:right;font-weight:700">Débit</th>
+                <th style="padding:8px;text-align:right;font-weight:700">Crédit</th>
+                <th style="padding:8px;text-align:right;font-weight:700">Solde</th>
             </tr></thead>
             <tbody>
             {% for m in gl.mouvements %}
-            <tr style="border-top:1px solid #eee">
-                <td style="padding:5px 6px;white-space:nowrap">{{ m.date }}</td>
-                <td style="padding:5px 6px;white-space:nowrap;color:#888">{{ m.piece or '-' }}</td>
-                <td style="padding:5px 6px">{{ m.libelle }}</td>
-                <td style="padding:5px 6px;font-family:monospace;font-size:10px">{% if m.sens == 'debit' %}↔ {{ m.compte_credit }}{% else %}↔ {{ m.compte_debit }}{% endif %}</td>
-                <td style="padding:5px 6px;text-align:right;color:#c53030;font-weight:600">{% if m.debit_m %}{{ '{:,.0f}'.format(m.debit_m) }}{% endif %}</td>
-                <td style="padding:5px 6px;text-align:right;color:#2e7d32;font-weight:600">{% if m.credit_m %}{{ '{:,.0f}'.format(m.credit_m) }}{% endif %}</td>
-                <td style="padding:5px 6px;text-align:right;font-weight:700;color:{% if m.solde_progressif > 0 %}#c53030{% elif m.solde_progressif < 0 %}#2e7d32{% else %}#888{% endif %}">{{ '{:,.0f}'.format(m.solde_progressif) }}</td>
+            <tr style="border-top:1px solid #f0f0f0">
+                <td style="padding:6px 8px;white-space:nowrap">{{ m.date }}</td>
+                <td style="padding:6px 8px;white-space:nowrap;color:#888;font-size:11px">{{ m.piece or '-' }}</td>
+                <td style="padding:6px 8px">{{ m.libelle }}</td>
+                <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#666">{% if m.sens == 'debit' %}↔ {{ m.compte_credit }}{% else %}↔ {{ m.compte_debit }}{% endif %}</td>
+                <td style="padding:6px 8px;text-align:right;font-weight:600">{% if m.debit_m %}{{ '{:,.0f}'.format(m.debit_m) }}{% endif %}</td>
+                <td style="padding:6px 8px;text-align:right;font-weight:600">{% if m.credit_m %}{{ '{:,.0f}'.format(m.credit_m) }}{% endif %}</td>
+                <td style="padding:6px 8px;text-align:right;font-weight:700;color:#1a3a5c">{{ '{:,.0f}'.format(m.solde_progressif) }}</td>
             </tr>
             {% endfor %}
             </tbody>
-            <tfoot><tr style="background:#f0f4f8;font-weight:700;border-top:2px solid #1A7A6D">
-                <td colspan="4" style="padding:6px;text-align:right">Totaux</td>
-                <td style="padding:6px;text-align:right;color:#c53030">{{ '{:,.0f}'.format(gl.total_debit) }}</td>
-                <td style="padding:6px;text-align:right;color:#2e7d32">{{ '{:,.0f}'.format(gl.total_credit) }}</td>
-                <td style="padding:6px;text-align:right">{{ '{:,.0f}'.format(gl.solde_final) }}</td>
+            <tfoot><tr style="background:#f5f7fa;font-weight:700;border-top:1.5px solid #1A7A6D;color:#1a3a5c">
+                <td colspan="4" style="padding:8px;text-align:right">Totaux</td>
+                <td style="padding:8px;text-align:right">{{ '{:,.0f}'.format(gl.total_debit) }}</td>
+                <td style="padding:8px;text-align:right">{{ '{:,.0f}'.format(gl.total_credit) }}</td>
+                <td style="padding:8px;text-align:right">{{ '{:,.0f}'.format(gl.solde_final) }}</td>
             </tr></tfoot>
         </table>
     </div>
@@ -2022,38 +2125,38 @@ Total créances : <span style="color:#e8672a">{{ '{:,.0f}'.format(total) }} FCFA
 
 <div class="card"><div class="card-body" style="padding:0">
 {% if balance %}
-<div class="table-wrap"><table>
+<div class="table-wrap"><table style="color:#333">
 <thead><tr style="background:#1a3a5c;color:#fff">
     <th>Compte</th>
     <th>Libellé</th>
     <th>Classe</th>
-    <th style="text-align:right;background:#8b1a1a">Mouvements Débit</th>
-    <th style="text-align:right;background:#1b5e20">Mouvements Crédit</th>
+    <th style="text-align:right">Mouvements Débit</th>
+    <th style="text-align:right">Mouvements Crédit</th>
     <th style="text-align:right">Solde débiteur</th>
     <th style="text-align:right">Solde créditeur</th>
 </tr></thead>
 <tbody>
 {% for b in balance %}
-<tr>
+<tr style="border-bottom:1px solid #f0f0f0">
     <td style="font-family:monospace;font-weight:700;color:#1a7a6d">{{ b.compte }}</td>
     <td>{{ b.libelle }}</td>
-    <td style="font-size:10px;color:#888">{{ b.classe or b.categorie }}</td>
-    <td style="text-align:right;color:#c53030;font-weight:600">{{ '{:,.0f}'.format(b.debit) }}</td>
-    <td style="text-align:right;color:#2e7d32;font-weight:600">{{ '{:,.0f}'.format(b.credit) }}</td>
-    <td style="text-align:right;color:#c53030;font-weight:700">{% if b.solde_debit %}{{ '{:,.0f}'.format(b.solde_debit) }}{% endif %}</td>
-    <td style="text-align:right;color:#2e7d32;font-weight:700">{% if b.solde_credit %}{{ '{:,.0f}'.format(b.solde_credit) }}{% endif %}</td>
+    <td style="font-size:11px;color:#888">{{ b.classe or b.categorie }}</td>
+    <td style="text-align:right;font-weight:600">{{ '{:,.0f}'.format(b.debit) }}</td>
+    <td style="text-align:right;font-weight:600">{{ '{:,.0f}'.format(b.credit) }}</td>
+    <td style="text-align:right;font-weight:700;color:#1a3a5c">{% if b.solde_debit %}{{ '{:,.0f}'.format(b.solde_debit) }}{% endif %}</td>
+    <td style="text-align:right;font-weight:700;color:#1a3a5c">{% if b.solde_credit %}{{ '{:,.0f}'.format(b.solde_credit) }}{% endif %}</td>
 </tr>
 {% endfor %}
 </tbody>
-<tfoot><tr style="background:#f0f4f8;font-weight:700;font-size:13px;border-top:3px solid #1A7A6D">
+<tfoot><tr style="background:#f5f7fa;font-weight:700;font-size:13px;border-top:2px solid #1A7A6D;color:#1a3a5c">
     <td colspan="3" style="text-align:right">TOTAUX</td>
-    <td style="text-align:right;color:#c53030">{{ '{:,.0f}'.format(total_debit) }} F</td>
-    <td style="text-align:right;color:#2e7d32">{{ '{:,.0f}'.format(total_credit) }} F</td>
-    <td style="text-align:right;color:#c53030">{{ '{:,.0f}'.format(total_sd) }} F</td>
-    <td style="text-align:right;color:#2e7d32">{{ '{:,.0f}'.format(total_sc) }} F</td>
+    <td style="text-align:right">{{ '{:,.0f}'.format(total_debit) }} F</td>
+    <td style="text-align:right">{{ '{:,.0f}'.format(total_credit) }} F</td>
+    <td style="text-align:right">{{ '{:,.0f}'.format(total_sd) }} F</td>
+    <td style="text-align:right">{{ '{:,.0f}'.format(total_sc) }} F</td>
 </tr>
-<tr style="background:#fff3e0">
-    <td colspan="7" style="text-align:center;padding:10px;font-weight:700;color:{% if total_debit == total_credit and total_sd == total_sc %}#2e7d32{% else %}#c53030{% endif %}">
+<tr style="background:{% if total_debit == total_credit and total_sd == total_sc %}#e8f5e9{% else %}#fff3e0{% endif %}">
+    <td colspan="7" style="text-align:center;padding:10px;font-weight:700;color:{% if total_debit == total_credit and total_sd == total_sc %}#2e7d32{% else %}#b8561f{% endif %}">
         {% if total_debit == total_credit and total_sd == total_sc %}
         ✅ Balance équilibrée — comptabilité conforme SYSCOHADA
         {% else %}
