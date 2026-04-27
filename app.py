@@ -16,7 +16,8 @@ from email import encoders
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 from flask import (Flask, render_template, request, send_file, flash,
-                   redirect, url_for, jsonify, session, send_from_directory)
+                   redirect, url_for, jsonify, session, send_from_directory,
+                   abort, Response)
 from werkzeug.utils import secure_filename
 
 from rapport_core import extract_from_excel, generate_full_pdf
@@ -46,14 +47,63 @@ from rapport_core import generate_devis_pdf
 
 app = Flask(__name__, template_folder=BASE_DIR, static_folder=BASE_DIR, static_url_path='/static')
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(32).hex())
-app.config['PERMANENT_SESSION_LIFETIME'] = 3600 * 8  # 8 hours
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600 * 8  # 8 heures
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 Mo
+
+# === SÉCURITÉ COOKIES SESSION ===
+# HTTPOnly : empêche JavaScript de lire le cookie (XSS)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+# Secure : cookie envoyé uniquement en HTTPS (Render = HTTPS par défaut)
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FORCE_HTTPS', '1') == '1'
+# SameSite=Lax : protection CSRF de base — bloque les requêtes cross-site dangereuses
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
 PERSISTENT_DIR = os.environ.get('PERSISTENT_DIR', BASE_DIR)
 app.config['UPLOAD_FOLDER'] = os.path.join(PERSISTENT_DIR, 'uploads')
 app.config['FILES_FOLDER'] = os.path.join(PERSISTENT_DIR, 'files')
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['FILES_FOLDER'], exist_ok=True)
+
+# === HEADERS DE SÉCURITÉ HTTP ===
+@app.after_request
+def _security_headers(response):
+    """Ajoute des en-têtes de sécurité à toutes les réponses."""
+    # Empêche le navigateur de deviner le type MIME (X-Content-Type-Options)
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    # Empêche l'affichage du site dans un iframe (clickjacking)
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    # Filtrage XSS basique sur navigateurs anciens
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    # Politique de référent : ne pas leak l'URL complète aux sites externes
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    # HSTS : force HTTPS pendant 1 an (à activer seulement en prod)
+    if request.is_secure:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    # Permissions Policy : limite l'accès aux APIs sensibles
+    response.headers['Permissions-Policy'] = 'geolocation=(self), microphone=(), camera=(self)'
+    return response
+
+
+# === RATE LIMITING SIMPLE (anti brute-force login) ===
+# Utilise une mémoire en RAM (pas idéal pour multi-workers mais OK pour 1 worker Render)
+_login_attempts = {}  # ip -> [(timestamp, success), ...]
+
+def _check_login_rate_limit(ip):
+    """Bloque une IP après 10 échecs en 5 minutes."""
+    now = time.time()
+    cutoff = now - 300  # 5 minutes
+    attempts = _login_attempts.get(ip, [])
+    # Nettoyer les anciennes tentatives
+    attempts = [a for a in attempts if a[0] > cutoff]
+    _login_attempts[ip] = attempts
+    failures = sum(1 for a in attempts if not a[1])
+    return failures < 10  # autorise tant que < 10 échecs
+
+def _record_login_attempt(ip, success):
+    if ip not in _login_attempts:
+        _login_attempts[ip] = []
+    _login_attempts[ip].append((time.time(), success))
 
 @app.errorhandler(413)
 def too_large(e):
@@ -656,16 +706,26 @@ def login():
         username = request.form['username']
         ip = request.remote_addr
         
-        # Vérifier verrouillage (5 tentatives en 15 min)
+        # Rate limiting par IP (anti brute-force distribué)
+        if not _check_login_rate_limit(ip):
+            flash("⛔ Trop de tentatives échouées depuis votre adresse IP. Réessayez dans 5 minutes.", "error")
+            return render_template('login.html'), 429
+        
+        # Vérifier verrouillage par compte (5 tentatives en 15 min)
         if get_failed_attempts(username) >= 5:
+            _record_login_attempt(ip, False)
             flash("Compte temporairement verrouillé (trop de tentatives). Réessayez dans 15 minutes.", "error")
             return render_template('login.html')
         
         user = authenticate_user(username, request.form['password'])
         if user:
+            _record_login_attempt(ip, True)
             record_login_attempt(username, True, ip)
+            # Régénération du session ID pour empêcher la session fixation
+            session.clear()
             session['user_id'] = user['id']
             session['last_active'] = datetime.now().isoformat()
+            session.permanent = True
             log_activity(user['id'], user['full_name'], 'Connexion', f"Connexion réussie", ip)
             flash(f"Bienvenue {user['full_name']} !", "success")
             if user['role'] == 'client':
@@ -680,9 +740,12 @@ def login():
             cu = dict(cu)
             ph = hashlib.sha256((request.form['password'] + (cu.get('salt','') or '')).encode()).hexdigest()
             if ph == cu['password_hash']:
+                _record_login_attempt(ip, True)
+                session.clear()
                 session['client_user_id'] = cu['id']
                 session['client_id'] = cu['client_id']
                 session['client_name'] = cu['full_name']
+                session.permanent = True
                 conn.execute("UPDATE client_users SET last_login=? WHERE id=?", (datetime.now().isoformat(), cu['id']))
                 conn.commit(); conn.close()
                 record_login_attempt(username, True, ip)
@@ -690,6 +753,7 @@ def login():
                 return redirect('/portail/dashboard')
         conn.close()
         
+        _record_login_attempt(ip, False)
         record_login_attempt(username, False, ip)
         remaining = 5 - get_failed_attempts(username)
         flash(f"Identifiants incorrects ({remaining} tentative(s) restante(s))", "error")
@@ -1458,7 +1522,16 @@ def admin_add_user():
         request.form['password'], request.form['full_name'],
         request.form.get('role', 'technicien')
     )
+    # Si création OK et département fourni, l'enregistrer
     if ok:
+        dept = (request.form.get('department','') or '').strip()
+        if dept:
+            try:
+                conn = _gdb()
+                conn.execute("UPDATE users SET department=? WHERE username=?",
+                             (dept, request.form['username']))
+                conn.commit(); conn.close()
+            except: pass
         log_activity(session['user_id'], 'Admin', 'Utilisateur', f"Compte créé: {request.form['full_name']}", request.remote_addr)
     flash(msg, "success" if ok else "error")
     return redirect(url_for('admin_page'))
@@ -5273,21 +5346,38 @@ def client_equipements(cid):
 @permission_required('clients_edit')
 def client_equipement_add(cid):
     conn = _gdb()
+    # Récupérer toutes les catégories cochées
+    categories = request.form.getlist('categories[]') or []
+    # Si "Autre" est dans les catégories, remplacer par la précision (rejeter si vide)
+    if 'Autre' in categories:
+        precision = (request.form.get('category_other','') or '').strip()
+        if not precision:
+            flash("⚠️ Vous avez coché « Autre » : merci de fournir une précision sur le type d'équipement.", "error")
+            conn.close()
+            return redirect(f'/clients/{cid}/equipements')
+        # Remplacer "Autre" par la précision (pour traçabilité)
+        categories = [c if c != 'Autre' else f"Autre : {precision}" for c in categories]
+    # Joindre toutes les catégories en une seule chaîne lisible
+    category_str = ' · '.join(categories) if categories else ''
+    name = (request.form.get('name','') or '').strip()
+    if not name:
+        flash("⚠️ Le nom de l'équipement est obligatoire", "error")
+        conn.close()
+        return redirect(f'/clients/{cid}/equipements')
     try:
         conn.execute("""INSERT INTO client_equipments
             (client_id, name, category, model, serial_number, location,
              installation_date, warranty_until, notes, health_status, health_score)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', 80)""",
-            (cid, request.form.get('name','').strip(),
-             request.form.get('category','').strip(),
-             request.form.get('model','').strip(),
-             request.form.get('serial_number','').strip(),
-             request.form.get('location','').strip(),
+            (cid, name, category_str,
+             (request.form.get('model','') or '').strip(),
+             (request.form.get('serial_number','') or '').strip(),
+             (request.form.get('location','') or '').strip(),
              request.form.get('installation_date','') or None,
              request.form.get('warranty_until','') or None,
-             request.form.get('notes','').strip()))
+             (request.form.get('notes','') or '').strip()))
         conn.commit()
-        flash("✅ Équipement ajouté", "success")
+        flash(f"✅ Équipement ajouté ({len(categories)} type(s) sélectionné(s))", "success")
     except Exception as e:
         flash(f"❌ Erreur : {e}", "error")
     finally:
@@ -5997,7 +6087,11 @@ def intervention_daily_report(iid):
     return redirect(request.referrer or '/interventions/tech')
 
 @app.route('/uploads/interventions/<path:filename>')
+@login_required
 def intervention_file(filename):
+    # Empêcher path traversal
+    if '..' in filename or filename.startswith('/'):
+        abort(403)
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'interventions'), filename)
 
 @app.route('/interventions/<int:iid>/quality', methods=['POST'])
@@ -7013,20 +7107,29 @@ def rh_personnel_photo(eid):
     return redirect(url_for('rh_personnel'))
 
 @app.route('/uploads/photos/<path:filename>')
+@login_required
 def employee_photo(filename):
+    if '..' in filename or filename.startswith('/'): abort(403)
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'photos'), filename)
 
 @app.route('/uploads/employees/<path:filename>')
+@login_required
 def employee_file_serve(filename):
+    if '..' in filename or filename.startswith('/'): abort(403)
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'employees'), filename)
 
 @app.route('/uploads/chat_files/<path:filename>')
+@login_required
 def chat_file_serve(filename):
+    if '..' in filename or filename.startswith('/'): abort(403)
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'chat_files'), filename)
 
 @app.route('/uploads/client_photos/<path:filename>')
 def client_photo_serve(filename):
-    """Serve client portal user photos."""
+    """Photo profil client : accessible aux users connectés ET aux clients connectés au portail."""
+    if '..' in filename or filename.startswith('/'): abort(403)
+    if 'user_id' not in session and 'client_user_id' not in session:
+        abort(403)
     fdir = os.path.join(app.config['UPLOAD_FOLDER'], 'client_photos')
     return send_from_directory(fdir, filename)
 
@@ -8430,7 +8533,15 @@ def budgets_page():
     
     user_dept = user.get('department') if hasattr(user, 'get') else dict(user).get('department')
     if not can_view_all and can_view_own and not user_dept:
-        flash("⚠️ Vous n'avez pas de département assigné. Contactez un administrateur.", "warning")
+        # Si admin voit cet utilisateur, on lui donne un lien direct
+        flash(
+            "⚠️ Aucun département n'est assigné à votre compte. "
+            "Demandez à un administrateur de vous assigner un département "
+            "(Administration → Utilisateurs → Modifier votre compte → champ Département).",
+            "warning")
+        # Pour les admins/dg, ajouter aussi un lien direct  
+        if user.get('role') in ('admin', 'dg'):
+            flash(f"💡 Vous pouvez le faire ici : /admin/edit/{user['id']}", "info")
         return redirect(url_for('dashboard'))
     
     period = request.args.get('period', 'all')
@@ -9484,20 +9595,28 @@ def pieces_caisse_delete(pid):
     return redirect('/comptabilite/pieces')
 
 @app.route('/uploads/pieces/<path:filename>')
+@login_required
 def piece_file(filename):
+    if '..' in filename or filename.startswith('/'): abort(403)
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'pieces'), filename)
 
 
 @app.route('/uploads/signatures/<path:filename>')
+@login_required
 def signature_file(filename):
+    if '..' in filename or filename.startswith('/'): abort(403)
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'signatures'), filename)
 
 @app.route('/uploads/clients/<path:filename>')
+@login_required
 def client_file(filename):
+    if '..' in filename or filename.startswith('/'): abort(403)
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'clients'), filename)
 
 @app.route('/uploads/stock/<path:filename>')
+@login_required
 def stock_image(filename):
+    if '..' in filename or filename.startswith('/'): abort(403)
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'stock'), filename)
 
 @app.route('/stock')

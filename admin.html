@@ -33,16 +33,33 @@
                         <option value="comptable">Comptable</option><option value="concierge">Concierge</option>
                         <option value="dg">Directeur Général</option><option value="resp_projet">Responsable Projet</option>
                         <option value="informatique">Informatique / IT</option><option value="moyens_generaux">Moyens Généraux</option>
-                        <option value="resp_projet">Resp. Projet</option><option value="rh">RH</option><option value="admin">Admin</option>
+                        <option value="rh">RH</option><option value="admin">Admin</option>
                         <option value="proprietaire">Propriétaire</option><option value="secretaire">Secrétaire</option>
                     </select></div></div>
+                    <div class="form-group"><label>Département <span style="font-size:11px;color:#888">(important pour les budgets)</span></label>
+                        <select name="department">
+                            <option value="">-- Non assigné --</option>
+                            <option value="Administration">Administration</option>
+                            <option value="Direction Générale">Direction Générale</option>
+                            <option value="Ressources Humaines">Ressources Humaines</option>
+                            <option value="Comptabilité / Finance">Comptabilité / Finance</option>
+                            <option value="Commercial">Commercial</option>
+                            <option value="Technique">Technique</option>
+                            <option value="Informatique">Informatique</option>
+                            <option value="Moyens Généraux">Moyens Généraux</option>
+                            <option value="Conciergerie">Conciergerie</option>
+                            <option value="Marketing">Marketing</option>
+                            <option value="Logistique">Logistique</option>
+                            <option value="Autre">Autre</option>
+                        </select>
+                    </div>
                     <button type="submit" class="btn btn-primary" style="width:100%">✅ Créer l'utilisateur</button>
                 </form>
             </div>
         </details>
         <div class="table-wrap">
             <div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><table id="dataTable">
-                <thead><tr><th>Nom</th><th>Identifiant</th><th>Email</th><th>Rôle</th><th>Dernière connexion</th><th>Statut</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Nom</th><th>Identifiant</th><th>Email</th><th>Rôle</th><th>Département</th><th>Dernière connexion</th><th>Statut</th><th>Actions</th></tr></thead>
                 <tbody>
                 {% for u in users %}
                 <tr>
@@ -50,6 +67,7 @@
                     <td>{{ u.username }}</td>
                     <td>{{ u.email }}</td>
                     <td><span class="badge-status {{ u.role }}">{{ u.role }}</span></td>
+                    <td style="font-size:11px">{% if u.department %}{{ u.department }}{% else %}<span style="color:#c53030">⚠️ Non assigné</span>{% endif %}</td>
                     <td>{{ u.last_login[:16] if u.last_login else 'Jamais' }}</td>
                     <td>{% if u.is_active %}<span style="color:#2e7d32">●</span> Actif{% else %}<span style="color:#c53030">●</span> Inactif{% endif %}</td>
                     <td style="display:flex;gap:6px">

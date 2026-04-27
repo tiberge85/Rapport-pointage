@@ -1734,21 +1734,38 @@ function editBudget(id, dept, amount, ptype, pstart, pend, notes) {
 </div>
 <div class="form-group"><label>Nom *</label>
     <input name="name" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
-<div class="form-group"><label>Catégorie</label>
-    <select name="category" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
-        <option value="">--</option>
-        <option>Caméra surveillance</option>
-        <option>DVR/NVR</option>
-        <option>Clôture électrique</option>
-        <option>Visiophone</option>
-        <option>Alarme</option>
-        <option>Domotique</option>
-        <option>Poignée intelligente</option>
-        <option>Réseau</option>
-        <option>Câblage</option>
-        <option>Autre</option>
-    </select>
+<div class="form-group"><label>Catégorie(s) — cochez tous les types de systèmes installés sur le site</label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#fafafa;padding:10px;border-radius:6px;border:1.5px solid #ddd">
+        {% set cat_choices = ['Caméra surveillance','DVR/NVR','Clôture électrique','Visiophone','Alarme','Domotique','Poignée intelligente','Réseau','Câblage','Contrôle d\'accès','Détection incendie','Autre'] %}
+        {% for cat in cat_choices %}
+        <label style="display:flex;gap:6px;align-items:center;font-size:12px;cursor:pointer">
+            <input type="checkbox" name="categories[]" value="{{ cat }}" id="cat_{{ loop.index }}" {% if cat == 'Autre' %}onchange="toggleAutreField()"{% endif %}>
+            <span>{{ cat }}</span>
+        </label>
+        {% endfor %}
+    </div>
 </div>
+<div class="form-group" id="autreFieldWrap" style="display:none">
+    <label>Précision (si « Autre » coché) *</label>
+    <input name="category_other" id="autreField" placeholder="Ex: Système biométrique, contrôle parental, ..." style="width:100%;padding:8px;border:1.5px solid #e8672a;border-radius:6px;background:#fff8e1">
+    <small style="color:#888;font-size:10px">Décrivez précisément le type d'équipement non listé</small>
+</div>
+<script>
+function toggleAutreField() {
+    var checkboxes = document.querySelectorAll('input[name="categories[]"]');
+    var autreChecked = Array.from(checkboxes).find(c => c.value === 'Autre' && c.checked);
+    var wrap = document.getElementById('autreFieldWrap');
+    var field = document.getElementById('autreField');
+    if (autreChecked) {
+        wrap.style.display = '';
+        field.required = true;
+    } else {
+        wrap.style.display = 'none';
+        field.required = false;
+        field.value = '';
+    }
+}
+</script>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
     <div class="form-group"><label>Modèle</label><input name="model" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
     <div class="form-group"><label>N° série</label><input name="serial_number" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
