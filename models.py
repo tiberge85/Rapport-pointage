@@ -3182,7 +3182,121 @@ def migrate_v50():
     conn = get_db()
     try: conn.execute("ALTER TABLE interventions ADD COLUMN updated_at TEXT")
     except: pass
-    # Initialiser updated_at = created_at pour les enregistrements existants
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN progress INTEGER DEFAULT 0")
+    except: pass
     try: conn.execute("UPDATE interventions SET updated_at = COALESCE(updated_at, created_at, scheduled_date) WHERE updated_at IS NULL OR updated_at = ''")
     except: pass
     conn.commit(); conn.close()
+
+
+def migrate_v51():
+    """v51 : Module Équipements client (caméras, DVR, alarmes, clôtures...) + état de santé."""
+    conn = get_db()
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS client_equipments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            category TEXT,
+            model TEXT,
+            serial_number TEXT,
+            location TEXT,
+            installation_date TEXT,
+            warranty_until TEXT,
+            health_status TEXT DEFAULT 'ok',
+            health_score INTEGER DEFAULT 80,
+            last_intervention_id INTEGER,
+            last_intervention_at TEXT,
+            last_status_note TEXT,
+            notes TEXT,
+            photo TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+    except Exception as e: print(f"v51 client_equipments: {e}")
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN equipment_id INTEGER")
+    except: pass
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN equipment_health_after TEXT")
+    except: pass
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN equipment_health_note TEXT")
+    except: pass
+    conn.commit(); conn.close()
+
+
+def migrate_v52():
+    """v52 : Module Gestion du budget par département."""
+    conn = get_db()
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS dept_budgets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            department TEXT NOT NULL,
+            period_label TEXT,
+            period_type TEXT DEFAULT 'mensuel',
+            period_start TEXT,
+            period_end TEXT,
+            amount_planned REAL DEFAULT 0,
+            amount_spent REAL DEFAULT 0,
+            notes TEXT,
+            created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            is_active INTEGER DEFAULT 1
+        )""")
+    except Exception as e: print(f"v52 dept_budgets: {e}")
+    # Lien dépenses → département (SET NULL si dept supprimé)
+    try: conn.execute("ALTER TABLE caisse_sorties ADD COLUMN department TEXT")
+    except: pass
+    try: conn.execute("ALTER TABLE caisse_sorties ADD COLUMN budget_id INTEGER")
+    except: pass
+    conn.commit(); conn.close()
+
+
+def recompute_budget_spent(budget_id):
+    """Recalcule le montant dépensé d'un budget en sommant les caisse_sorties liées."""
+    conn = get_db()
+    try:
+        b = conn.execute("SELECT department, period_start, period_end FROM dept_budgets WHERE id=?",
+                         (budget_id,)).fetchone()
+        if not b:
+            conn.close(); return False
+        # Somme des dépenses du département dans la période (status validé seulement)
+        if b['period_start'] and b['period_end']:
+            row = conn.execute("""SELECT COALESCE(SUM(montant), 0) as t FROM caisse_sorties
+                WHERE department=? AND date >= ? AND date <= ?
+                AND status IN ('valide', 'comptabilise')""",
+                (b['department'], b['period_start'], b['period_end'])).fetchone()
+        else:
+            row = conn.execute("""SELECT COALESCE(SUM(montant), 0) as t FROM caisse_sorties
+                WHERE department=? AND status IN ('valide', 'comptabilise')""",
+                               (b['department'],)).fetchone()
+        total = float(row['t'] or 0)
+        conn.execute("UPDATE dept_budgets SET amount_spent=?, updated_at=? WHERE id=?",
+                     (total, datetime.now().isoformat(), budget_id))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback(); return False
+    finally:
+        conn.close()
+
+
+def update_equipment_health(equipment_id, health_status, health_note='', intervention_id=None):
+    """Met à jour l'état de santé d'un équipement suite à une intervention."""
+    score_map = {'excellent': 100, 'ok': 80, 'attention': 50, 'panne': 20, 'hors_service': 0}
+    score = score_map.get(health_status, 50)
+    conn = get_db()
+    try:
+        conn.execute("""UPDATE client_equipments SET
+            health_status=?, health_score=?, last_status_note=?,
+            last_intervention_id=?, last_intervention_at=?, updated_at=?
+            WHERE id=?""",
+            (health_status, score, (health_note or '')[:500],
+             intervention_id, datetime.now().isoformat(),
+             datetime.now().isoformat(), equipment_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()

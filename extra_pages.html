@@ -400,7 +400,8 @@ new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes'
 
 {% elif page == 'client_profile' %}
 <div class="page-header"><h1>🏢 {{ client.name }}</h1>
-<a href="/clients" class="btn btn-outline btn-sm">← Retour</a></div>
+<div style="display:flex;gap:6px"><a href="/clients/{{ client.id }}/equipements" class="btn btn-outline btn-sm" style="background:#e3f2fd;color:#1565c0;border-color:#1565c0">🛠️ Équipements</a>
+<a href="/clients" class="btn btn-outline btn-sm">← Retour</a></div></div>
 
 <div style="display:flex;gap:4px;margin-bottom:14px;flex-wrap:wrap;overflow-x:auto">
 {% for t,icon,label in [
@@ -1360,6 +1361,7 @@ setTimeout(function(){ window.location.reload(); }, 60000);
     <a href="/portail/planning" class="qa" style="border-color:#1A7A6D;color:#1A7A6D"><span class="ic">📅</span><span class="lbl">Mon planning{% if data.planning_count %}<span class="badge-n">{{ data.planning_count }}</span>{% endif %}</span></a>
     <a href="/portail/interventions" class="qa" style="{% if data.active_interventions_count and data.active_interventions_count > 0 %}border-color:#1565c0;color:#1565c0{% endif %}"><span class="ic">🔧</span><span class="lbl">Interventions{% if data.active_interventions_count and data.active_interventions_count > 0 %} <span style="background:#e8672a;color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:4px">{{ data.active_interventions_count }}</span>{% endif %}</span></a>
     <a href="/portail/factures" class="qa"><span class="ic">🧾</span><span class="lbl">Factures</span></a>
+    <a href="/portail/equipements" class="qa"><span class="ic">🛠️</span><span class="lbl">Mes équipements</span></a>
     <a href="/portail/profile" class="qa"><span class="ic">👤</span><span class="lbl">Mon profil</span></a>
 </div>
 
@@ -1415,6 +1417,356 @@ setTimeout(function(){ window.location.reload(); }, 60000);
 <td><a href="/portail/messages/{{ r.id }}" class="btn btn-outline btn-sm" style="font-size:9px">💬</a></td>
 </tr>{% endfor %}</tbody></table></div></div></div>
 {% endif %}
+
+{% elif page == 'budgets' %}
+<style>
+.bdg-card{background:#fff;border-radius:10px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.05);border-left:4px solid #1a7a6d}
+.bdg-card.over{border-left-color:#c53030}
+.bdg-card.warn{border-left-color:#f29f2f}
+.bdg-bar{height:14px;background:#f0f0f0;border-radius:7px;overflow:hidden;position:relative;margin-top:6px}
+.bdg-bar-fill{height:100%;border-radius:7px;transition:width 0.4s;position:relative}
+.bdg-bar-pct{position:absolute;top:0;left:0;right:0;text-align:center;font-size:10px;font-weight:700;line-height:14px;color:#fff;text-shadow:0 0 2px rgba(0,0,0,0.4)}
+.bdg-stat{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.bdg-stat .s{background:#fff;padding:14px;border-radius:10px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.bdg-stat .s .n{font-size:18px;font-weight:800}
+.bdg-stat .s .l{font-size:10px;color:#888;margin-top:2px}
+@media(max-width:600px){.bdg-stat{grid-template-columns:repeat(2,1fr)}}
+</style>
+<div class="page-header">
+    <h1>💼 Gestion du budget par département</h1>
+    {% if can_edit('comptabilite') %}
+    <button class="btn btn-primary btn-sm" onclick="document.getElementById('addBdgModal').style.display='flex'">+ Nouveau budget</button>
+    {% endif %}
+</div>
+
+<!-- Filtres période -->
+<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+    <a href="/budgets?period=all" class="btn btn-sm {% if period == 'all' %}btn-primary{% else %}btn-outline{% endif %}">📊 Tous</a>
+    <a href="/budgets?period=mois" class="btn btn-sm {% if period == 'mois' %}btn-primary{% else %}btn-outline{% endif %}">📅 Ce mois</a>
+    <a href="/budgets?period=annee" class="btn btn-sm {% if period == 'annee' %}btn-primary{% else %}btn-outline{% endif %}">🗓️ Cette année</a>
+</div>
+
+<!-- Stats globales -->
+<div class="bdg-stat">
+    <div class="s" style="border-left:4px solid #1a7a6d"><div class="n" style="color:#1a7a6d">{{ "{:,.0f}".format(total_planned) }} F</div><div class="l">💰 Budget total prévu</div></div>
+    <div class="s" style="border-left:4px solid #e8672a"><div class="n" style="color:#e8672a">{{ "{:,.0f}".format(total_spent) }} F</div><div class="l">💸 Total dépensé</div></div>
+    <div class="s" style="border-left:4px solid {% if total_remaining < 0 %}#c53030{% else %}#2e7d32{% endif %}"><div class="n" style="color:{% if total_remaining < 0 %}#c53030{% else %}#2e7d32{% endif %}">{{ "{:,.0f}".format(total_remaining) }} F</div><div class="l">🏦 Reste disponible</div></div>
+    <div class="s" style="border-left:4px solid #7b1fa2"><div class="n" style="color:#7b1fa2">{{ total_pct }}%</div><div class="l">📊 Taux d'utilisation</div></div>
+</div>
+
+<!-- Alertes -->
+{% if alerts %}
+<div style="background:#fff3e0;border-left:4px solid #f29f2f;padding:12px 16px;border-radius:8px;margin-bottom:14px">
+    <strong style="color:#b8561f">⚠️ {{ alerts|length }} budget(s) en alerte :</strong>
+    <span style="font-size:11px;color:#666">{% for a in alerts %}{{ a.department }} ({{ a.percent }}%){% if not loop.last %}, {% endif %}{% endfor %}</span>
+</div>
+{% endif %}
+
+<!-- Tableau des budgets -->
+{% if budgets %}
+<div class="card">
+<div class="card-body" style="padding:0">
+<table>
+<thead><tr>
+    <th>Département</th>
+    <th>Période</th>
+    <th style="text-align:right">Prévu</th>
+    <th style="text-align:right">Dépensé</th>
+    <th style="text-align:right">Reste</th>
+    <th>Utilisation</th>
+    <th style="text-align:center">Actions</th>
+</tr></thead>
+<tbody>
+{% for b in budgets %}
+<tr style="{% if b.over_budget %}background:#fef0f0{% elif b.percent >= 80 %}background:#fff8e1{% endif %}">
+    <td><strong>{{ b.department }}</strong>{% if b.notes %}<br><span style="font-size:10px;color:#888">{{ b.notes[:60] }}</span>{% endif %}</td>
+    <td style="font-size:11px">{{ b.period_label or (b.period_start ~ ' → ' ~ b.period_end if b.period_start else '-') }}<br><span style="color:#888;font-size:10px">{{ b.period_type }}</span></td>
+    <td style="text-align:right;font-weight:700">{{ "{:,.0f}".format(b.amount_planned or 0) }} F</td>
+    <td style="text-align:right;color:#e8672a;font-weight:700">{{ "{:,.0f}".format(b.amount_spent or 0) }} F</td>
+    <td style="text-align:right;font-weight:700;color:{% if b.amount_remaining < 0 %}#c53030{% else %}#2e7d32{% endif %}">{{ "{:,.0f}".format(b.amount_remaining) }} F</td>
+    <td style="min-width:160px">
+        <div class="bdg-bar">
+            <div class="bdg-bar-fill" style="width:{{ b.percent if b.percent <= 100 else 100 }}%;background:{% if b.over_budget %}#c53030{% elif b.percent >= 80 %}#f29f2f{% elif b.percent >= 50 %}#1a7a6d{% else %}#2e7d32{% endif %}"></div>
+            <div class="bdg-bar-pct">{{ b.percent }}%{% if b.over_budget %} ⚠️ DÉPASSEMENT{% endif %}</div>
+        </div>
+    </td>
+    <td style="text-align:center;white-space:nowrap">
+        <a href="/budgets/{{ b.id }}/recompute" class="btn btn-sm btn-outline" style="font-size:10px" title="Recalculer">🔄</a>
+        {% if can_edit('comptabilite') %}
+        <button onclick="editBudget({{ b.id }}, '{{ b.department|e }}', {{ b.amount_planned or 0 }}, '{{ b.period_type }}', '{{ b.period_start or '' }}', '{{ b.period_end or '' }}', '{{ (b.notes or '')|e }}')" class="btn btn-sm btn-outline" style="font-size:10px" title="Modifier">✏️</button>
+        <a href="/budgets/{{ b.id }}/delete" onclick="return confirm('Supprimer ce budget ?')" class="btn btn-sm btn-outline" style="color:#c53030;font-size:10px" title="Supprimer">🗑️</a>
+        {% endif %}
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div></div>
+{% else %}
+<div style="text-align:center;padding:40px;background:#fafafa;border-radius:10px;color:#888">
+    <div style="font-size:42px">💼</div>
+    <div style="font-size:14px;font-weight:600;color:#666">Aucun budget défini</div>
+    <div style="font-size:11px;color:#aaa;margin-top:4px">Cliquez sur "+ Nouveau budget" pour commencer.</div>
+</div>
+{% endif %}
+
+<!-- Modal Add/Edit Budget -->
+<div id="addBdgModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:10px;padding:20px;max-width:480px;width:92%">
+<form method="post" action="/budgets/add" id="bdgForm">
+<input type="hidden" name="_method" id="bdgMethod" value="add">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <h3 id="bdgModalTitle" style="margin:0">+ Nouveau budget</h3>
+    <button type="button" onclick="document.getElementById('addBdgModal').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer">✕</button>
+</div>
+<div class="form-group"><label>Département *</label>
+    <select name="department" id="bdgDept" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+        <option value="">-- Sélectionner --</option>
+        {% for d in departments %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+    </select>
+</div>
+<div class="form-group"><label>Montant prévu (F CFA) *</label>
+    <input type="number" name="amount_planned" id="bdgAmount" min="0" step="1000" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+<div class="form-group"><label>Type de période</label>
+    <select name="period_type" id="bdgType" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+        <option value="mensuel">Mensuel</option>
+        <option value="trimestriel">Trimestriel</option>
+        <option value="annuel">Annuel</option>
+        <option value="ponctuel">Ponctuel</option>
+    </select>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div class="form-group"><label>Début</label><input type="date" name="period_start" id="bdgStart" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+    <div class="form-group"><label>Fin</label><input type="date" name="period_end" id="bdgEnd" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+</div>
+<div class="form-group"><label>Notes</label>
+    <textarea name="notes" id="bdgNotes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></textarea></div>
+<div style="display:flex;gap:6px;justify-content:flex-end">
+    <button type="button" onclick="document.getElementById('addBdgModal').style.display='none'" class="btn btn-outline">Annuler</button>
+    <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
+</div>
+</form>
+</div>
+</div>
+
+<script>
+function editBudget(id, dept, amount, ptype, pstart, pend, notes) {
+    var form = document.getElementById('bdgForm');
+    form.action = '/budgets/' + id + '/edit';
+    document.getElementById('bdgModalTitle').textContent = '✏️ Modifier budget — ' + dept;
+    document.getElementById('bdgDept').value = dept;
+    document.getElementById('bdgAmount').value = amount;
+    document.getElementById('bdgType').value = ptype || 'mensuel';
+    document.getElementById('bdgStart').value = pstart;
+    document.getElementById('bdgEnd').value = pend;
+    document.getElementById('bdgNotes').value = notes;
+    document.getElementById('addBdgModal').style.display = 'flex';
+}
+</script>
+
+{% elif page == 'portail_equipements' %}
+<style>
+.eq-card{background:#fff;border-radius:10px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.05);border-left:4px solid #ddd}
+.eq-card.s-excellent{border-left-color:#2e7d32}
+.eq-card.s-ok{border-left-color:#1a7a6d}
+.eq-card.s-attention{border-left-color:#f29f2f}
+.eq-card.s-panne{border-left-color:#c53030}
+.eq-card.s-hors_service{border-left-color:#666}
+.eq-stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px}
+.eq-stat{padding:10px;border-radius:8px;text-align:center;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+.eq-stat .n{font-size:20px;font-weight:800}
+.eq-stat .l{font-size:10px;color:#888;margin-top:2px}
+.eq-bar{height:8px;background:#eee;border-radius:4px;overflow:hidden;margin-top:6px}
+.eq-bar-fill{height:100%;border-radius:4px;transition:width 0.4s}
+.eq-badge{padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;display:inline-block}
+.eq-badge.s-excellent{background:#e8f5e9;color:#2e7d32}
+.eq-badge.s-ok{background:#e3f2fd;color:#1a7a6d}
+.eq-badge.s-attention{background:#fff3e0;color:#b8561f}
+.eq-badge.s-panne{background:#fde8e8;color:#c53030}
+.eq-badge.s-hors_service{background:#f0f0f0;color:#666}
+@media(max-width:600px){.eq-stat-grid{grid-template-columns:repeat(3,1fr)}}
+</style>
+<div style="background:linear-gradient(135deg,#1A7A6D 0%,#0d5b50 100%);color:#fff;padding:14px 20px;margin:-20px -20px 20px;border-radius:0 0 14px 14px">
+    <a href="/portail/dashboard" style="color:rgba(255,255,255,0.85);text-decoration:none;font-size:12px">← Retour au tableau de bord</a>
+    <h2 style="margin:6px 0 0;font-size:18px;font-weight:700">🔧 Mes équipements</h2>
+    <p style="margin:2px 0 0;font-size:11px;opacity:0.85">Suivi de l'état de santé de vos équipements installés</p>
+</div>
+
+<div class="eq-stat-grid">
+    <div class="eq-stat" style="background:#e8f5e9"><div class="n" style="color:#2e7d32">{{ counts.excellent }}</div><div class="l">✨ Excellent</div></div>
+    <div class="eq-stat" style="background:#e3f2fd"><div class="n" style="color:#1a7a6d">{{ counts.ok }}</div><div class="l">✅ OK</div></div>
+    <div class="eq-stat" style="background:#fff3e0"><div class="n" style="color:#b8561f">{{ counts.attention }}</div><div class="l">⚠️ Attention</div></div>
+    <div class="eq-stat" style="background:#fde8e8"><div class="n" style="color:#c53030">{{ counts.panne }}</div><div class="l">❌ Panne</div></div>
+    <div class="eq-stat" style="background:#f0f0f0"><div class="n" style="color:#666">{{ counts.hors_service }}</div><div class="l">🚫 H. service</div></div>
+</div>
+
+{% if (counts.attention + counts.panne + counts.hors_service) > 0 %}
+<div style="background:#fff3e0;border-left:4px solid #f29f2f;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:12px">
+    <strong>⚠️ Attention :</strong> {{ counts.attention + counts.panne + counts.hors_service }} équipement(s) nécessitent une intervention. Notre équipe technique en a été informée.
+</div>
+{% endif %}
+
+{% if equipments %}
+{% for e in equipments %}
+{% set s = e.health_status or 'ok' %}
+{% set score = e.health_score or 80 %}
+<div class="eq-card s-{{ s }}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+        <div style="flex:1;min-width:220px">
+            <div style="font-weight:700;font-size:14px;color:#1a3a5c">{{ e.name }}</div>
+            <div style="font-size:11px;color:#888;margin-top:2px">
+                {% if e.category %}🏷️ {{ e.category }}{% endif %}
+                {% if e.model %} · 📱 {{ e.model }}{% endif %}
+                {% if e.serial_number %} · #{{ e.serial_number }}{% endif %}
+                {% if e.location %} · 📍 {{ e.location }}{% endif %}
+            </div>
+            {% if e.installation_date %}<div style="font-size:10px;color:#aaa;margin-top:2px">Installé le {{ e.installation_date }}{% if e.warranty_until %} · Garantie jusqu'au {{ e.warranty_until }}{% endif %}</div>{% endif %}
+        </div>
+        <div style="text-align:right;min-width:140px">
+            <span class="eq-badge s-{{ s }}">
+                {% if s == 'excellent' %}✨ Excellent{% elif s == 'ok' %}✅ Bon état{% elif s == 'attention' %}⚠️ Attention{% elif s == 'panne' %}❌ Panne{% else %}🚫 Hors service{% endif %}
+            </span>
+            <div style="font-size:10px;color:#888;margin-top:4px">Score : {{ score }}/100</div>
+        </div>
+    </div>
+    <div class="eq-bar">
+        <div class="eq-bar-fill" style="width:{{ score }}%;background:{% if score >= 80 %}#2e7d32{% elif score >= 50 %}#f29f2f{% elif score >= 20 %}#e8672a{% else %}#c53030{% endif %}"></div>
+    </div>
+    {% if e.last_status_note %}
+    <div style="margin-top:8px;font-size:11px;color:#666;background:#fafafa;padding:8px;border-radius:6px">
+        <strong>📝 Dernière observation :</strong> {{ e.last_status_note }}
+        {% if e.last_intervention_at %}<span style="color:#aaa"> · {{ e.last_intervention_at[:10] }}</span>{% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<div style="text-align:center;padding:40px;background:#fafafa;border-radius:10px;color:#888">
+    <div style="font-size:42px;margin-bottom:8px">📦</div>
+    <div style="font-size:14px;font-weight:600;color:#666">Aucun équipement enregistré</div>
+    <div style="font-size:11px;color:#aaa;margin-top:4px">Vos équipements apparaîtront ici après leur installation.</div>
+</div>
+{% endif %}
+
+{% if history %}
+<h3 style="font-size:13px;color:#1a3a5c;margin:18px 0 8px">📋 Historique des interventions</h3>
+<div style="background:#fff;border-radius:8px;padding:8px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+{% for h in history %}
+<div style="padding:10px;border-bottom:1px solid #f0f0f0;font-size:12px">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+        <strong>{{ h.equipment_name or 'Équipement' }}</strong>
+        <span style="color:#888;font-size:10px">{{ h.scheduled_date or '-' }}</span>
+    </div>
+    <div style="font-size:11px;color:#666;margin-top:2px">{{ h.title }} {% if h.equipment_health_after %}<span class="eq-badge s-{{ h.equipment_health_after }}">{{ h.equipment_health_after }}</span>{% endif %}</div>
+    {% if h.equipment_health_note %}<div style="font-size:11px;color:#888;margin-top:2px">{{ h.equipment_health_note }}</div>{% endif %}
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+{% elif page == 'client_equipements' %}
+<div class="page-header">
+    <h1>🔧 Équipements — {{ client.name }}</h1>
+    <div style="display:flex;gap:6px">
+        <a href="/clients/{{ client.id }}" class="btn btn-outline btn-sm">← Fiche client</a>
+        <button class="btn btn-primary btn-sm" onclick="document.getElementById('addEqModal').style.display='flex'">+ Nouvel équipement</button>
+    </div>
+</div>
+
+<div class="card">
+<div class="card-body" style="padding:0">
+{% if equipments %}
+<table>
+<thead><tr>
+    <th>Nom</th>
+    <th>Catégorie</th>
+    <th>Modèle / Série</th>
+    <th>Installation</th>
+    <th>État de santé</th>
+    <th>Dernière obs.</th>
+    <th>Actions</th>
+</tr></thead>
+<tbody>
+{% for e in equipments %}
+{% set s = e.health_status or 'ok' %}
+<tr>
+    <td><strong>{{ e.name }}</strong>{% if e.location %}<br><span style="font-size:10px;color:#888">📍 {{ e.location }}</span>{% endif %}</td>
+    <td style="font-size:11px">{{ e.category or '-' }}</td>
+    <td style="font-size:11px">{{ e.model or '-' }}{% if e.serial_number %}<br><span style="font-family:monospace;font-size:10px;color:#888">#{{ e.serial_number }}</span>{% endif %}</td>
+    <td style="font-size:11px">{{ e.installation_date or '-' }}{% if e.warranty_until %}<br><span style="color:#888;font-size:10px">Gar. {{ e.warranty_until }}</span>{% endif %}</td>
+    <td>
+        <form method="post" action="/equipements/{{ e.id }}/health" style="display:inline-flex;gap:4px;align-items:center">
+            <select name="health_status" onchange="this.form.submit()" style="padding:4px 6px;border:1.5px solid #ddd;border-radius:6px;font-size:11px;background:{% if s == 'excellent' %}#e8f5e9{% elif s == 'ok' %}#e3f2fd{% elif s == 'attention' %}#fff3e0{% elif s == 'panne' %}#fde8e8{% else %}#f0f0f0{% endif %}">
+                <option value="excellent" {% if s == 'excellent' %}selected{% endif %}>✨ Excellent</option>
+                <option value="ok" {% if s == 'ok' %}selected{% endif %}>✅ OK</option>
+                <option value="attention" {% if s == 'attention' %}selected{% endif %}>⚠️ Attention</option>
+                <option value="panne" {% if s == 'panne' %}selected{% endif %}>❌ Panne</option>
+                <option value="hors_service" {% if s == 'hors_service' %}selected{% endif %}>🚫 Hors service</option>
+            </select>
+        </form>
+        <div style="font-size:10px;color:#888;margin-top:3px">Score : {{ e.health_score or 80 }}/100</div>
+    </td>
+    <td style="font-size:10px;color:#666">{{ (e.last_status_note or '-')[:50] }}</td>
+    <td>
+        <a href="/equipements/{{ e.id }}/delete" onclick="return confirm('Supprimer ?')" class="btn btn-sm btn-outline" style="color:#c53030;font-size:10px">🗑️</a>
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}
+<div style="text-align:center;padding:40px;color:#888">
+    <div style="font-size:36px">📦</div>
+    Aucun équipement enregistré pour ce client
+</div>
+{% endif %}
+</div>
+</div>
+
+<!-- Modal Add Equipment -->
+<div id="addEqModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:10px;padding:20px;max-width:520px;width:92%;max-height:88vh;overflow:auto">
+<form method="post" action="/clients/{{ client.id }}/equipements/add">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <h3 style="margin:0">+ Nouvel équipement</h3>
+    <button type="button" onclick="document.getElementById('addEqModal').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer">✕</button>
+</div>
+<div class="form-group"><label>Nom *</label>
+    <input name="name" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+<div class="form-group"><label>Catégorie</label>
+    <select name="category" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+        <option value="">--</option>
+        <option>Caméra surveillance</option>
+        <option>DVR/NVR</option>
+        <option>Clôture électrique</option>
+        <option>Visiophone</option>
+        <option>Alarme</option>
+        <option>Domotique</option>
+        <option>Poignée intelligente</option>
+        <option>Réseau</option>
+        <option>Câblage</option>
+        <option>Autre</option>
+    </select>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div class="form-group"><label>Modèle</label><input name="model" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+    <div class="form-group"><label>N° série</label><input name="serial_number" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+</div>
+<div class="form-group"><label>Emplacement</label>
+    <input name="location" placeholder="Salon, parking, entrée..." style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <div class="form-group"><label>Date installation</label><input type="date" name="installation_date" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+    <div class="form-group"><label>Garantie jusqu'au</label><input type="date" name="warranty_until" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+</div>
+<div class="form-group"><label>Notes</label>
+    <textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></textarea></div>
+<div style="display:flex;gap:6px;justify-content:flex-end">
+    <button type="button" onclick="document.getElementById('addEqModal').style.display='none'" class="btn btn-outline">Annuler</button>
+    <button type="submit" class="btn btn-primary">+ Ajouter</button>
+</div>
+</form>
+</div>
+</div>
 
 {% elif page == 'portail_profile' %}
 <style>
@@ -1584,9 +1936,16 @@ function captureGPS() {
 </script>
 
 {% elif page == 'portail_interventions' %}
+{% set has_active = interventions | selectattr('status', 'in', ['en_cours','travaux_termines','controle_qualite','planifiee']) | list | length > 0 %}
+{% if has_active %}
+<!-- Auto-actualisation toutes les 45 secondes pour voir les rapports d'avancement en temps réel -->
+<script>
+setTimeout(function(){ window.location.reload(); }, 45000);
+</script>
+{% endif %}
 <div style="background:linear-gradient(135deg,#1A7A6D 0%,#0d5b50 100%);color:#fff;padding:14px 20px;margin:-20px -20px 20px;border-radius:0 0 14px 14px;box-shadow:0 2px 8px rgba(26,122,109,0.2)">
     <a href="/portail/dashboard" style="color:rgba(255,255,255,0.85);text-decoration:none;font-size:12px">← Retour au tableau de bord</a>
-    <h2 style="margin:6px 0 0;font-size:18px;font-weight:700">🔧 Mes interventions</h2>
+    <h2 style="margin:6px 0 0;font-size:18px;font-weight:700">🔧 Mes interventions{% if has_active %} <span style="background:rgba(255,255,255,0.25);font-size:10px;padding:3px 8px;border-radius:10px;font-weight:700;margin-left:6px">🔄 Mise à jour auto</span>{% endif %}</h2>
 </div>
 <style>
 .wf-steps{display:flex;gap:4px;margin:10px 0;flex-wrap:wrap;font-size:10px}

@@ -285,6 +285,10 @@ from models import migrate_v49
 migrate_v49()
 from models import migrate_v50
 migrate_v50()
+from models import migrate_v51
+migrate_v51()
+from models import migrate_v52
+migrate_v52()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -5190,6 +5194,151 @@ def portail_dashboard():
     return render_template('extra_pages.html', page='portail_dashboard', data=data, today_str=today, tomorrow_str=tmrw_s)
 
 
+# ============================================================
+# MODULE ÉQUIPEMENTS CLIENT
+# ============================================================
+
+@app.route('/portail/equipements')
+@portail_required
+def portail_equipements():
+    """Page client : liste de mes équipements + état de santé."""
+    conn = _gdb()
+    cid = session['client_id']
+    equipments = []
+    try:
+        equipments = [dict(r) for r in conn.execute(
+            "SELECT * FROM client_equipments WHERE client_id=? ORDER BY name",
+            (cid,)).fetchall()]
+    except: pass
+    # Compteurs par état
+    counts = {'excellent': 0, 'ok': 0, 'attention': 0, 'panne': 0, 'hors_service': 0}
+    for e in equipments:
+        s = e.get('health_status') or 'ok'
+        counts[s] = counts.get(s, 0) + 1
+    # Historique des interventions liées
+    history = []
+    try:
+        history = [dict(r) for r in conn.execute(
+            """SELECT i.reference, i.title, i.scheduled_date, i.equipment_id,
+                      i.equipment_health_after, i.equipment_health_note,
+                      e.name as equipment_name
+               FROM interventions i
+               LEFT JOIN client_equipments e ON i.equipment_id = e.id
+               WHERE i.client_id=? AND i.equipment_id IS NOT NULL
+               ORDER BY i.scheduled_date DESC LIMIT 20""", (cid,)).fetchall()]
+    except: pass
+    me = None
+    try:
+        me = dict(conn.execute("SELECT * FROM client_users WHERE id=?",
+                               (session['client_user_id'],)).fetchone())
+    except: pass
+    conn.close()
+    return render_template('extra_pages.html', page='portail_equipements',
+                          equipments=equipments, counts=counts, history=history, me=me)
+
+
+@app.route('/clients/<int:cid>/equipements')
+@permission_required('clients')
+def client_equipements(cid):
+    """Page admin : voir/gérer les équipements d'un client."""
+    conn = _gdb()
+    client = conn.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone()
+    if not client:
+        conn.close(); flash("Client introuvable", "error"); return redirect('/clients')
+    client = dict(client)
+    equipments = []
+    try:
+        equipments = [dict(r) for r in conn.execute(
+            "SELECT * FROM client_equipments WHERE client_id=? ORDER BY name", (cid,)).fetchall()]
+    except: pass
+    conn.close()
+    return render_template('extra_pages.html', page='client_equipements',
+                          client=client, equipments=equipments)
+
+
+@app.route('/clients/<int:cid>/equipements/add', methods=['POST'])
+@permission_required('clients_edit')
+def client_equipement_add(cid):
+    conn = _gdb()
+    try:
+        conn.execute("""INSERT INTO client_equipments
+            (client_id, name, category, model, serial_number, location,
+             installation_date, warranty_until, notes, health_status, health_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', 80)""",
+            (cid, request.form.get('name','').strip(),
+             request.form.get('category','').strip(),
+             request.form.get('model','').strip(),
+             request.form.get('serial_number','').strip(),
+             request.form.get('location','').strip(),
+             request.form.get('installation_date','') or None,
+             request.form.get('warranty_until','') or None,
+             request.form.get('notes','').strip()))
+        conn.commit()
+        flash("✅ Équipement ajouté", "success")
+    except Exception as e:
+        flash(f"❌ Erreur : {e}", "error")
+    finally:
+        conn.close()
+    return redirect(f'/clients/{cid}/equipements')
+
+
+@app.route('/equipements/<int:eid>/health', methods=['POST'])
+@permission_required('clients')
+def equipement_update_health(eid):
+    """Modifier l'état de santé d'un équipement (admin/coord/tech)."""
+    health = request.form.get('health_status', 'ok')
+    note = request.form.get('health_note', '').strip()
+    if health not in ('excellent', 'ok', 'attention', 'panne', 'hors_service'):
+        flash("État de santé invalide", "error")
+        return redirect(request.referrer or '/clients')
+    from models import update_equipment_health
+    ok = update_equipment_health(eid, health, note)
+    # Si lié à une intervention, mettre à jour aussi
+    iid = request.form.get('intervention_id')
+    if iid and iid.isdigit():
+        conn = _gdb()
+        try:
+            conn.execute("UPDATE interventions SET equipment_id=?, equipment_health_after=?, equipment_health_note=? WHERE id=?",
+                         (eid, health, note, int(iid)))
+            conn.commit()
+        except: pass
+        conn.close()
+    # Notif au client si état dégradé
+    try:
+        conn = _gdb()
+        eq = conn.execute("SELECT name, client_id FROM client_equipments WHERE id=?", (eid,)).fetchone()
+        if eq and health in ('attention', 'panne', 'hors_service'):
+            for cu in conn.execute("SELECT id FROM client_users WHERE client_id=? AND account_status='approved'",
+                                    (eq['client_id'],)).fetchall():
+                conn.execute("""INSERT INTO notifications (client_user_id, type, title, message, link)
+                    VALUES (?,?,?,?,?)""",
+                    (cu['id'], 'equipment_status',
+                     f"⚠️ État équipement modifié — {eq['name']}",
+                     f"L'état de votre équipement « {eq['name']} » est désormais : {health}. {note[:150]}",
+                     "/portail/equipements"))
+            conn.commit()
+        conn.close()
+    except: pass
+    flash(f"✅ État mis à jour : {health}", "success")
+    return redirect(request.referrer or '/clients')
+
+
+@app.route('/equipements/<int:eid>/delete', methods=['POST', 'GET'])
+@permission_required('clients_edit')
+def client_equipement_delete(eid):
+    conn = _gdb()
+    eq = conn.execute("SELECT client_id FROM client_equipments WHERE id=?", (eid,)).fetchone()
+    cid = eq['client_id'] if eq else None
+    try:
+        conn.execute("DELETE FROM client_equipments WHERE id=?", (eid,))
+        conn.commit()
+        flash("Équipement supprimé", "success")
+    except Exception as e:
+        flash(f"Erreur : {e}", "error")
+    conn.close()
+    return redirect(f'/clients/{cid}/equipements' if cid else '/clients')
+
+
 @app.route('/portail/profile', methods=['GET','POST'])
 @portail_required
 def portail_profile():
@@ -5800,13 +5949,38 @@ def intervention_daily_report(iid):
                 f.save(os.path.join(fdir, fname))
                 img_names.append(fname)
     
+    progress_pct = int(request.form.get('progress',0) or 0)
+    report_text = request.form.get('report','')
+    now_iso = datetime.now().isoformat()
+    
     conn.execute("""INSERT INTO intervention_daily_reports 
         (intervention_id, date, report, progress, technician_id, images) VALUES (?,?,?,?,?,?)""",
-        (iid, datetime.now().strftime('%Y-%m-%d'), request.form.get('report',''),
-         int(request.form.get('progress',0) or 0), session['user_id'],
-         ','.join(img_names)))
+        (iid, datetime.now().strftime('%Y-%m-%d'), report_text,
+         progress_pct, session['user_id'], ','.join(img_names)))
+    
+    # Mise à jour intervention parente : updated_at + progress
+    try:
+        conn.execute("UPDATE interventions SET updated_at=?, progress=? WHERE id=?",
+                     (now_iso, progress_pct, iid))
+    except: pass
+    
+    # Notifier le client portail (création notification)
+    try:
+        inter = conn.execute("SELECT reference, title, client_id FROM interventions WHERE id=?", (iid,)).fetchone()
+        if inter and inter['client_id']:
+            for cu in conn.execute(
+                "SELECT id FROM client_users WHERE client_id=? AND account_status='approved' AND COALESCE(is_active,1)=1",
+                (inter['client_id'],)).fetchall():
+                conn.execute("""INSERT INTO notifications (client_user_id, type, title, message, link)
+                    VALUES (?,?,?,?,?)""",
+                    (cu['id'], 'intervention_progress',
+                     f"📋 Nouveau rapport — {inter['reference']}",
+                     f"Le technicien a publié un rapport d'avancement ({progress_pct}%) sur « {inter['title']} ». {report_text[:100]}",
+                     f"/portail/interventions"))
+    except Exception: pass
+    
     conn.commit(); conn.close()
-    flash("Rapport enregistré avec photos", "success")
+    flash("Rapport enregistré avec photos — le client a été notifié", "success")
     return redirect(request.referrer or '/interventions/tech')
 
 @app.route('/uploads/interventions/<path:filename>')
@@ -8210,6 +8384,180 @@ def devis_from_template(tid):
 
 # ======================== PIÈCE DE CAISSE SORTIE ========================
 
+# ============================================================
+# MODULE GESTION DU BUDGET PAR DÉPARTEMENT
+# ============================================================
+
+DEPARTMENTS = ['Administration', 'Direction Générale', 'Ressources Humaines',
+               'Comptabilité / Finance', 'Commercial', 'Technique',
+               'Informatique', 'Moyens Généraux', 'Conciergerie',
+               'Marketing', 'Logistique', 'Autre']
+
+
+@app.route('/budgets')
+@permission_required('comptabilite')
+def budgets_page():
+    """Page principale : tous les budgets + barres de progression."""
+    period = request.args.get('period', 'all')  # all | mois | annee
+    today = datetime.now()
+    conn = _gdb()
+    # S'assurer que la table existe
+    try:
+        conn.execute("SELECT 1 FROM dept_budgets LIMIT 1")
+    except:
+        from models import migrate_v52
+        migrate_v52()
+    
+    # Filtre période
+    where_period = "WHERE 1=1"
+    params = []
+    if period == 'mois':
+        m = today.strftime('%Y-%m')
+        where_period += " AND (period_start LIKE ? OR period_label LIKE ?)"
+        params += [f"{m}%", f"%{m}%"]
+    elif period == 'annee':
+        y = today.strftime('%Y')
+        where_period += " AND (period_start LIKE ? OR period_label LIKE ?)"
+        params += [f"{y}-%", f"%{y}%"]
+    
+    budgets = []
+    try:
+        budgets = [dict(r) for r in conn.execute(
+            f"SELECT * FROM dept_budgets {where_period} AND COALESCE(is_active,1)=1 ORDER BY department, period_start DESC",
+            tuple(params)).fetchall()]
+    except Exception as e:
+        flash(f"Erreur chargement budgets : {e}", "error")
+    
+    # Recompute spent for each budget (pour s'assurer que c'est à jour)
+    from models import recompute_budget_spent
+    for b in budgets:
+        try: recompute_budget_spent(b['id'])
+        except: pass
+    # Re-fetch après recompute
+    try:
+        budgets = [dict(r) for r in conn.execute(
+            f"SELECT * FROM dept_budgets {where_period} AND COALESCE(is_active,1)=1 ORDER BY department, period_start DESC",
+            tuple(params)).fetchall()]
+    except: pass
+    
+    # Calculer les ratios
+    for b in budgets:
+        planned = float(b.get('amount_planned') or 0)
+        spent = float(b.get('amount_spent') or 0)
+        b['amount_remaining'] = planned - spent
+        b['percent'] = round((spent / planned * 100), 1) if planned > 0 else 0
+        b['over_budget'] = spent > planned
+    
+    # Totaux
+    total_planned = sum(float(b.get('amount_planned') or 0) for b in budgets)
+    total_spent = sum(float(b.get('amount_spent') or 0) for b in budgets)
+    total_remaining = total_planned - total_spent
+    total_pct = round((total_spent / total_planned * 100), 1) if total_planned > 0 else 0
+    
+    # Alertes : budgets en dépassement ou >= 80%
+    alerts = [b for b in budgets if b['percent'] >= 80 or b['over_budget']]
+    
+    conn.close()
+    return render_template('extra_pages.html', page='budgets', budgets=budgets,
+                          total_planned=total_planned, total_spent=total_spent,
+                          total_remaining=total_remaining, total_pct=total_pct,
+                          alerts=alerts, period=period, departments=DEPARTMENTS)
+
+
+@app.route('/budgets/add', methods=['POST'])
+@permission_required('comptabilite_edit')
+def budget_add():
+    department = (request.form.get('department','') or '').strip()
+    amount_planned = float(request.form.get('amount_planned','0') or 0)
+    period_type = request.form.get('period_type', 'mensuel')
+    period_start = request.form.get('period_start','') or None
+    period_end = request.form.get('period_end','') or None
+    notes = request.form.get('notes','').strip()
+    if not department or amount_planned <= 0:
+        flash("⚠️ Veuillez sélectionner un département et indiquer un montant > 0", "error")
+        return redirect('/budgets')
+    # Auto-générer label si vide
+    label = ''
+    if period_start and period_end:
+        label = f"{period_start} → {period_end}"
+    elif period_start:
+        label = period_start
+    conn = _gdb()
+    try:
+        conn.execute("""INSERT INTO dept_budgets
+            (department, period_label, period_type, period_start, period_end,
+             amount_planned, amount_spent, notes, created_by, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 1)""",
+            (department, label, period_type, period_start, period_end,
+             amount_planned, notes, session.get('user_id')))
+        bid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.commit()
+        # Première recompute
+        from models import recompute_budget_spent
+        recompute_budget_spent(bid)
+        flash(f"✅ Budget {department} créé", "success")
+    except Exception as e:
+        flash(f"❌ Erreur : {e}", "error")
+    finally:
+        conn.close()
+    return redirect('/budgets')
+
+
+@app.route('/budgets/<int:bid>/edit', methods=['POST'])
+@permission_required('comptabilite_edit')
+def budget_edit(bid):
+    conn = _gdb()
+    try:
+        conn.execute("""UPDATE dept_budgets SET
+            department=?, amount_planned=?, period_type=?, period_start=?,
+            period_end=?, period_label=?, notes=?, updated_at=?
+            WHERE id=?""",
+            (request.form.get('department','').strip(),
+             float(request.form.get('amount_planned','0') or 0),
+             request.form.get('period_type','mensuel'),
+             request.form.get('period_start','') or None,
+             request.form.get('period_end','') or None,
+             request.form.get('period_label','').strip(),
+             request.form.get('notes','').strip(),
+             datetime.now().isoformat(), bid))
+        conn.commit()
+        flash("✅ Budget mis à jour", "success")
+        from models import recompute_budget_spent
+        recompute_budget_spent(bid)
+    except Exception as e:
+        flash(f"❌ Erreur : {e}", "error")
+    finally:
+        conn.close()
+    return redirect('/budgets')
+
+
+@app.route('/budgets/<int:bid>/delete', methods=['POST', 'GET'])
+@permission_required('comptabilite_edit')
+def budget_delete(bid):
+    conn = _gdb()
+    try:
+        # Soft delete
+        conn.execute("UPDATE dept_budgets SET is_active=0 WHERE id=?", (bid,))
+        conn.commit()
+        flash("Budget supprimé", "success")
+    except Exception as e:
+        flash(f"Erreur : {e}", "error")
+    conn.close()
+    return redirect('/budgets')
+
+
+@app.route('/budgets/<int:bid>/recompute', methods=['POST', 'GET'])
+@permission_required('comptabilite')
+def budget_recompute(bid):
+    """Force le recalcul du montant dépensé."""
+    from models import recompute_budget_spent
+    if recompute_budget_spent(bid):
+        flash("✅ Montant dépensé recalculé", "success")
+    else:
+        flash("❌ Erreur recalcul", "error")
+    return redirect('/budgets')
+
+
 @app.route('/caisse-sortie')
 @login_required
 def caisse_sortie():
@@ -8243,17 +8591,18 @@ def caisse_demande():
         montant = float(request.form.get('montant', 0) or 0)
         caisse_id_raw = request.form.get('caisse_id', '').strip()
         caisse_id = int(caisse_id_raw) if caisse_id_raw.isdigit() else None
+        department = (request.form.get('department','') or '').strip() or None
         try:
             conn.execute("""INSERT INTO caisse_sorties (reference, date, beneficiaire, type_beneficiaire,
-                montant, nature, motif, demandeur_id, demandeur_name, sig_beneficiaire, caisse_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                montant, nature, motif, demandeur_id, demandeur_name, sig_beneficiaire, caisse_id, department)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (ref, request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
                  request.form['beneficiaire'], request.form.get('type_beneficiaire', 'particulier'),
                  montant, request.form.get('nature', 'espece'), request.form.get('motif', ''),
                  session['user_id'], user['full_name'] if user else '?',
-                 request.form.get('sig_beneficiaire', ''), caisse_id))
+                 request.form.get('sig_beneficiaire', ''), caisse_id, department))
         except:
-            # Fallback sans caisse_id
+            # Fallback sans caisse_id/department
             conn.execute("""INSERT INTO caisse_sorties (reference, date, beneficiaire, type_beneficiaire,
                 montant, nature, motif, demandeur_id, demandeur_name, sig_beneficiaire) VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (ref, request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
@@ -8261,6 +8610,17 @@ def caisse_demande():
                  montant, request.form.get('nature', 'espece'), request.form.get('motif', ''),
                  session['user_id'], user['full_name'] if user else '?',
                  request.form.get('sig_beneficiaire', '')))
+        # Recompute budget pour ce département si lié
+        if department:
+            try:
+                conn.commit()
+                bd = conn.execute(
+                    "SELECT id FROM dept_budgets WHERE department=? AND COALESCE(is_active,1)=1",
+                    (department,)).fetchall()
+                from models import recompute_budget_spent
+                for r in bd:
+                    recompute_budget_spent(r['id'])
+            except: pass
         # Notifier DG et admin
         try:
             for u in conn.execute("SELECT id FROM users WHERE role IN ('admin','dg','directeur') AND is_active=1").fetchall():
