@@ -358,6 +358,7 @@
                 <div class="nav-section-title" onclick="toggleSection('sec-tech')">🔧 CENTRE TECHNIQUE <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
                     <a href="/interventions/tech" class="{% if page == 'interventions_tech' %}active{% endif %}" style="position:relative">🔧 Mes interventions{% if my_interventions_count and my_interventions_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ my_interventions_count }}</span>{% endif %}</a>
+                    <a href="/centre-technique/mes-interventions" class="{% if page == 'tech_my_interventions' %}active{% endif %}">📜 Historique &amp; filtres</a>
                     <a href="/interventions/programme" class="{% if page == 'programme_jour' %}active{% endif %}">📋 Programme du jour</a>
                     <a href="/visites" class="{% if page == 'visites' %}active{% endif %}">📋 Rapports de visite</a>
                     <a href="/centre-technique" class="{% if page == 'tech_center' %}active{% endif %}">🏗️ Équipements clients</a>
@@ -382,14 +383,13 @@
             <div class="nav-section" id="sec-moyens">
                 <div class="nav-section-title" onclick="toggleSection('sec-moyens')">🏠 MOYENS GÉNÉRAUX <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
-                    <a href="/achats" class="{% if page == 'achats' %}active{% endif %}">🛒 Achats</a>
                     {% if 'fournisseurs' in permissions or 'admin' in permissions %}
-                    <a href="/fournisseurs" class="{% if page in ('fournisseurs_list','fournisseur_detail','purchase_detail') %}active{% endif %}">🏭 Fournisseurs (suivi paiements)</a>
+                    <a href="/fournisseurs" class="{% if page in ('fournisseurs_list','fournisseur_detail','purchase_detail') %}active{% endif %}">🏭 Fournisseurs &amp; Paiements</a>
                     {% endif %}
+                    <a href="/achats?tab=stock" class="{% if page == 'achats' or page == 'stock' %}active{% endif %}">🛒 Achats &amp; Stock</a>
                     <a href="/moyens-generaux/fournitures" class="{% if page == 'fournitures' %}active{% endif %}">📦 Fournitures bureau</a>
                     <a href="/moyens-generaux/maintenance" class="{% if page == 'maintenance' %}active{% endif %}">🔧 Maintenance</a>
                     <a href="/moyens-generaux/vehicules" class="{% if page == 'vehicules' %}active{% endif %}">🚗 Parc véhicules</a>
-                    <a href="/achats?tab=stock" class="{% if page == 'stock' %}active{% endif %}">📦 Stock</a>
                     <a href="/moyens-generaux" class="{% if page == 'moyens' %}active{% endif %}">📊 Tableau de bord</a>
                 </div>
             </div>

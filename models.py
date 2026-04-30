@@ -206,7 +206,7 @@ def init_db():
         'informatique': ['dashboard', 'informatique', 'traitement', 'visites', 'projets', 'rapports_j', 'centre_technique', 'chat', 'gps_itineraire'],
         'resp_projet': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'rapports_j', 'proforma', 'chat', 'gps_itineraire', 'client_requests_view', 'controle_qualite', 'livraison_intervention'],
         'gestionnaire_projet': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'clients_edit', 'rapports_j', 'proforma', 'proforma_edit', 'visites', 'centre_technique', 'chat', 'gps_itineraire'],
-        'coordinateur': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'rapports_j', 'chat', 'gps_itineraire', 'client_requests_view', 'controle_qualite', 'livraison_intervention'],
+        'coordinateur': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'rapports_j', 'chat', 'gps_itineraire', 'client_requests_view', 'controle_qualite', 'livraison_intervention', 'centre_technique', 'visites'],
         'proprietaire': ['dashboard', 'dashboard_general', 'clients', 'comptabilite', 'grand_livre', 'balance', 'rapports_j', 'logs', 'chat', 'tracking', 'admin'],
     }
     for role, perms in default_perms.items():
@@ -3625,6 +3625,54 @@ def migrate_v57():
             except: pass
     
     conn.commit(); conn.close()
+
+
+def migrate_v58():
+    """v58 : Fusion achats_fournisseurs → suppliers (one-time, idempotent)."""
+    conn = get_db()
+    # Vérifier que les 2 tables existent
+    try:
+        cnt_old = conn.execute("SELECT COUNT(*) FROM achats_fournisseurs").fetchone()[0]
+    except:
+        conn.close(); return
+    
+    # Ajouter une colonne 'legacy_id' à suppliers pour traçabilité, et faire la migration
+    try: conn.execute("ALTER TABLE suppliers ADD COLUMN legacy_achats_id INTEGER")
+    except: pass
+    
+    # Pour chaque fournisseur dans achats_fournisseurs non encore migré
+    try:
+        rows = conn.execute("""
+            SELECT a.id, a.name, a.contact_name, a.tel, a.email, a.address, a.city, a.sector, a.notes
+            FROM achats_fournisseurs a
+            WHERE NOT EXISTS (SELECT 1 FROM suppliers s WHERE s.legacy_achats_id = a.id)
+            AND a.name IS NOT NULL AND a.name != ''
+        """).fetchall()
+        migrated = 0
+        for r in rows:
+            # Vérifier doublon par nom (case insensitive)
+            existing = conn.execute("SELECT id FROM suppliers WHERE LOWER(nom) = LOWER(?)",
+                                   (r['name'],)).fetchone()
+            if existing:
+                # Marquer comme migré (lié au legacy_id)
+                conn.execute("UPDATE suppliers SET legacy_achats_id=? WHERE id=?",
+                            (r['id'], existing['id']))
+            else:
+                # Insérer
+                full_addr = ((r['address'] or '') + (', ' + r['city'] if r['city'] else '')).strip(', ')
+                conn.execute("""INSERT INTO suppliers
+                    (nom, telephone, email, adresse, contact, notes, legacy_achats_id, is_active)
+                    VALUES (?,?,?,?,?,?,?,1)""",
+                    (r['name'], r['tel'] or '', r['email'] or '', full_addr,
+                     r['contact_name'] or '', r['notes'] or '', r['id']))
+                migrated += 1
+        conn.commit()
+        if migrated > 0:
+            print(f"v58: {migrated} fournisseur(s) migré(s) de achats_fournisseurs vers suppliers")
+    except Exception as e:
+        print(f"v58 migration: {e}")
+    
+    conn.close()
 
 
 def get_purchase_status(purchase_id):

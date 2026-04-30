@@ -349,6 +349,8 @@ from models import migrate_v56
 migrate_v56()
 from models import migrate_v57
 migrate_v57()
+from models import migrate_v58
+migrate_v58()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -2054,18 +2056,30 @@ def admin_tender_add():
 @permission_required('admin')
 def admin_tender_delete(tid):
     conn = _gdb()
-    conn.execute("DELETE FROM tender_links WHERE id=?", (tid,))
-    conn.commit(); conn.close()
-    flash("Appel d'offres supprimé", "success")
-    return redirect('/admin/appels-offres')
+    # Vérifier que le tender existe d'abord
+    t = conn.execute("SELECT id, title FROM tender_links WHERE id=?", (tid,)).fetchone()
+    if t:
+        conn.execute("DELETE FROM tender_links WHERE id=?", (tid,))
+        conn.commit()
+        flash(f"Appel d'offres '{t['title']}' supprimé définitivement", "success")
+    else:
+        flash(f"Appel d'offres introuvable (id={tid})", "error")
+    conn.close()
+    return redirect('/admin?section=tenders')
+
 
 @app.route('/admin/appels-offres/toggle/<int:tid>')
 @permission_required('admin')
 def admin_tender_toggle(tid):
     conn = _gdb()
-    conn.execute("UPDATE tender_links SET active = CASE WHEN active=1 THEN 0 ELSE 1 END WHERE id=?", (tid,))
-    conn.commit(); conn.close()
-    return redirect('/admin/appels-offres')
+    t = conn.execute("SELECT id, title, active FROM tender_links WHERE id=?", (tid,)).fetchone()
+    if t:
+        new_state = 0 if t['active'] else 1
+        conn.execute("UPDATE tender_links SET active=? WHERE id=?", (new_state, tid))
+        conn.commit()
+        flash(f"'{t['title']}' {'activé' if new_state else 'suspendu — il ne défile plus'}", "success")
+    conn.close()
+    return redirect('/admin?section=tenders')
 
 
 # ======================== LOGS D'ACTIVITÉ ========================
@@ -6417,13 +6431,25 @@ def interventions_programme():
 @app.route('/interventions/<int:iid>/fiche/send-mail', methods=['POST', 'GET'])
 @login_required
 def intervention_fiche_send_mail(iid):
-    """Envoie la fiche d'intervention par email au client (PDF en pièce jointe)."""
+    """Envoie la fiche d'intervention par email au client.
+    SEULS le coordinateur projet, resp_projet, admin et dg peuvent envoyer (après exécution des travaux)."""
+    user = get_user_by_id(session['user_id'])
+    if not user or user['role'] not in ('admin', 'dg', 'resp_projet', 'coordinateur'):
+        flash("⛔ Seul le coordinateur projet peut envoyer la fiche au client.", "error")
+        return redirect(f'/interventions/{iid}/fiche')
+    
     conn = _gdb()
     inter = conn.execute("SELECT * FROM interventions WHERE id=?", (iid,)).fetchone()
     if not inter:
         flash("Intervention introuvable", "error")
         conn.close(); return redirect(url_for('interventions_programme'))
     inter = dict(inter)
+    
+    # L'intervention doit être terminée/livrée avant envoi au client
+    if inter.get('status') not in ('livre', 'termine', 'terminee', 'travaux_termines', 'controle_qualite'):
+        flash("⚠️ La fiche ne peut être envoyée qu'après la fin des travaux. Statut actuel : " + str(inter.get('status','-')), "warning")
+        conn.close()
+        return redirect(f'/interventions/{iid}/fiche')
     
     # Récupérer email client
     client_email = ''
@@ -6442,7 +6468,6 @@ def intervention_fiche_send_mail(iid):
         return redirect(f'/interventions/{iid}/fiche')
     
     # Construire le contenu du mail
-    user = get_user_by_id(session['user_id'])
     subject = f"Fiche d'intervention {inter.get('reference','')} — {datetime.now().strftime('%d/%m/%Y')}"
     body = f"""Bonjour {client_name},
 
@@ -6461,24 +6486,59 @@ Cordialement,
 RAMYA TECHNOLOGIE & INNOVATION
 Abidjan, Côte d'Ivoire"""
     
-    # Tentative d'envoi via le module email_send existant
+    # Tentative d'envoi via SMTP en utilisant les paramètres admin sauvegardés (fonction existante)
+    sent = False
     try:
-        from models import send_email_smtp
-        ok = send_email_smtp(client_email, subject, body)
-        if ok:
-            try:
-                log_activity(session['user_id'], user['full_name'] if user else '?', 'Intervention',
-                            f"Fiche {inter.get('reference')} envoyée par email à {client_email}",
-                            request.remote_addr)
-            except: pass
-            flash(f"✅ Fiche envoyée par email à {client_email}", "success")
-        else:
-            flash(f"⚠️ Échec d'envoi. Vérifiez la config SMTP ou utilisez WhatsApp.", "warning")
+        from models import get_admin_smtp
+        smtp_cfg = get_admin_smtp()
+        if smtp_cfg and smtp_cfg.get('smtp_host') and smtp_cfg.get('smtp_user'):
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            msg = MIMEMultipart()
+            msg['From'] = smtp_cfg.get('smtp_user')
+            msg['To'] = client_email
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain', 'utf-8'))
+            with smtplib.SMTP(smtp_cfg['smtp_host'], int(smtp_cfg.get('smtp_port', 587)), timeout=15) as server:
+                server.ehlo(); server.starttls(); server.ehlo()
+                server.login(smtp_cfg['smtp_user'], smtp_cfg.get('smtp_pass', ''))
+                server.send_message(msg)
+            sent = True
     except Exception as e:
-        # Fallback : ouvrir le client mail local de l'utilisateur via mailto:
+        print(f"SMTP admin error: {e}")
+    
+    # Fallback : SMTP via env vars
+    if not sent:
+        try:
+            from models import send_email_smtp
+            sent = send_email_smtp(client_email, subject, body)
+        except Exception as e:
+            print(f"SMTP env error: {e}")
+    
+    if sent:
+        try:
+            log_activity(session['user_id'], user['full_name'], 'Intervention',
+                        f"Fiche {inter.get('reference')} envoyée par email à {client_email}",
+                        request.remote_addr)
+            # Marquer comme envoyée
+            conn2 = _gdb()
+            try: conn2.execute("ALTER TABLE interventions ADD COLUMN client_fiche_sent_at TEXT")
+            except: pass
+            try: conn2.execute("ALTER TABLE interventions ADD COLUMN client_fiche_sent_via TEXT")
+            except: pass
+            try: conn2.execute("ALTER TABLE interventions ADD COLUMN client_fiche_sent_to TEXT")
+            except: pass
+            conn2.execute("""UPDATE interventions SET client_fiche_sent_at=?, client_fiche_sent_via='email', client_fiche_sent_to=?
+                WHERE id=?""", (datetime.now().isoformat(), client_email, iid))
+            conn2.commit(); conn2.close()
+        except: pass
+        flash(f"✅ Fiche envoyée par email à {client_email}", "success")
+    else:
+        # Fallback : mailto: (ouvre le client mail local de l'utilisateur)
         from urllib.parse import quote
         mailto_url = f"mailto:{client_email}?subject={quote(subject)}&body={quote(body)}"
-        flash(f"📧 Lien mailto généré (ouvrez votre boîte mail)", "info")
+        flash("📧 Aucun SMTP configuré. Lien mailto: ouvert — vérifiez avec l'admin pour configurer le SMTP réel.", "warning")
         return redirect(mailto_url)
     
     return redirect(f'/interventions/{iid}/fiche')
@@ -6487,7 +6547,13 @@ Abidjan, Côte d'Ivoire"""
 @app.route('/interventions/<int:iid>/fiche/whatsapp')
 @login_required
 def intervention_fiche_whatsapp(iid):
-    """Génère un lien WhatsApp Click-to-chat pré-rempli pour le client."""
+    """Génère un lien WhatsApp Click-to-chat pré-rempli pour le client.
+    SEULS le coordinateur projet, resp_projet, admin et dg peuvent envoyer."""
+    user = get_user_by_id(session['user_id'])
+    if not user or user['role'] not in ('admin', 'dg', 'resp_projet', 'coordinateur'):
+        flash("⛔ Seul le coordinateur projet peut envoyer la fiche au client.", "error")
+        return redirect(f'/interventions/{iid}/fiche')
+    
     conn = _gdb()
     inter = conn.execute("SELECT * FROM interventions WHERE id=?", (iid,)).fetchone()
     if not inter:
@@ -6495,12 +6561,17 @@ def intervention_fiche_whatsapp(iid):
         conn.close(); return redirect(url_for('interventions_programme'))
     inter = dict(inter)
     
+    if inter.get('status') not in ('livre', 'termine', 'terminee', 'travaux_termines', 'controle_qualite'):
+        flash("⚠️ La fiche ne peut être envoyée qu'après la fin des travaux.", "warning")
+        conn.close()
+        return redirect(f'/interventions/{iid}/fiche')
+    
     client_phone = ''
     client_name = inter.get('client_name','')
     if inter.get('client_id'):
-        c = conn.execute("SELECT phone, name FROM clients WHERE id=?", (inter['client_id'],)).fetchone()
+        c = conn.execute("SELECT tel, name FROM clients WHERE id=?", (inter['client_id'],)).fetchone()
         if c:
-            client_phone = c['phone'] or ''
+            client_phone = c['tel'] or ''
             if not client_name: client_name = c['name']
     conn.close()
     
@@ -6510,16 +6581,17 @@ def intervention_fiche_whatsapp(iid):
         flash(f"⚠️ Aucun numéro WhatsApp pour {client_name}.", "warning")
         return redirect(f'/interventions/{iid}/fiche')
     
-    # Nettoyer le numéro (garder chiffres + indicatif)
+    # Nettoyer le numéro
     import re
     phone_clean = re.sub(r'[^\d+]', '', client_phone)
     if not phone_clean.startswith('+'):
-        # Si format ivoirien sans préfixe, ajouter +225
         if phone_clean.startswith('00'):
             phone_clean = '+' + phone_clean[2:]
-        elif len(phone_clean) == 10 and phone_clean[0] in '0':
-            phone_clean = '+225' + phone_clean
+        elif len(phone_clean) == 10 and phone_clean[0] == '0':
+            phone_clean = '+225' + phone_clean[1:]
         elif len(phone_clean) == 8:
+            phone_clean = '+225' + phone_clean
+        else:
             phone_clean = '+225' + phone_clean
     phone_clean = phone_clean.lstrip('+')
     
@@ -6539,11 +6611,21 @@ RAMYA TECHNOLOGIE"""
     from urllib.parse import quote
     wa_url = f"https://wa.me/{phone_clean}?text={quote(msg)}"
     
-    user = get_user_by_id(session['user_id'])
     try:
-        log_activity(session['user_id'], user['full_name'] if user else '?', 'Intervention',
+        log_activity(session['user_id'], user['full_name'], 'Intervention',
                     f"Lien WhatsApp généré pour fiche {inter.get('reference')} → {phone_clean}",
                     request.remote_addr)
+        # Marquer comme envoyée
+        conn3 = _gdb()
+        try: conn3.execute("ALTER TABLE interventions ADD COLUMN client_fiche_sent_at TEXT")
+        except: pass
+        try: conn3.execute("ALTER TABLE interventions ADD COLUMN client_fiche_sent_via TEXT")
+        except: pass
+        try: conn3.execute("ALTER TABLE interventions ADD COLUMN client_fiche_sent_to TEXT")
+        except: pass
+        conn3.execute("""UPDATE interventions SET client_fiche_sent_at=?, client_fiche_sent_via='whatsapp', client_fiche_sent_to=?
+            WHERE id=?""", (datetime.now().isoformat(), phone_clean, iid))
+        conn3.commit(); conn3.close()
     except: pass
     return redirect(wa_url)
 
@@ -7795,6 +7877,126 @@ def tech_center():
     due = get_maintenance_due()
     clients = get_all_clients()
     return render_template('tech_center.html', page='tech_center', systems=systems, due=due, clients=clients)
+
+
+@app.route('/centre-technique/mes-interventions')
+@permission_required('centre_technique')
+def tech_my_interventions():
+    """Historique d'interventions du technicien avec filtres :
+    - nouvelles (planifiee)
+    - en_cours (en_cours, travaux_termines, controle_qualite)
+    - deja_realise (livre, terminee) + bouton "envoyer au client" si coordinateur
+    - reporte (reportée — date repoussée)"""
+    user = get_user_by_id(session['user_id'])
+    if not user:
+        return redirect(url_for('login'))
+    
+    filter_status = request.args.get('filter', 'nouvelles')
+    is_admin_or_coord = user['role'] in ('admin', 'dg', 'resp_projet', 'coordinateur')
+    
+    # Filtres SQL par catégorie
+    where_filters = {
+        'nouvelles': "i.status = 'planifiee'",
+        'en_cours': "i.status IN ('en_cours','travaux_termines','controle_qualite')",
+        'deja_realise': "i.status IN ('livre','termine','terminee')",
+        'reporte': "i.status = 'reporte' OR (i.original_date IS NOT NULL AND i.original_date != i.scheduled_date)",
+    }
+    where = where_filters.get(filter_status, where_filters['nouvelles'])
+    
+    conn = _gdb()
+    
+    # Pré-créer les colonnes si manquantes (idempotent)
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN original_date TEXT"); conn.commit()
+    except: pass
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN report_reason TEXT"); conn.commit()
+    except: pass
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN client_fiche_sent_at TEXT"); conn.commit()
+    except: pass
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN client_fiche_sent_via TEXT"); conn.commit()
+    except: pass
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN client_fiche_sent_to TEXT"); conn.commit()
+    except: pass
+    
+    # Si admin/coord : voir TOUTES les interventions
+    # Sinon : seulement les siennes (technician_id = user_id ou created_by)
+    if is_admin_or_coord:
+        user_filter_sql = ""
+        params = []
+    else:
+        user_filter_sql = " AND (i.technician_id = ? OR i.created_by = ?)"
+        params = [user['id'], user['id']]
+    
+    interventions = []
+    try:
+        interventions = [dict(r) for r in conn.execute(f"""
+            SELECT i.*, c.name as client_name_full, c.email as client_email, c.tel as client_phone,
+                   u.full_name as tech_name_full
+            FROM interventions i
+            LEFT JOIN clients c ON i.client_id = c.id
+            LEFT JOIN users u ON i.technician_id = u.id
+            WHERE {where} {user_filter_sql}
+            ORDER BY i.scheduled_date DESC, i.id DESC LIMIT 100
+        """, tuple(params)).fetchall()]
+    except Exception as e:
+        print(f"tech_my_interventions query error: {e}")
+    
+    # Compter par filtre pour les badges des onglets
+    counts = {}
+    for k, w in where_filters.items():
+        try:
+            counts[k] = conn.execute(f"""SELECT COUNT(*) FROM interventions i
+                WHERE {w} {user_filter_sql}""", tuple(params)).fetchone()[0]
+        except: counts[k] = 0
+    
+    conn.close()
+    
+    # Le coordinateur peut envoyer aux clients (admin et resp_projet aussi)
+    can_send_to_client = user['role'] in ('admin', 'dg', 'resp_projet', 'coordinateur')
+    
+    return render_template('extra_pages.html', page='tech_my_interventions',
+                          interventions=interventions, filter_status=filter_status,
+                          counts=counts, is_admin_or_coord=is_admin_or_coord,
+                          can_send_to_client=can_send_to_client, current_user=user)
+
+
+@app.route('/interventions/<int:iid>/reporter', methods=['POST'])
+@login_required
+def intervention_reporter(iid):
+    """Reporter une intervention à une nouvelle date."""
+    new_date = request.form.get('new_date','').strip()
+    new_time = request.form.get('new_time','').strip() or None
+    reason = request.form.get('reason','').strip()
+    if not new_date:
+        flash("Date de report requise", "error")
+        return redirect(request.referrer or url_for('tech_my_interventions'))
+    conn = _gdb()
+    try:
+        # Sauvegarder la date originale si pas déjà fait
+        try: conn.execute("ALTER TABLE interventions ADD COLUMN original_date TEXT")
+        except: pass
+        try: conn.execute("ALTER TABLE interventions ADD COLUMN report_reason TEXT")
+        except: pass
+        inter = conn.execute("SELECT * FROM interventions WHERE id=?", (iid,)).fetchone()
+        if not inter:
+            flash("Intervention introuvable", "error")
+            conn.close(); return redirect(url_for('tech_my_interventions'))
+        if not inter['original_date']:
+            conn.execute("UPDATE interventions SET original_date=? WHERE id=?",
+                        (inter['scheduled_date'], iid))
+        # Mettre à jour
+        conn.execute("""UPDATE interventions SET scheduled_date=?, scheduled_time=?, status='reporte', report_reason=?
+            WHERE id=?""", (new_date, new_time, reason, iid))
+        conn.commit()
+        user = get_user_by_id(session['user_id'])
+        log_activity(session['user_id'], user['full_name'] if user else '?', 'Intervention',
+                    f"Intervention {inter['reference']} reportée au {new_date} (raison: {reason[:60]})",
+                    request.remote_addr)
+        flash(f"✅ Intervention reportée au {new_date}", "success")
+    except Exception as e:
+        flash(f"❌ Erreur : {e}", "error")
+    conn.close()
+    return redirect(url_for('tech_my_interventions', filter='reporte'))
+
 
 @app.route('/centre-technique/add', methods=['POST'])
 @login_required
@@ -10033,6 +10235,172 @@ def admin_pointage_rapport_pdf(user_id, month):
         return redirect(url_for('admin_pointage_dashboard'))
 
 
+@app.route('/admin/pointage/rapport-entreprise/<month>')
+@permission_required_any('pointage_admin', 'admin')
+def admin_pointage_rapport_entreprise(month):
+    """PDF complet : tous les employés de l'entreprise sur le mois.
+    Inclut : rapport individuel par employé, rapport présence, classement retards/absences, graphique."""
+    
+    conn = _gdb()
+    # Récupérer tous les utilisateurs actifs (sauf clients)
+    users = [dict(r) for r in conn.execute("""
+        SELECT id, username, full_name, role, department FROM users
+        WHERE COALESCE(is_active,1)=1 AND role != 'client'
+        ORDER BY full_name
+    """).fetchall()]
+    
+    if not users:
+        flash("Aucun employé actif", "warning")
+        conn.close()
+        return redirect(url_for('admin_pointage_dashboard'))
+    
+    from models import get_user_planning
+    
+    # Construire les données pour chaque employé
+    emps = []
+    for u in users:
+        planning = get_user_planning(u['id'])
+        sched_start = planning.get('heure_arrivee', '08:00')
+        sched_end = planning.get('heure_depart', '17:00')
+        
+        pointages = [dict(r) for r in conn.execute(
+            "SELECT * FROM hr_pointages WHERE user_id=? AND date LIKE ? ORDER BY date, time",
+            (u['id'], f'{month}%')).fetchall()]
+        
+        # Regrouper par jour
+        by_day = {}
+        for p in pointages:
+            d = p['date']
+            if d not in by_day:
+                by_day[d] = {'arrivee':None,'pause':None,'retour':None,'depart':None}
+            by_day[d][p['type']] = p
+        
+        # Records pour rapport_core
+        records = []
+        for d in sorted(by_day.keys()):
+            dd = by_day[d]
+            arrival = dd['arrivee']['time'] if dd['arrivee'] else ''
+            departure = dd['depart']['time'] if dd['depart'] else ''
+            dur = ''
+            try:
+                if dd['arrivee'] and dd['depart']:
+                    af = datetime.fromisoformat(dd['arrivee']['datetime_full'])
+                    df = datetime.fromisoformat(dd['depart']['datetime_full'])
+                    total_min = int((df - af).total_seconds() / 60)
+                    pause_min = 0
+                    if dd['pause'] and dd['retour']:
+                        pf = datetime.fromisoformat(dd['pause']['datetime_full'])
+                        rf = datetime.fromisoformat(dd['retour']['datetime_full'])
+                        pause_min = int((rf - pf).total_seconds() / 60)
+                    worked = total_min - pause_min
+                    dur = f"{worked//60:02d}:{worked%60:02d}"
+            except: pass
+            records.append({
+                'date': d, 'sched_start': sched_start, 'sched_end': sched_end,
+                'arrival': arrival, 'departure': departure, 'duration': dur,
+            })
+        
+        # Compléter avec jours sans pointage
+        try:
+            from datetime import date as _date, timedelta as _td
+            y, m_int = month.split('-')
+            y, m_int = int(y), int(m_int)
+            first = _date(y, m_int, 1)
+            if m_int == 12: last = _date(y+1, 1, 1) - _td(days=1)
+            else: last = _date(y, m_int+1, 1) - _td(days=1)
+            existing_dates = set(r['date'] for r in records)
+            cur = first
+            while cur <= last:
+                ds = cur.strftime('%Y-%m-%d')
+                if ds not in existing_dates and cur.weekday() < 5:
+                    records.append({
+                        'date': ds, 'sched_start': sched_start, 'sched_end': sched_end,
+                        'arrival': '', 'departure': '', 'duration': '',
+                    })
+                cur += _td(days=1)
+            records.sort(key=lambda r: r['date'])
+        except: pass
+        
+        emps.append({
+            'name': u['full_name'],
+            'ref': u['username'],
+            'records': records,
+        })
+    
+    conn.close()
+    
+    try:
+        import rapport_core
+        from reportlab.platypus import SimpleDocTemplate, PageBreak
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
+        import io
+        
+        # Calculer stats pour tous les employés
+        all_stats = []
+        for emp in emps:
+            enriched, stats = rapport_core.calc_employee_stats(emp, hp=8, hp_weekend=0,
+                                                              hourly_cost=0, rest_days=[5, 6])
+            all_stats.append((enriched, stats))
+        
+        S = rapport_core.make_styles()
+        
+        period = f"Période : {month}"
+        provider_name = "RAMYA TECHNOLOGIE & INNOVATION"
+        provider_info = "Abidjan, Côte d'Ivoire"
+        client_name = "Rapport interne — Personnel RAMYA"
+        client_info = ""
+        
+        now = datetime.now()
+        
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=10*mm, rightMargin=10*mm,
+                                topMargin=10*mm, bottomMargin=10*mm)
+        story = []
+        
+        # Section 1 : Rapports individuels (un par employé)
+        rapport_core.gen_individual_pages(story, emps, all_stats, S,
+                                          provider_name, provider_info,
+                                          client_name, client_info, period, now)
+        story.append(PageBreak())
+        
+        # Section 2 : Rapport de présence global
+        try:
+            rapport_core.gen_rapport_presence(story, emps, all_stats, S,
+                                              provider_name, provider_info,
+                                              client_name, client_info, now)
+            story.append(PageBreak())
+        except Exception as e:
+            print(f"gen_rapport_presence: {e}")
+        
+        # Section 3 : Classement par degré de retard / absence
+        try:
+            rapport_core.gen_classement(story, emps, all_stats, S,
+                                        provider_name, provider_info,
+                                        client_name, client_info, now)
+            story.append(PageBreak())
+        except Exception as e:
+            print(f"gen_classement: {e}")
+        
+        # Section 4 : Graphique avec donut + logo RAMYA centré
+        try:
+            logo_path = os.path.join(BASE_DIR, 'logo_ramya.png')
+            if not os.path.exists(logo_path): logo_path = None
+            rapport_core.gen_graphique(story, emps, all_stats, S,
+                                       provider_name, provider_info,
+                                       client_name, client_info, now, logo_path=logo_path)
+        except Exception as e:
+            print(f"gen_graphique: {e}")
+        
+        doc.build(story)
+        buf.seek(0)
+        filename = f"rapport-personnel-RAMYA-{month}.pdf"
+        return Response(buf.getvalue(), mimetype='application/pdf',
+                       headers={'Content-Disposition': f'attachment; filename={filename}'})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        flash(f"Erreur génération PDF complet : {e}", "error")
+        return redirect(url_for('admin_pointage_dashboard'))
 
 
 # ============================================================
@@ -11981,10 +12349,239 @@ def fournisseurs_export_csv():
         headers={'Content-Disposition': 'attachment; filename=fournisseurs.csv'})
 
 
+@app.route('/fournisseurs/recap-pdf')
+@permission_required_any('fournisseurs', 'admin')
+def fournisseurs_recap_pdf():
+    """Récap PDF du suivi paiement fournisseurs sur une période donnée.
+    Params : ?from=YYYY-MM-DD&to=YYYY-MM-DD"""
+    from datetime import datetime as _dt, date as _date, timedelta as _td
+    
+    today_str = _dt.now().strftime('%Y-%m-%d')
+    date_from = (request.args.get('from','') or '').strip()
+    date_to = (request.args.get('to','') or '').strip()
+    
+    # Valeurs par défaut : début du mois -> aujourd'hui
+    if not date_from:
+        date_from = _date.today().replace(day=1).strftime('%Y-%m-%d')
+    if not date_to:
+        date_to = today_str
+    
+    conn = _gdb()
+    
+    # Récupérer toutes les transactions de la période
+    suppliers_data = []
+    try:
+        suppliers = [dict(r) for r in conn.execute(
+            "SELECT * FROM suppliers WHERE COALESCE(is_active,1)=1 ORDER BY nom").fetchall()]
+        
+        for s in suppliers:
+            # Achats sur la période
+            purchases = [dict(r) for r in conn.execute("""
+                SELECT * FROM supplier_purchases
+                WHERE supplier_id=? AND date BETWEEN ? AND ?
+                ORDER BY date""", (s['id'], date_from, date_to)).fetchall()]
+            
+            # Paiements sur la période
+            payments = [dict(r) for r in conn.execute("""
+                SELECT pay.*, p.description as purchase_desc
+                FROM supplier_payments pay
+                LEFT JOIN supplier_purchases p ON pay.purchase_id=p.id
+                WHERE p.supplier_id=? AND pay.date BETWEEN ? AND ?
+                ORDER BY pay.date""", (s['id'], date_from, date_to)).fetchall()]
+            
+            total_achats_periode = sum(float(p.get('montant_total') or 0) for p in purchases)
+            total_paye_periode = sum(float(p.get('montant') or 0) for p in payments)
+            
+            # Solde global du fournisseur (toutes périodes)
+            total_all = conn.execute(
+                "SELECT COALESCE(SUM(montant_total),0) FROM supplier_purchases WHERE supplier_id=?",
+                (s['id'],)).fetchone()[0] or 0
+            paid_all = conn.execute("""SELECT COALESCE(SUM(pay.montant),0)
+                FROM supplier_payments pay JOIN supplier_purchases p ON pay.purchase_id=p.id
+                WHERE p.supplier_id=?""", (s['id'],)).fetchone()[0] or 0
+            
+            if purchases or payments:
+                suppliers_data.append({
+                    'supplier': s,
+                    'purchases': purchases,
+                    'payments': payments,
+                    'total_achats_periode': total_achats_periode,
+                    'total_paye_periode': total_paye_periode,
+                    'reste_global': max(0, float(total_all) - float(paid_all)),
+                    'total_all': float(total_all),
+                    'paid_all': float(paid_all),
+                })
+    except Exception as e:
+        print(f"recap query: {e}")
+    
+    conn.close()
+    
+    # Générer PDF
+    try:
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.units import mm
+        from reportlab.lib.colors import HexColor
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+        from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak)
+        import io
+        
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm,
+                                topMargin=12*mm, bottomMargin=12*mm)
+        story = []
+        
+        # En-tête
+        TEAL = HexColor('#1A7A6D')
+        ORANGE = HexColor('#F29F2F')
+        story.append(Paragraph("<b>RAMYA TECHNOLOGIE &amp; INNOVATION</b>",
+            ParagraphStyle('h', fontSize=14, textColor=TEAL, alignment=TA_CENTER)))
+        story.append(Paragraph("Récapitulatif suivi paiement fournisseurs",
+            ParagraphStyle('h2', fontSize=12, textColor=HexColor('#1a3a5c'), alignment=TA_CENTER)))
+        story.append(Paragraph(f"Période : du {date_from} au {date_to}",
+            ParagraphStyle('p', fontSize=10, alignment=TA_CENTER, textColor=HexColor('#666666'))))
+        story.append(Spacer(1, 6*mm))
+        
+        if not suppliers_data:
+            story.append(Paragraph("<i>Aucune transaction (achat ou paiement) sur la période sélectionnée.</i>",
+                ParagraphStyle('empty', fontSize=11, alignment=TA_CENTER)))
+        else:
+            # Synthèse globale
+            grand_achats = sum(s['total_achats_periode'] for s in suppliers_data)
+            grand_payes = sum(s['total_paye_periode'] for s in suppliers_data)
+            grand_reste = sum(s['reste_global'] for s in suppliers_data)
+            
+            synth = [
+                ['Indicateur', 'Montant'],
+                ['Nombre de fournisseurs avec activité', f"{len(suppliers_data)}"],
+                ['Total achats sur la période', f"{grand_achats:,.0f} F CFA"],
+                ['Total paiements sur la période', f"{grand_payes:,.0f} F CFA"],
+                ['Reste à payer global (toutes périodes)', f"{grand_reste:,.0f} F CFA"],
+            ]
+            t_synth = Table(synth, colWidths=[100*mm, 75*mm])
+            t_synth.setStyle(TableStyle([
+                ('BACKGROUND',(0,0),(-1,0),TEAL),
+                ('TEXTCOLOR',(0,0),(-1,0),HexColor('#ffffff')),
+                ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+                ('FONTSIZE',(0,0),(-1,-1),10),
+                ('GRID',(0,0),(-1,-1),0.4,HexColor('#cccccc')),
+                ('PADDING',(0,0),(-1,-1),5),
+                ('ALIGN',(1,0),(1,-1),'RIGHT'),
+                ('BACKGROUND',(0,-1),(-1,-1),HexColor('#fde8e8')),
+                ('TEXTCOLOR',(0,-1),(-1,-1),HexColor('#c53030')),
+                ('FONTNAME',(0,-1),(-1,-1),'Helvetica-Bold'),
+            ]))
+            story.append(t_synth)
+            story.append(Spacer(1, 8*mm))
+            
+            # Détail par fournisseur
+            for sdata in suppliers_data:
+                s = sdata['supplier']
+                story.append(Paragraph(f"<b>{s['nom']}</b>",
+                    ParagraphStyle('sup', fontSize=12, textColor=TEAL)))
+                contact_line = []
+                if s.get('telephone'): contact_line.append(f"📞 {s['telephone']}")
+                if s.get('email'): contact_line.append(f"✉️ {s['email']}")
+                if contact_line:
+                    story.append(Paragraph(' &nbsp; '.join(contact_line),
+                        ParagraphStyle('contact', fontSize=8, textColor=HexColor('#888888'))))
+                story.append(Spacer(1, 2*mm))
+                
+                # Synthèse fournisseur
+                sup_synth = [
+                    ['Achats période', 'Paiements période', 'Reste global'],
+                    [f"{sdata['total_achats_periode']:,.0f} F",
+                     f"{sdata['total_paye_periode']:,.0f} F",
+                     f"{sdata['reste_global']:,.0f} F"],
+                ]
+                t = Table(sup_synth, colWidths=[58*mm, 58*mm, 58*mm])
+                t.setStyle(TableStyle([
+                    ('BACKGROUND',(0,0),(-1,0),HexColor('#e0f5f1')),
+                    ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+                    ('FONTSIZE',(0,0),(-1,-1),9),
+                    ('ALIGN',(0,0),(-1,-1),'CENTER'),
+                    ('GRID',(0,0),(-1,-1),0.3,HexColor('#cccccc')),
+                    ('PADDING',(0,0),(-1,-1),4),
+                    ('FONTNAME',(0,1),(-1,1),'Helvetica-Bold'),
+                    ('TEXTCOLOR',(2,1),(2,1),HexColor('#c53030')),
+                ]))
+                story.append(t)
+                story.append(Spacer(1, 3*mm))
+                
+                # Tableau achats
+                if sdata['purchases']:
+                    story.append(Paragraph("<b>Achats sur la période</b>",
+                        ParagraphStyle('lbl', fontSize=9, textColor=HexColor('#1a3a5c'))))
+                    p_data = [['Date', 'Description', 'Montant', 'Échéance']]
+                    for p in sdata['purchases']:
+                        desc = (p.get('description') or '')[:50]
+                        p_data.append([p.get('date',''), desc,
+                                      f"{float(p.get('montant_total',0) or 0):,.0f} F",
+                                      p.get('date_echeance','') or '-'])
+                    t_p = Table(p_data, colWidths=[22*mm, 90*mm, 35*mm, 25*mm])
+                    t_p.setStyle(TableStyle([
+                        ('BACKGROUND',(0,0),(-1,0),HexColor('#1a3a5c')),
+                        ('TEXTCOLOR',(0,0),(-1,0),HexColor('#ffffff')),
+                        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+                        ('FONTSIZE',(0,0),(-1,-1),8),
+                        ('GRID',(0,0),(-1,-1),0.25,HexColor('#cccccc')),
+                        ('PADDING',(0,0),(-1,-1),3),
+                        ('ALIGN',(2,0),(2,-1),'RIGHT'),
+                    ]))
+                    story.append(t_p)
+                    story.append(Spacer(1, 3*mm))
+                
+                # Tableau paiements
+                if sdata['payments']:
+                    story.append(Paragraph("<b>Paiements (acomptes) sur la période</b>",
+                        ParagraphStyle('lbl', fontSize=9, textColor=HexColor('#1a3a5c'))))
+                    pay_data = [['Date', 'Achat associé', 'Mode', 'Référence', 'Montant']]
+                    for pay in sdata['payments']:
+                        desc = (pay.get('purchase_desc') or '')[:35]
+                        mode_lbl = {'espece':'Espèces','cheque':'Chèque','virement':'Virement','mobile':'Mobile'}.get(pay.get('mode_paiement',''), pay.get('mode_paiement','-'))
+                        pay_data.append([pay.get('date',''), desc, mode_lbl,
+                                        pay.get('reference','') or '-',
+                                        f"{float(pay.get('montant',0) or 0):,.0f} F"])
+                    t_pay = Table(pay_data, colWidths=[22*mm, 65*mm, 22*mm, 30*mm, 33*mm])
+                    t_pay.setStyle(TableStyle([
+                        ('BACKGROUND',(0,0),(-1,0),HexColor('#2e7d32')),
+                        ('TEXTCOLOR',(0,0),(-1,0),HexColor('#ffffff')),
+                        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+                        ('FONTSIZE',(0,0),(-1,-1),8),
+                        ('GRID',(0,0),(-1,-1),0.25,HexColor('#cccccc')),
+                        ('PADDING',(0,0),(-1,-1),3),
+                        ('ALIGN',(4,0),(4,-1),'RIGHT'),
+                        ('TEXTCOLOR',(4,1),(4,-1),HexColor('#2e7d32')),
+                        ('FONTNAME',(4,1),(4,-1),'Helvetica-Bold'),
+                    ]))
+                    story.append(t_pay)
+                
+                story.append(Spacer(1, 8*mm))
+        
+        # Pied de page
+        story.append(Spacer(1, 4*mm))
+        story.append(Paragraph(
+            f"<i>Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} par WannyGest — RAMYA Technologie &amp; Innovation</i>",
+            ParagraphStyle('foot', fontSize=8, textColor=HexColor('#888888'), alignment=TA_CENTER)))
+        
+        doc.build(story)
+        buf.seek(0)
+        filename = f"recap-fournisseurs-{date_from}-au-{date_to}.pdf"
+        return Response(buf.getvalue(), mimetype='application/pdf',
+                       headers={'Content-Disposition': f'attachment; filename={filename}'})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        flash(f"Erreur génération PDF récap : {e}", "error")
+        return redirect(url_for('fournisseurs_list'))
+
+
 @app.route('/achats')
 @permission_required_any('achats', 'comptabilite')
 def achats_page():
-    tab = request.args.get('tab', 'fournisseurs')
+    tab = request.args.get('tab', 'stock')  # default = stock now (fournisseurs moved)
+    # Redirect ancien onglet fournisseurs vers le nouveau module unifié
+    if tab == 'fournisseurs':
+        return redirect(url_for('fournisseurs_list'))
     conn = _gdb()
     from models import db_get_all
     

@@ -224,9 +224,9 @@
 </div></div>
 
 <script>
-new Chart(document.getElementById('cFin'),{type:'bar',data:{labels:['Facturé','Encaissé','Impayé','Recettes','Dépenses','Solde'],datasets:[{data:[{{s.montant_facture}},{{s.montant_paye}},{{s.montant_impaye}},{{s.recettes}},{{s.depenses}},{{s.solde}}],backgroundColor:['#1a3a5c','#2e7d32','#e8672a','#1A7A6D','#ef5350','#7b1fa2'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+new Chart(document.getElementById('cFin'),{type:'doughnut',data:{labels:['Facturé','Encaissé','Impayé','Recettes','Dépenses','Solde'],datasets:[{data:[{{s.montant_facture}},{{s.montant_paye}},{{s.montant_impaye}},{{s.recettes}},{{s.depenses}},{{s.solde}}],backgroundColor:['#1a3a5c','#2e7d32','#e8672a','#1A7A6D','#ef5350','#7b1fa2']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:9},padding:6}}}}});
 new Chart(document.getElementById('cCom'),{type:'doughnut',data:{labels:['Acceptés','En attente','Refusés'],datasets:[{data:[{{s.devis_acceptes}},{{s.devis_total - s.devis_acceptes}},0],backgroundColor:['#2e7d32','#ff9800','#ef5350']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});
-new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes','Dépenses'],datasets:[{data:[{{s.recettes}},{{s.depenses}}],borderColor:'#1a3a5c',backgroundColor:'rgba(26,58,92,0.1)',fill:true,tension:0.4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+new Chart(document.getElementById('cTres'),{type:'doughnut',data:{labels:['Recettes','Dépenses'],datasets:[{data:[{{s.recettes}},{{s.depenses}}],backgroundColor:['#2e7d32','#c53030']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:9},padding:6}}}}});
 </script>
 {% endif %}
 
@@ -943,8 +943,10 @@ function toggleDetail() {
 <a href="/interventions/{{ inter.id }}/attestation.pdf" class="btn btn-sm no-print" style="background:#7b1fa2;color:#fff;font-weight:700">📜 Attestation</a>
 {% endif %}
 <button class="btn btn-sm no-print" style="background:#1a3a5c;color:#fff" onclick="window.print()">🖨️ Imprimer</button>
-<button class="btn btn-sm no-print" style="background:#1976d2;color:#fff" onclick="document.getElementById('sendMailModal').style.display='flex'">📧 Envoyer par email</button>
-<button class="btn btn-sm no-print" style="background:#25d366;color:#fff" onclick="document.getElementById('sendWaModal').style.display='flex'">💬 Envoyer WhatsApp</button>
+{% if current_user and current_user.role in ('admin','dg','resp_projet','coordinateur') and inter.status in ('livre','termine','terminee','travaux_termines','controle_qualite') %}
+<button class="btn btn-sm no-print" style="background:#1976d2;color:#fff" onclick="document.getElementById('sendMailModal').style.display='flex'">📧 Envoyer au client (email)</button>
+<button class="btn btn-sm no-print" style="background:#25d366;color:#fff" onclick="document.getElementById('sendWaModal').style.display='flex'">💬 Envoyer (WhatsApp)</button>
+{% endif %}
 </div></div>
 
 <!-- Modal Email -->
@@ -972,7 +974,7 @@ function toggleDetail() {
     <form method="get" action="/interventions/{{ inter.id }}/fiche/whatsapp">
         <div style="margin-bottom:10px">
             <label style="font-size:11px;color:#888;display:block">Numéro WhatsApp (avec indicatif pays, ex: +225XXXXXXXX)</label>
-            <input type="tel" name="phone" value="{{ inter.client_info.phone if inter.client_info else '' }}" required placeholder="+225 07 00 00 00 00" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+            <input type="tel" name="phone" value="{{ inter.client_info.tel if inter.client_info else '' }}" required placeholder="+225 07 00 00 00 00" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
         </div>
         <div style="display:flex;gap:6px;justify-content:flex-end">
             <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('sendWaModal').style.display='none'">Annuler</button>
@@ -1727,6 +1729,7 @@ function submitPointage(type) {
         <a href="/pointage/qr" class="btn btn-outline btn-sm">🔗 QR Codes</a>
         {% endif %}
         <a href="/admin/pointage/export.csv?from={{ date_filter }}&to={{ date_filter }}" class="btn btn-sm" style="background:#1a7a6d;color:#fff">📥 Export CSV</a>
+        <a href="/admin/pointage/rapport-entreprise/{{ date_filter[:7] }}" class="btn btn-sm" style="background:#7b1fa2;color:#fff" target="_blank" title="PDF complet : rapports individuels + présence + classement + graphique">📊 Rapport entreprise complet</a>
     </div>
 </div>
 
@@ -2524,14 +2527,212 @@ function getMyPos(){
 </div></div>
 {% endif %}
 
+{% elif page == 'tech_my_interventions' %}
+<div class="page-header">
+    <h1>🔧 {% if is_admin_or_coord %}Toutes les interventions{% else %}Mes interventions{% endif %}</h1>
+    <a href="/centre-technique" class="btn btn-outline btn-sm">← Centre technique</a>
+</div>
+
+<!-- Filtres tabs -->
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+    <a href="?filter=nouvelles" class="btn btn-sm {% if filter_status == 'nouvelles' %}btn-primary{% else %}btn-outline{% endif %}">
+        📋 Nouvelles <span style="background:rgba(0,0,0,0.1);padding:1px 7px;border-radius:8px;margin-left:4px;font-size:10px">{{ counts.nouvelles or 0 }}</span>
+    </a>
+    <a href="?filter=en_cours" class="btn btn-sm {% if filter_status == 'en_cours' %}btn-primary{% else %}btn-outline{% endif %}" style="{% if filter_status != 'en_cours' %}border-color:#f29f2f;color:#b8561f{% endif %}">
+        🔧 En cours <span style="background:#f29f2f;color:#fff;padding:1px 7px;border-radius:8px;margin-left:4px;font-size:10px">{{ counts.en_cours or 0 }}</span>
+    </a>
+    <a href="?filter=deja_realise" class="btn btn-sm {% if filter_status == 'deja_realise' %}btn-primary{% else %}btn-outline{% endif %}" style="{% if filter_status != 'deja_realise' %}border-color:#2e7d32;color:#2e7d32{% endif %}">
+        ✅ Déjà réalisées <span style="background:#2e7d32;color:#fff;padding:1px 7px;border-radius:8px;margin-left:4px;font-size:10px">{{ counts.deja_realise or 0 }}</span>
+    </a>
+    <a href="?filter=reporte" class="btn btn-sm {% if filter_status == 'reporte' %}btn-primary{% else %}btn-outline{% endif %}" style="{% if filter_status != 'reporte' %}border-color:#7b1fa2;color:#7b1fa2{% endif %}">
+        📅 Reportées <span style="background:#7b1fa2;color:#fff;padding:1px 7px;border-radius:8px;margin-left:4px;font-size:10px">{{ counts.reporte or 0 }}</span>
+    </a>
+</div>
+
+{% if filter_status == 'deja_realise' and can_send_to_client %}
+<div class="card" style="border-left:4px solid #2e7d32;margin-bottom:10px"><div class="card-body" style="padding:10px 14px">
+    <p style="font-size:12px;color:#666;margin:0">
+    💡 <strong>Coordinateur :</strong> en tant que {{ current_user.role }}, vous pouvez envoyer la fiche d'intervention au client via 📧 email ou 💬 WhatsApp après exécution des travaux.
+    </p>
+</div></div>
+{% endif %}
+
+<div class="card"><div class="card-body" style="padding:0;overflow:auto">
+{% if interventions %}
+<table>
+<thead>
+<tr>
+    <th>Référence</th>
+    <th>Date</th>
+    <th>Client</th>
+    <th>Type</th>
+    <th>Description</th>
+    {% if is_admin_or_coord %}<th>Technicien</th>{% endif %}
+    <th>Statut</th>
+    <th>Actions</th>
+</tr>
+</thead>
+<tbody>
+{% for i in interventions %}
+<tr>
+    <td style="font-family:monospace;font-size:11px"><strong>{{ i.reference or '-' }}</strong></td>
+    <td style="font-size:11px">
+        {{ i.scheduled_date }}
+        {% if i.scheduled_time %}<br><span style="color:#888">{{ i.scheduled_time }}</span>{% endif %}
+        {% if i.original_date and i.original_date != i.scheduled_date %}
+        <br><span style="font-size:10px;color:#7b1fa2">📅 reporté de {{ i.original_date }}</span>
+        {% endif %}
+    </td>
+    <td>
+        <strong>{{ i.client_name or i.client_name_full or '-' }}</strong>
+        {% if i.client_phone %}<br><span style="font-size:10px;color:#888">📞 {{ i.client_phone }}</span>{% endif %}
+    </td>
+    <td style="font-size:11px">
+        {% if i.type == 'entretien' %}🔧 Entretien
+        {% elif i.type in ('depannage','dépannage','panne') %}⚡ Dépannage
+        {% elif i.type in ('installation','projet','projet_neuf') %}🏗️ Projet neuf
+        {% elif i.type == 'visite' %}📍 Visite
+        {% else %}{{ i.type or '-' }}{% endif %}
+    </td>
+    <td style="font-size:11px">{{ (i.title or i.description or '-')[:60] }}{% if (i.title or i.description or '')|length > 60 %}…{% endif %}</td>
+    {% if is_admin_or_coord %}<td style="font-size:11px">{{ i.tech_name_full or '-' }}</td>{% endif %}
+    <td>
+        {% set s = i.status %}
+        {% if s == 'planifiee' %}<span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;background:#e3f2fd;color:#1565c0">📋 Planifiée</span>
+        {% elif s == 'en_cours' %}<span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;background:#fff3e0;color:#b8561f">🔧 En cours</span>
+        {% elif s == 'travaux_termines' %}<span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;background:#fffacd;color:#9a8b00">🏗️ Trav. terminés</span>
+        {% elif s == 'controle_qualite' %}<span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;background:#e1bee7;color:#7b1fa2">🔍 CQ</span>
+        {% elif s == 'livre' %}<span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;background:#e8f5e9;color:#2e7d32">✅ Livrée</span>
+        {% elif s == 'reporte' %}<span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;background:#f3e5f5;color:#7b1fa2">📅 Reportée</span>
+        {% elif s in ('termine','terminee') %}<span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;background:#e8f5e9;color:#2e7d32">✅ Terminée</span>
+        {% else %}<span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;background:#f5f5f5;color:#888">{{ s }}</span>{% endif %}
+        {% if i.client_fiche_sent_at %}
+        <br><span style="font-size:9px;color:#2e7d32">✉️ Envoyée {{ i.client_fiche_sent_via }} {{ i.client_fiche_sent_at[:16] }}</span>
+        {% endif %}
+    </td>
+    <td>
+        <a href="/interventions/{{ i.id }}/fiche" class="btn btn-sm" style="background:#1a7a6d;color:#fff;font-size:10px" target="_blank">📄 Fiche</a>
+        {% if filter_status == 'deja_realise' and can_send_to_client %}
+        <button class="btn btn-sm" style="background:#1976d2;color:#fff;font-size:10px"
+                onclick="document.getElementById('mail{{ i.id }}').style.display='flex'">📧</button>
+        <button class="btn btn-sm" style="background:#25d366;color:#fff;font-size:10px"
+                onclick="document.getElementById('wa{{ i.id }}').style.display='flex'">💬</button>
+        {% endif %}
+        {% if filter_status in ('nouvelles','en_cours') and (is_admin_or_coord or i.technician_id == current_user.id) %}
+        <button class="btn btn-sm" style="background:#7b1fa2;color:#fff;font-size:10px"
+                onclick="document.getElementById('rep{{ i.id }}').style.display='flex'">📅 Reporter</button>
+        {% endif %}
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}
+<div style="text-align:center;padding:40px;color:#888">
+    Aucune intervention dans ce filtre.
+</div>
+{% endif %}
+</div></div>
+
+<!-- Modales pour chaque intervention (envoi mail/wa, report) -->
+{% for i in interventions %}
+{% if filter_status == 'deja_realise' and can_send_to_client %}
+<!-- Email -->
+<div id="mail{{ i.id }}" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:10px;padding:20px;max-width:480px;width:92%">
+    <h3 style="margin:0 0 12px;color:#1976d2">📧 Envoyer la fiche par email</h3>
+    <p style="font-size:11px;color:#666;margin-bottom:10px">Intervention {{ i.reference }} — {{ i.client_name }}</p>
+    <form method="post" action="/interventions/{{ i.id }}/fiche/send-mail">
+        <div style="margin-bottom:10px">
+            <label style="font-size:11px;color:#888;display:block">Email destinataire</label>
+            <input type="email" name="email" value="{{ i.client_email or '' }}" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+        </div>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('mail{{ i.id }}').style.display='none'">Annuler</button>
+            <button type="submit" class="btn btn-sm" style="background:#1976d2;color:#fff">📧 Envoyer</button>
+        </div>
+    </form>
+</div></div>
+<!-- WhatsApp -->
+<div id="wa{{ i.id }}" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:10px;padding:20px;max-width:480px;width:92%">
+    <h3 style="margin:0 0 12px;color:#25d366">💬 Envoyer via WhatsApp</h3>
+    <p style="font-size:11px;color:#666;margin-bottom:10px">Intervention {{ i.reference }} — {{ i.client_name }}</p>
+    <form method="get" action="/interventions/{{ i.id }}/fiche/whatsapp">
+        <div style="margin-bottom:10px">
+            <label style="font-size:11px;color:#888;display:block">Numéro WhatsApp (avec indicatif pays)</label>
+            <input type="tel" name="phone" value="{{ i.client_phone or '' }}" required placeholder="+225 07 XX XX XX XX" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+        </div>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('wa{{ i.id }}').style.display='none'">Annuler</button>
+            <button type="submit" class="btn btn-sm" style="background:#25d366;color:#fff">💬 Ouvrir WhatsApp</button>
+        </div>
+    </form>
+</div></div>
+{% endif %}
+{% if filter_status in ('nouvelles','en_cours') and (is_admin_or_coord or i.technician_id == current_user.id) %}
+<!-- Report -->
+<div id="rep{{ i.id }}" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:10px;padding:20px;max-width:480px;width:92%">
+    <h3 style="margin:0 0 12px;color:#7b1fa2">📅 Reporter intervention</h3>
+    <p style="font-size:11px;color:#666;margin-bottom:10px">{{ i.reference }} — initialement prévue le {{ i.scheduled_date }}</p>
+    <form method="post" action="/interventions/{{ i.id }}/reporter">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div>
+                <label style="font-size:11px;color:#888;display:block">Nouvelle date *</label>
+                <input type="date" name="new_date" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+            </div>
+            <div>
+                <label style="font-size:11px;color:#888;display:block">Heure</label>
+                <input type="time" name="new_time" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+            </div>
+        </div>
+        <div style="margin-bottom:10px">
+            <label style="font-size:11px;color:#888;display:block">Motif du report</label>
+            <textarea name="reason" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></textarea>
+        </div>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('rep{{ i.id }}').style.display='none'">Annuler</button>
+            <button type="submit" class="btn btn-sm" style="background:#7b1fa2;color:#fff">📅 Reporter</button>
+        </div>
+    </form>
+</div></div>
+{% endif %}
+{% endfor %}
+
 {% elif page == 'fournisseurs_list' %}
 <div class="page-header">
     <h1>🏭 Fournisseurs</h1>
     <div style="display:flex;gap:6px">
         <a href="/fournisseurs/export.csv" class="btn btn-outline btn-sm">📥 Export CSV</a>
+        <button class="btn btn-sm" style="background:#7b1fa2;color:#fff" onclick="document.getElementById('recapModal').style.display='flex'">📊 Récap PDF période</button>
         <button class="btn btn-primary btn-sm" onclick="document.getElementById('newSupModal').style.display='flex'">+ Nouveau fournisseur</button>
     </div>
 </div>
+
+<!-- Modal récap PDF par période -->
+<div id="recapModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:10px;padding:20px;max-width:480px;width:92%">
+    <h3 style="margin:0 0 12px;color:#7b1fa2">📊 Récapitulatif PDF — Période</h3>
+    <p style="font-size:12px;color:#666;margin-bottom:14px">Génère un PDF complet du suivi paiement fournisseurs avec achats et paiements détaillés sur la période choisie.</p>
+    <form method="get" action="/fournisseurs/recap-pdf" target="_blank">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+            <div>
+                <label style="font-size:11px;color:#888;display:block">Du</label>
+                <input type="date" name="from" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+            </div>
+            <div>
+                <label style="font-size:11px;color:#888;display:block">Au</label>
+                <input type="date" name="to" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+            </div>
+        </div>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('recapModal').style.display='none'">Annuler</button>
+            <button type="submit" class="btn btn-sm" style="background:#7b1fa2;color:#fff">📊 Générer PDF</button>
+        </div>
+    </form>
+    <p style="font-size:10px;color:#aaa;margin-top:10px">💡 Le PDF inclut : synthèse globale, achats et paiements détaillés par fournisseur, reste à payer et statut.</p>
+</div></div>
 
 <!-- Stats globales -->
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:14px">
