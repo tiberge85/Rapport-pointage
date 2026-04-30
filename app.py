@@ -10547,6 +10547,8 @@ def admin_pointage_rapport_entreprise(month):
     company_name = "RAMYA TECHNOLOGIE & INNOVATION"
     company_subtitle = "Abidjan, Côte d'Ivoire"
     
+    print(f"[rapport_entreprise] month={month}, company_id_param='{company_id}'")
+    
     conn = _gdb()
     
     if company_id and company_id.isdigit():
@@ -11127,6 +11129,69 @@ def admin_pointage_company_user_toggle(cid, uid):
     except: pass
     conn.close()
     return redirect(url_for('admin_pointage_company_detail', cid=cid))
+
+
+@app.route('/admin/pointage/companies/<int:cid>/user/<int:uid>/delete', methods=['POST'])
+@permission_required_any('admin', 'pointage_edit')
+def admin_pointage_company_user_delete(cid, uid):
+    """Suppression définitive d'un employé d'une entreprise pointage."""
+    conn = _gdb()
+    try:
+        u = conn.execute("SELECT full_name FROM pointage_company_users WHERE id=? AND company_id=?",
+                        (uid, cid)).fetchone()
+        if not u:
+            flash("Employé introuvable", "error")
+            conn.close(); return redirect(url_for('admin_pointage_company_detail', cid=cid))
+        name = u['full_name']
+        # Supprimer ses pointages d'abord
+        conn.execute("DELETE FROM pointage_company_records WHERE company_user_id=?", (uid,))
+        # Supprimer alertes éventuelles
+        try: conn.execute("DELETE FROM hr_absence_alerts WHERE pointage_user_id=?", (uid,))
+        except: pass
+        # Supprimer l'employé
+        conn.execute("DELETE FROM pointage_company_users WHERE id=? AND company_id=?", (uid, cid))
+        conn.commit()
+        flash(f"✅ Employé '{name}' supprimé définitivement (pointages et alertes inclus)", "success")
+    except Exception as e:
+        flash(f"❌ Erreur suppression : {e}", "error")
+    conn.close()
+    return redirect(url_for('admin_pointage_company_detail', cid=cid))
+
+
+@app.route('/admin/pointage/companies/<int:cid>/delete', methods=['POST'])
+@permission_required_any('admin', 'pointage_edit')
+def admin_pointage_company_delete(cid):
+    """Suppression définitive d'une entreprise pointage et de tous ses employés/pointages."""
+    conn = _gdb()
+    try:
+        c = conn.execute("SELECT name FROM pointage_companies WHERE id=?", (cid,)).fetchone()
+        if not c:
+            flash("Entreprise introuvable", "error")
+            conn.close(); return redirect(url_for('admin_pointage_companies_list'))
+        name = c['name']
+        
+        # Compter pour info
+        nb_users = conn.execute("SELECT COUNT(*) FROM pointage_company_users WHERE company_id=?", (cid,)).fetchone()[0]
+        nb_records = conn.execute("""SELECT COUNT(*) FROM pointage_company_records pcr
+            WHERE pcr.company_user_id IN (SELECT id FROM pointage_company_users WHERE company_id=?)""", (cid,)).fetchone()[0]
+        
+        # Cascade : supprimer tous les pointages d'abord
+        conn.execute("""DELETE FROM pointage_company_records WHERE company_user_id IN
+            (SELECT id FROM pointage_company_users WHERE company_id=?)""", (cid,))
+        # Alertes
+        try: conn.execute("""DELETE FROM hr_absence_alerts WHERE pointage_user_id IN
+            (SELECT id FROM pointage_company_users WHERE company_id=?)""", (cid,))
+        except: pass
+        # Employés
+        conn.execute("DELETE FROM pointage_company_users WHERE company_id=?", (cid,))
+        # Entreprise
+        conn.execute("DELETE FROM pointage_companies WHERE id=?", (cid,))
+        conn.commit()
+        flash(f"✅ Entreprise '{name}' supprimée définitivement ({nb_users} employé(s) et {nb_records} pointage(s) effacés)", "success")
+    except Exception as e:
+        flash(f"❌ Erreur suppression : {e}", "error")
+    conn.close()
+    return redirect(url_for('admin_pointage_companies_list'))
 
 
 @app.route('/admin/pointage/companies/<int:cid>/user/<int:uid>/edit', methods=['GET', 'POST'])

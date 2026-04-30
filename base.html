@@ -314,11 +314,13 @@
             </div>
             {% endif %}
             
-            {% if 'comptabilite' in permissions %}
-            <!-- Comptabilité -->
+            {% if 'comptabilite' in permissions or 'compta_pro' in permissions or 'admin' in permissions %}
+            <!-- Comptabilité (fusionné : opérationnelle + Compta Pro SYSCOHADA) -->
             <div class="nav-section" id="sec-compta">
                 <div class="nav-section-title" onclick="toggleSection('sec-compta')">💰 COMPTABILITÉ <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
+                    {% if 'comptabilite' in permissions or 'admin' in permissions %}
+                    <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:0.5px;padding:6px 10px 2px;font-weight:700">— Opérationnel —</div>
                     <a href="/comptabilite" class="{% if page == 'comptabilite' %}active{% endif %}">📊 Tableau de bord</a>
                     <a href="/comptabilite/factures" class="{% if page == 'factures' %}active{% endif %}">🧾 Factures</a>
                     <a href="/depenses" class="{% if page == 'depenses' %}active{% endif %}">📉 Dépenses</a>
@@ -333,24 +335,15 @@
                     <a href="/comptabilite/validation-paie" class="{% if page == 'compta_paie' %}active{% endif %}">💵 Validation paie</a>
                     <a href="/comptabilite/caisses" class="{% if page == 'caisses' or page == 'caisse_detail' %}active{% endif %}">💰 Multi-caisses</a>
                     <a href="/comptabilite/virements" class="{% if page == 'virements_list' %}active{% endif %}">🏦 Virements banque{% if pending_virements_count and pending_virements_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ pending_virements_count }}</span>{% endif %}</a>
-                    <a href="/comptabilite/ecritures" class="{% if page == 'ecritures' %}active{% endif %}">📝 Journal comptable</a>
-                    <a href="/comptabilite/grand-livre" class="{% if page == 'grand_livre' %}active{% endif %}">📒 Grand Livre</a>
-                    <a href="/comptabilite/balance" class="{% if page == 'balance' %}active{% endif %}">⚖️ Balance comptable</a>
                     <a href="/comptabilite/rapport-caisse" class="{% if page == 'rapport_caisse' %}active{% endif %}">📋 Rapport caisse</a>
-                    <a href="/comptabilite/bilan" class="{% if page == 'bilan' %}active{% endif %}">📊 Bilan SYSCOHADA</a>
                     {% if 'budget_view' in permissions or 'budget_view_own' in permissions or 'admin' in permissions %}
                     <a href="/budgets" class="{% if page == 'budgets' %}active{% endif %}">💼 Budgets départements</a>
                     {% endif %}
-                </div>
-            </div>
-            {% endif %}
-            
-            {# Section Comptabilité Pro SYSCOHADA #}
-            {% if 'compta_pro' in permissions or 'admin' in permissions %}
-            <div class="nav-section" id="sec-compta-pro">
-                <div class="nav-section-title" onclick="toggleSection('sec-compta-pro')">📚 COMPTA PRO (SYSCOHADA) <span class="arrow">▼</span></div>
-                <div class="nav-section-items">
-                    <a href="/compta-pro" class="{% if page == 'compta_pro' and section|default('') == 'dashboard' %}active{% endif %}">📊 Tableau de bord</a>
+                    {% endif %}
+                    
+                    {% if 'compta_pro' in permissions or 'admin' in permissions %}
+                    <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:0.5px;padding:10px 10px 2px;font-weight:700;border-top:1px solid #eee;margin-top:4px">— Comptabilité Pro (SYSCOHADA) —</div>
+                    <a href="/compta-pro" class="{% if page == 'compta_pro' and section|default('') == 'dashboard' %}active{% endif %}">📚 Tableau de bord Pro</a>
                     {% if 'compta_pro_edit' in permissions or 'admin' in permissions %}
                     <a href="/compta-pro/saisie" class="{% if page == 'compta_pro' and section|default('') == 'saisie' %}active{% endif %}">✏️ Saisie écriture</a>
                     {% endif %}
@@ -366,6 +359,7 @@
                     <a href="/compta-pro/journaux" class="{% if page == 'compta_pro' and section|default('') == 'journaux' %}active{% endif %}">📖 Journaux</a>
                     {% if 'compta_pro_cloture' in permissions or 'admin' in permissions %}
                     <a href="/compta-pro/periodes" class="{% if page == 'compta_pro' and section|default('') == 'periodes' %}active{% endif %}">📅 Périodes</a>
+                    {% endif %}
                     {% endif %}
                 </div>
             </div>

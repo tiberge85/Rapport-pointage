@@ -1736,39 +1736,43 @@ function submitPointage(type) {
 
 <!-- Modal sélection entreprise pour rapport -->
 <div id="rapportEntModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
-<div style="background:#fff;border-radius:10px;padding:20px;max-width:500px;width:92%">
-    <h3 style="margin:0 0 12px;color:#7b1fa2">📊 Rapport entreprise complet</h3>
-    <p style="font-size:12px;color:#666;margin-bottom:14px">PDF avec rapports individuels par employé, présence globale, classement retards/absences et graphique. Choisissez l'entreprise et le mois.</p>
-    <form method="get" id="rapportEntForm" target="_blank">
-        <div style="margin-bottom:10px">
-            <label style="font-size:11px;color:#888;display:block">Entreprise</label>
-            <select name="company_id" id="rapportCompanyId" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
-                <option value="">🏢 RAMYA TECHNOLOGIE (personnel interne)</option>
-                {% for c in pointage_companies_list or [] %}
-                <option value="{{ c.id }}">🏭 {{ c.name }} ({{ c.nb_users or 0 }} employés)</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div style="margin-bottom:14px">
-            <label style="font-size:11px;color:#888;display:block">Mois</label>
-            <input type="month" name="month_picker" id="rapportMonth" value="{{ date_filter[:7] }}" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
-        </div>
-        <div style="display:flex;gap:6px;justify-content:flex-end">
-            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('rapportEntModal').style.display='none'">Annuler</button>
-            <button type="submit" class="btn btn-sm" style="background:#7b1fa2;color:#fff">📊 Générer PDF</button>
-        </div>
-    </form>
+<div style="background:#fff;border-radius:10px;padding:20px;max-width:540px;width:92%">
+    <h3 style="margin:0 0 8px;color:#7b1fa2">📊 Rapport entreprise complet</h3>
+    <p style="font-size:12px;color:#666;margin-bottom:14px">Cliquez sur l'entreprise pour générer son rapport PDF.</p>
+    
+    <div style="margin-bottom:14px">
+        <label style="font-size:11px;color:#888;display:block">Mois</label>
+        <input type="month" id="rapportMonth" value="{{ date_filter[:7] }}" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+    </div>
+    
+    <div style="margin-bottom:8px;font-size:11px;color:#888;font-weight:700">Choisissez :</div>
+    <div style="display:flex;flex-direction:column;gap:6px;max-height:340px;overflow:auto">
+        <button type="button" class="rapport-ent-btn" data-cid="" style="text-align:left;padding:10px 12px;border:1.5px solid #1a7a6d;border-radius:8px;background:#e0f5f1;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+            <span><strong>🏢 RAMYA TECHNOLOGIE</strong><br><span style="font-size:11px;color:#666">Personnel interne (employés RAMYA)</span></span>
+            <span style="background:#1a7a6d;color:#fff;padding:4px 10px;border-radius:6px;font-size:11px">📊 Générer</span>
+        </button>
+        {% for c in pointage_companies_list or [] %}
+        <button type="button" class="rapport-ent-btn" data-cid="{{ c.id }}" style="text-align:left;padding:10px 12px;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+            <span><strong>🏭 {{ c.name }}</strong><br><span style="font-size:11px;color:#666">{{ c.nb_users or 0 }} employés · slug: {{ c.slug }}</span></span>
+            <span style="background:#7b1fa2;color:#fff;padding:4px 10px;border-radius:6px;font-size:11px">📊 Générer</span>
+        </button>
+        {% endfor %}
+    </div>
+    
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+        <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('rapportEntModal').style.display='none'">Fermer</button>
+    </div>
 </div></div>
 <script>
-document.getElementById('rapportEntForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    var month = document.getElementById('rapportMonth').value;
-    var cid = document.getElementById('rapportCompanyId').value;
-    if (!month) return;
-    var url = '/admin/pointage/rapport-entreprise/' + month;
-    if (cid) url += '?company_id=' + cid;
-    window.open(url, '_blank');
-    document.getElementById('rapportEntModal').style.display = 'none';
+document.querySelectorAll('.rapport-ent-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+        var month = document.getElementById('rapportMonth').value;
+        if (!month) { alert('Choisissez un mois'); return; }
+        var cid = btn.getAttribute('data-cid') || '';
+        var url = '/admin/pointage/rapport-entreprise/' + month;
+        if (cid) { url += '?company_id=' + encodeURIComponent(cid); }
+        window.open(url, '_blank');
+    });
 });
 </script>
 
@@ -2338,6 +2342,9 @@ function getMyPos(){
         <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
             <a href="/admin/pointage/companies/{{ c.id }}" class="btn btn-primary btn-sm" style="font-size:10px">⚙️ Gérer</a>
             <a href="/pt/{{ c.slug }}" target="_blank" class="btn btn-outline btn-sm" style="font-size:10px">🚪 Voir login</a>
+            <form method="post" action="/admin/pointage/companies/{{ c.id }}/delete" style="display:inline" onsubmit="return confirm('⚠️ Supprimer DÉFINITIVEMENT l\'entreprise « {{ c.name }} » avec tous ses employés et pointages ? Cette action est IRRÉVERSIBLE.')">
+                <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px" title="Supprimer définitivement">🗑️</button>
+            </form>
         </div>
     </div>
 </div>
@@ -2354,6 +2361,9 @@ function getMyPos(){
     <div style="display:flex;gap:6px">
         <a href="/pt/{{ company.slug }}" target="_blank" class="btn btn-outline btn-sm">🚪 Voir login employé</a>
         <a href="/admin/pointage/companies" class="btn btn-outline btn-sm">← Liste</a>
+        <form method="post" action="/admin/pointage/companies/{{ company.id }}/delete" style="display:inline" onsubmit="return confirm('⚠️ ATTENTION ⚠️\n\nSupprimer DÉFINITIVEMENT l\'entreprise « {{ company.name }} » va effacer :\n• L\'entreprise elle-même\n• TOUS ses employés\n• TOUS leurs pointages\n• Toutes les alertes associées\n\nCette action est IRRÉVERSIBLE.\n\nÊtes-vous absolument sûr ?')">
+            <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff" title="Suppression définitive de l'entreprise">🗑️ Supprimer entreprise</button>
+        </form>
     </div>
 </div>
 
@@ -2449,6 +2459,9 @@ function getMyPos(){
             <button type="submit" class="btn btn-sm" style="background:#f29f2f;color:#fff;font-size:10px" title="Reset password">🔑</button>
         </form>
         <a href="/admin/pointage/companies/{{ company.id }}/user/{{ u.id }}/toggle" class="btn btn-sm" style="background:#888;color:#fff;font-size:10px" title="Activer/Désactiver">{% if u.is_active %}⏸️{% else %}▶️{% endif %}</a>
+        <form method="post" action="/admin/pointage/companies/{{ company.id }}/user/{{ u.id }}/delete" style="display:inline" onsubmit="return confirm('⚠️ Supprimer DÉFINITIVEMENT {{ u.full_name }} et TOUS ses pointages ? Cette action est irréversible.')">
+            <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px" title="Supprimer définitivement">🗑️</button>
+        </form>
     </td>
 </tr>
 {% endfor %}
