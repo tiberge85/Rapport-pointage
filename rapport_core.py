@@ -635,167 +635,183 @@ def _prepare_logo(logo_path, work_dir=None):
         return None
 
 
-def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=None):
-    """Génère un graphique camembert PLEIN avec effet 3D (relief + ombre portée).
-    Pas de trou central : c'est un disque plein avec relief sphérique."""
+def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=None,
+                          total_presence_min=0, total_absence_min=0):
+    """Génère un graphique style donut moderne avec léger volume.
+    Logo au centre, labels de % flottants au-dessus de chaque secteur, légende en bas.
+    Total minutes optionnels pour afficher 'XXXh' dans la légende."""
     try:
         from PIL import Image, ImageDraw, ImageFont, ImageFilter
+        import math
         
-        W, H = 1000, 700
-        cx, cy = 350, 340
-        radius = 250
-        depth = 35  # profondeur 3D (épaisseur du cylindre)
+        W, H = 800, 700
+        cx, cy = 400, 280
+        outer_r = 200      # rayon extérieur du donut
+        inner_r = 95       # rayon trou central (pour logo)
+        depth = 8          # léger volume 3D (subtil, pas exagéré)
         
-        # Image de base RGB blanche
+        # Image RGB blanche
         base = Image.new('RGB', (W, H), (255, 255, 255))
         
-        # Couleurs
-        teal = (26, 122, 109)
-        teal_dark = (15, 80, 70)
-        red = (232, 93, 74)
-        red_dark = (170, 55, 40)
-        green_c = (46, 125, 50)
-        orange_c = (232, 103, 42)
-        blue_c = (26, 58, 92)
-        white = (255, 255, 255)
+        # Couleurs (style image utilisateur)
+        teal = (15, 121, 100)        # vert teal foncé pour Présence
+        teal_dark = (10, 90, 75)
+        red = (235, 50, 60)          # rouge vif pour Absence
+        red_dark = (180, 35, 45)
+        text_dark = (40, 60, 75)
+        text_grey = (110, 110, 110)
         
-        # === 1. OMBRE PORTÉE (sous le cercle, légèrement décalée et floutée) ===
-        shadow_layer = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-        sdraw = ImageDraw.Draw(shadow_layer)
-        sdraw.ellipse([cx - radius + 8, cy - radius + 12 + depth,
-                       cx + radius + 8, cy + radius + 12 + depth],
-                      fill=(0, 0, 0, 90))
-        try: shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=14))
+        # === 1. OMBRE PORTÉE LÉGÈRE (subtile) ===
+        shadow = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        sdraw = ImageDraw.Draw(shadow)
+        sdraw.ellipse([cx - outer_r + 4, cy - outer_r + 8 + depth,
+                       cx + outer_r + 4, cy + outer_r + 8 + depth],
+                      fill=(0, 0, 0, 50))
+        try: shadow = shadow.filter(ImageFilter.GaussianBlur(radius=10))
         except: pass
-        # Coller l'ombre sur le fond
-        base.paste(shadow_layer, (0, 0), shadow_layer)
+        base.paste(shadow, (0, 0), shadow)
         
-        # Dessiner sur RGB direct maintenant
         draw = ImageDraw.Draw(base)
         
-        # === 2. TRANCHE 3D (côté cylindrique sous le disque) ===
-        bbox_top = [cx - radius, cy - radius, cx + radius, cy + radius]
-        # Plusieurs ellipses du bas vers le haut pour donner épaisseur
+        # === 2. TRANCHE 3D LÉGÈRE (8px de volume) ===
+        bbox_top = [cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r]
         if pct_absence <= 0:
-            # 100% présence : cylindre teal
             for d in range(depth, 0, -1):
-                draw.ellipse([cx - radius, cy - radius + d, cx + radius, cy + radius + d], fill=teal_dark)
+                draw.ellipse([cx - outer_r, cy - outer_r + d, cx + outer_r, cy + outer_r + d], fill=teal_dark)
         elif pct_presence <= 0:
-            # 100% absence : cylindre rouge
             for d in range(depth, 0, -1):
-                draw.ellipse([cx - radius, cy - radius + d, cx + radius, cy + radius + d], fill=red_dark)
+                draw.ellipse([cx - outer_r, cy - outer_r + d, cx + outer_r, cy + outer_r + d], fill=red_dark)
         else:
             angle_p = 360 * pct_presence / 100
             for d in range(depth, 0, -1):
-                bbox_d = [cx - radius, cy - radius + d, cx + radius, cy + radius + d]
+                bbox_d = [cx - outer_r, cy - outer_r + d, cx + outer_r, cy + outer_r + d]
                 draw.pieslice(bbox_d, start=-90, end=-90 + angle_p, fill=teal_dark)
                 draw.pieslice(bbox_d, start=-90 + angle_p, end=270, fill=red_dark)
         
-        # === 3. DISQUE DU DESSUS (plein, sans trou) ===
+        # === 3. DISQUE DU DESSUS (donut avec secteurs) ===
         if pct_absence <= 0:
-            draw.ellipse(bbox_top, fill=teal, outline=white, width=3)
+            draw.ellipse(bbox_top, fill=teal)
         elif pct_presence <= 0:
-            draw.ellipse(bbox_top, fill=red, outline=white, width=3)
+            draw.ellipse(bbox_top, fill=red)
         else:
             angle_p = 360 * pct_presence / 100
-            draw.pieslice(bbox_top, start=-90, end=-90 + angle_p,
-                         fill=teal, outline=white, width=3)
-            draw.pieslice(bbox_top, start=-90 + angle_p, end=270,
-                         fill=red, outline=white, width=3)
+            draw.pieslice(bbox_top, start=-90, end=-90 + angle_p, fill=teal)
+            draw.pieslice(bbox_top, start=-90 + angle_p, end=270, fill=red)
         
-        # === 4. REFLET LUMINEUX (effet sphérique 3D) ===
-        # Création d'une couche RGBA pour le reflet
-        glow_layer = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-        gdraw = ImageDraw.Draw(glow_layer)
-        # Ovale lumineux dans le quart supérieur gauche
-        hl_w = int(radius * 0.55)
-        hl_h = int(radius * 0.30)
-        hl_x = cx - int(radius * 0.45)
-        hl_y = cy - int(radius * 0.55)
-        # Ellipse blanche semi-transparente
-        gdraw.ellipse([hl_x, hl_y, hl_x + hl_w, hl_y + hl_h],
-                     fill=(255, 255, 255, 110))
-        try: glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=18))
-        except: pass
-        # Masquer le reflet pour qu'il reste DANS le cercle
-        cercle_mask = Image.new('L', (W, H), 0)
-        cmdraw = ImageDraw.Draw(cercle_mask)
-        cmdraw.ellipse(bbox_top, fill=255)
-        # Appliquer le masque de cercle au reflet (alpha *= mask)
-        glow_alpha = glow_layer.split()[3]
-        masked_alpha = Image.eval(cercle_mask, lambda v: 1 if v > 0 else 0)
-        # Multiplier les alpha
-        from PIL import ImageChops
-        new_alpha = ImageChops.multiply(glow_alpha, cercle_mask).point(lambda p: int(p / 255 * 255))
-        # En fait, plus simple : utiliser le masque cercle pour limiter le coller
-        base.paste(glow_layer, (0, 0), Image.composite(glow_layer.split()[3], Image.new('L', (W, H), 0), cercle_mask))
-        draw = ImageDraw.Draw(base)
+        # === 4. TROU CENTRAL (donut) - blanc ===
+        draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], fill=(255, 255, 255))
+        # Cercle interne avec subtil ombrage pour le donut
+        draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r],
+                    outline=(220, 220, 220), width=1)
         
-        # === 5. LOGO au-dessus du cercle, semi-transparent ===
+        # === 5. LOGO RAMYA AU CENTRE (dans le trou) ===
         if logo_path and os.path.exists(logo_path):
             try:
                 clean_path = _prepare_logo(logo_path, work_dir)
                 if clean_path:
                     logo = Image.open(clean_path).convert('RGBA')
-                    logo_size = int(radius * 0.85)
+                    logo_size = int(inner_r * 1.5)
                     logo.thumbnail((logo_size, logo_size), Image.LANCZOS)
-                    alpha = logo.split()[3] if logo.mode == 'RGBA' else None
-                    if alpha:
-                        new_alpha = alpha.point(lambda p: int(p * 0.75))
-                        logo.putalpha(new_alpha)
                     lw, lh = logo.size
                     base.paste(logo, (cx - lw // 2, cy - lh // 2), logo)
             except Exception as e:
                 print(f"  Logo: {e}")
         
-        draw = ImageDraw.Draw(base)
+        # Petit cercle blanc autour du logo (effet badge)
+        badge_r = inner_r - 8
+        # Bordure circulaire teal autour du logo
+        draw.ellipse([cx - badge_r, cy - badge_r, cx + badge_r, cy + badge_r],
+                    outline=teal, width=2)
         
-        # === LÉGENDE (à droite) ===
+        # === 6. LABELS DE % FLOTTANTS (sur chaque secteur) ===
         try:
-            font_leg_b = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+            font_pct = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
+            font_pct_red = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 26)
+            font_legend = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+            font_legend_b = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
             font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 22)
-            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
         except:
-            font_leg_b = font_title = font_small = ImageFont.load_default()
+            font_pct = font_pct_red = font_legend = font_legend_b = font_title = ImageFont.load_default()
         
-        lx_start = 680
-        ly = 80
+        # Calculer position du label dans chaque secteur
+        # Le label est positionné au milieu de l'arc, à 70% du rayon
+        if pct_presence > 0 and pct_absence > 0:
+            angle_p = 360 * pct_presence / 100
+            # Centre du secteur présence
+            mid_p = -90 + angle_p / 2
+            mid_p_rad = math.radians(mid_p)
+            label_r = (outer_r + inner_r) / 2 + 15
+            lpx = cx + int(label_r * math.cos(mid_p_rad))
+            lpy = cy + int(label_r * math.sin(mid_p_rad))
+            text_p = f"{pct_presence:.1f}%"
+            bbox = draw.textbbox((0, 0), text_p, font=font_pct)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            draw.text((lpx - tw // 2, lpy - th // 2), text_p, fill=(255, 255, 255), font=font_pct)
+            
+            # Centre du secteur absence
+            mid_a = -90 + angle_p + (360 - angle_p) / 2
+            mid_a_rad = math.radians(mid_a)
+            lax = cx + int(label_r * math.cos(mid_a_rad))
+            lay = cy + int(label_r * math.sin(mid_a_rad))
+            text_a = f"{pct_absence:.1f}%"
+            bbox = draw.textbbox((0, 0), text_a, font=font_pct_red)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            draw.text((lax - tw // 2, lay - th // 2), text_a, fill=(255, 255, 255), font=font_pct_red)
+        elif pct_presence > 0:
+            text_p = f"{pct_presence:.1f}%"
+            bbox = draw.textbbox((0, 0), text_p, font=font_pct)
+            tw = bbox[2] - bbox[0]
+            draw.text((cx - tw // 2, cy - outer_r - 35), text_p, fill=teal, font=font_pct)
+        else:
+            text_a = f"{pct_absence:.1f}%"
+            bbox = draw.textbbox((0, 0), text_a, font=font_pct)
+            tw = bbox[2] - bbox[0]
+            draw.text((cx - tw // 2, cy - outer_r - 35), text_a, fill=red, font=font_pct)
         
-        draw.text((lx_start, ly), "Légende", fill=blue_c, font=font_title)
-        ly += 45
+        # === 7. LABELS SOUS LE GRAPHIQUE ===
+        # "Présence (XXXX.0h - XX%)" à gauche
+        # "Absence (XXX.0h - XX%)" à droite
+        h_p = total_presence_min / 60.0 if total_presence_min else 0
+        h_a = total_absence_min / 60.0 if total_absence_min else 0
         
-        draw.rounded_rectangle([lx_start, ly, lx_start+28, ly+28], radius=4, fill=teal)
-        draw.text((lx_start+36, ly), f"Présence: {pct_presence:.1f}%", fill=(60,60,60), font=font_leg_b)
-        ly += 45
+        label_y = cy + outer_r + 40
+        text_left = f"Présence ({h_p:.1f}h - {pct_presence:.0f}%)" if total_presence_min else f"Présence : {pct_presence:.1f}%"
+        text_right = f"Absence ({h_a:.1f}h - {pct_absence:.0f}%)" if total_absence_min else f"Absence : {pct_absence:.1f}%"
         
-        draw.rounded_rectangle([lx_start, ly, lx_start+28, ly+28], radius=4, fill=red)
-        draw.text((lx_start+36, ly), f"Absence: {pct_absence:.1f}%", fill=(60,60,60), font=font_leg_b)
-        ly += 60
+        bbox = draw.textbbox((0, 0), text_left, font=font_legend_b)
+        tw_l = bbox[2] - bbox[0]
+        draw.text((cx - outer_r - 40, label_y), text_left, fill=text_dark, font=font_legend_b)
         
-        draw.text((lx_start, ly), "Abréviations", fill=blue_c, font=font_title)
-        ly += 35
-        abbrevs = [
-            ("H. travail.", "Heures travaillées"),
-            ("H. obligat.", "Heures obligatoires"),
-            ("H. Respectée", "Heures respectées (OUI/NON)"),
-            ("H. sup.", "Heures supplémentaires"),
-            ("ABS", "Absent"),
-            ("P", "Présent"),
-            ("R", "Retard"),
-        ]
-        for abbr, full in abbrevs:
-            draw.text((lx_start, ly), f"{abbr}", fill=orange_c, font=font_small)
-            draw.text((lx_start + 130, ly), f"= {full}", fill=(100,100,100), font=font_small)
-            ly += 28
+        bbox = draw.textbbox((0, 0), text_right, font=font_legend_b)
+        tw_r = bbox[2] - bbox[0]
+        draw.text((cx + outer_r - tw_r + 40, label_y), text_right, fill=text_dark, font=font_legend_b)
         
-        ly += 15
-        draw.text((lx_start, ly), "Règles d'assiduité", fill=blue_c, font=font_title)
-        ly += 32
-        rules = [("≥ 95%", "Assidu", green_c), ("80-95%", "Moy. assidu", orange_c), ("< 80%", "Non assidu", red)]
-        for pct_label, label, color in rules:
-            draw.rounded_rectangle([lx_start, ly, lx_start+12, ly+12], radius=2, fill=color)
-            draw.text((lx_start+20, ly-4), f"{pct_label} → {label}", fill=(80,80,80), font=font_small)
-            ly += 28
+        # === 8. LÉGENDE EN BAS (cartouches verts/rouges) ===
+        legend_y = cy + outer_r + 90
+        # Cartouche vert : Total heure de présence
+        leg_w = 280
+        leg_h = 36
+        # Vert
+        leg_x_g = cx - leg_w - 15
+        draw.rectangle([leg_x_g, legend_y, leg_x_g + leg_w, legend_y + leg_h], fill=teal)
+        h_p_int = int(total_presence_min // 60) if total_presence_min else 0
+        m_p_int = int(total_presence_min % 60) if total_presence_min else 0
+        text_g = f"Total heure de présence : {h_p_int:02d}:{m_p_int:02d}"
+        bbox = draw.textbbox((0, 0), text_g, font=font_legend_b)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        draw.text((leg_x_g + (leg_w - tw) // 2, legend_y + (leg_h - th) // 2 - 2),
+                 text_g, fill=(255, 255, 255), font=font_legend_b)
+        
+        # Rouge
+        leg_x_r = cx + 15
+        draw.rectangle([leg_x_r, legend_y, leg_x_r + leg_w, legend_y + leg_h], fill=red)
+        h_a_int = int(total_absence_min // 60) if total_absence_min else 0
+        m_a_int = int(total_absence_min % 60) if total_absence_min else 0
+        text_r = f"Total heure d'absence : {h_a_int:02d}:{m_a_int:02d}"
+        bbox = draw.textbbox((0, 0), text_r, font=font_legend_b)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        draw.text((leg_x_r + (leg_w - tw) // 2, legend_y + (leg_h - th) // 2 - 2),
+                 text_r, fill=(255, 255, 255), font=font_legend_b)
         
         out_dir = work_dir or (os.path.dirname(os.path.abspath(logo_path)) if logo_path else '/tmp')
         chart_path = os.path.join(out_dir, '_chart_donut.png')
@@ -803,11 +819,10 @@ def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=No
         return chart_path
         
     except Exception as e:
-        print(f"  ⚠️  Erreur génération graphique: {e}")
+        print(f"  Erreur chart: {e}")
         import traceback; traceback.print_exc()
         return None
 
-# ======================== PAGE : GRAPHIQUE D'ASSIDUITÉ ========================
 
 def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now, logo_path=None, work_dir=None):
     story.append(PageBreak())
@@ -829,11 +844,13 @@ def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, clien
         pct_absence = 0
     
     # Générer le graphique en image PIL pour gérer la transparence du logo
-    chart_path = _generate_chart_image(pct_presence, pct_absence, logo_path, work_dir)
+    chart_path = _generate_chart_image(pct_presence, pct_absence, logo_path, work_dir,
+                                       total_presence_min=total_presence,
+                                       total_absence_min=total_absence)
     
     if chart_path:
         from reportlab.platypus import Image as PLImage
-        img = PLImage(chart_path, width=140*mm, height=140*mm)
+        img = PLImage(chart_path, width=170*mm, height=148*mm)
         story.append(img)
     
     story.append(Spacer(1, 4*mm))

@@ -353,6 +353,8 @@ from models import migrate_v58
 migrate_v58()
 from models import migrate_v59
 migrate_v59()
+from models import migrate_v60
+migrate_v60()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -10658,72 +10660,72 @@ def admin_pointage_rapport_entreprise(month):
         emps = []
         for u in users:
             planning = get_user_planning(u['id'])
-        sched_start = planning.get('heure_arrivee', '08:00')
-        sched_end = planning.get('heure_depart', '17:00')
-        
-        pointages = [dict(r) for r in conn.execute(
-            "SELECT * FROM hr_pointages WHERE user_id=? AND date LIKE ? ORDER BY date, time",
-            (u['id'], f'{month}%')).fetchall()]
-        
-        # Regrouper par jour
-        by_day = {}
-        for p in pointages:
-            d = p['date']
-            if d not in by_day:
-                by_day[d] = {'arrivee':None,'pause':None,'retour':None,'depart':None}
-            by_day[d][p['type']] = p
-        
-        # Records pour rapport_core
-        records = []
-        for d in sorted(by_day.keys()):
-            dd = by_day[d]
-            arrival = dd['arrivee']['time'] if dd['arrivee'] else ''
-            departure = dd['depart']['time'] if dd['depart'] else ''
-            dur = ''
+            sched_start = planning.get('heure_arrivee', '08:00')
+            sched_end = planning.get('heure_depart', '17:00')
+            
+            pointages = [dict(r) for r in conn.execute(
+                "SELECT * FROM hr_pointages WHERE user_id=? AND date LIKE ? ORDER BY date, time",
+                (u['id'], f'{month}%')).fetchall()]
+            
+            # Regrouper par jour
+            by_day = {}
+            for p in pointages:
+                d = p['date']
+                if d not in by_day:
+                    by_day[d] = {'arrivee':None,'pause':None,'retour':None,'depart':None}
+                by_day[d][p['type']] = p
+            
+            # Records pour rapport_core
+            records = []
+            for d in sorted(by_day.keys()):
+                dd = by_day[d]
+                arrival = dd['arrivee']['time'] if dd['arrivee'] else ''
+                departure = dd['depart']['time'] if dd['depart'] else ''
+                dur = ''
+                try:
+                    if dd['arrivee'] and dd['depart']:
+                        af = datetime.fromisoformat(dd['arrivee']['datetime_full'])
+                        df = datetime.fromisoformat(dd['depart']['datetime_full'])
+                        total_min = int((df - af).total_seconds() / 60)
+                        pause_min = 0
+                        if dd['pause'] and dd['retour']:
+                            pf = datetime.fromisoformat(dd['pause']['datetime_full'])
+                            rf = datetime.fromisoformat(dd['retour']['datetime_full'])
+                            pause_min = int((rf - pf).total_seconds() / 60)
+                        worked = total_min - pause_min
+                        dur = f"{worked//60:02d}:{worked%60:02d}"
+                except: pass
+                records.append({
+                    'date': d, 'sched_start': sched_start, 'sched_end': sched_end,
+                    'arrival': arrival, 'departure': departure, 'duration': dur,
+                })
+            
+            # Compléter avec jours sans pointage
             try:
-                if dd['arrivee'] and dd['depart']:
-                    af = datetime.fromisoformat(dd['arrivee']['datetime_full'])
-                    df = datetime.fromisoformat(dd['depart']['datetime_full'])
-                    total_min = int((df - af).total_seconds() / 60)
-                    pause_min = 0
-                    if dd['pause'] and dd['retour']:
-                        pf = datetime.fromisoformat(dd['pause']['datetime_full'])
-                        rf = datetime.fromisoformat(dd['retour']['datetime_full'])
-                        pause_min = int((rf - pf).total_seconds() / 60)
-                    worked = total_min - pause_min
-                    dur = f"{worked//60:02d}:{worked%60:02d}"
+                from datetime import date as _date, timedelta as _td
+                y, m_int = month.split('-')
+                y, m_int = int(y), int(m_int)
+                first = _date(y, m_int, 1)
+                if m_int == 12: last = _date(y+1, 1, 1) - _td(days=1)
+                else: last = _date(y, m_int+1, 1) - _td(days=1)
+                existing_dates = set(r['date'] for r in records)
+                cur = first
+                while cur <= last:
+                    ds = cur.strftime('%Y-%m-%d')
+                    if ds not in existing_dates and cur.weekday() < 5:
+                        records.append({
+                            'date': ds, 'sched_start': sched_start, 'sched_end': sched_end,
+                            'arrival': '', 'departure': '', 'duration': '',
+                        })
+                    cur += _td(days=1)
+                records.sort(key=lambda r: r['date'])
             except: pass
-            records.append({
-                'date': d, 'sched_start': sched_start, 'sched_end': sched_end,
-                'arrival': arrival, 'departure': departure, 'duration': dur,
+            
+            emps.append({
+                'name': u['full_name'],
+                'ref': u['username'],
+                'records': records,
             })
-        
-        # Compléter avec jours sans pointage
-        try:
-            from datetime import date as _date, timedelta as _td
-            y, m_int = month.split('-')
-            y, m_int = int(y), int(m_int)
-            first = _date(y, m_int, 1)
-            if m_int == 12: last = _date(y+1, 1, 1) - _td(days=1)
-            else: last = _date(y, m_int+1, 1) - _td(days=1)
-            existing_dates = set(r['date'] for r in records)
-            cur = first
-            while cur <= last:
-                ds = cur.strftime('%Y-%m-%d')
-                if ds not in existing_dates and cur.weekday() < 5:
-                    records.append({
-                        'date': ds, 'sched_start': sched_start, 'sched_end': sched_end,
-                        'arrival': '', 'departure': '', 'duration': '',
-                    })
-                cur += _td(days=1)
-            records.sort(key=lambda r: r['date'])
-        except: pass
-        
-        emps.append({
-            'name': u['full_name'],
-            'ref': u['username'],
-            'records': records,
-        })
     
     conn.close()
     
@@ -11283,8 +11285,17 @@ def pointage_company_login(slug):
                 session['pt_company_name'] = company['name']
                 session['pt_user_id'] = u['id']
                 session['pt_user_name'] = u['full_name']
+                session['pt_must_change_password'] = bool(u.get('must_change_password', 0))
                 session.permanent = True
                 flash(f"✅ {company['welcome_message']}", "success")
+                # Si force changement mot de passe → rediriger vers la page de changement
+                if u.get('must_change_password'):
+                    return redirect(url_for('pointage_company_password_change', slug=slug))
+                # Si retour vers scan
+                next_action = request.args.get('next','')
+                pt_type = request.args.get('type','')
+                if next_action == 'scan' and pt_type:
+                    return redirect(url_for('pointage_company_scan', slug=slug) + f'?type={pt_type}')
                 return redirect(url_for('pointage_company_dashboard', slug=slug))
         conn.close()
         flash("❌ Identifiants incorrects", "error")
@@ -11401,12 +11412,235 @@ def pointage_company_dashboard(slug):
                           state=state, today=today)
 
 
+@app.route('/pt/<slug>/password', methods=['GET', 'POST'])
+def pointage_company_password_change(slug):
+    """Changement de mot de passe par l'employé (1ère connexion ou volontaire)."""
+    if session.get('pt_company_slug') != slug or not session.get('pt_user_id'):
+        return redirect(url_for('pointage_company_login', slug=slug))
+    
+    import hashlib, secrets as _s
+    conn = _gdb()
+    company = dict(conn.execute("SELECT * FROM pointage_companies WHERE id=?",
+                               (session['pt_company_id'],)).fetchone())
+    user = dict(conn.execute("SELECT * FROM pointage_company_users WHERE id=?",
+                            (session['pt_user_id'],)).fetchone())
+    
+    must_change = bool(user.get('must_change_password', 0))
+    
+    if request.method == 'POST':
+        old = request.form.get('old_password','') or ''
+        new1 = request.form.get('new_password','') or ''
+        new2 = request.form.get('new_password2','') or ''
+        
+        # Vérifier ancien mot de passe (sauf si forcé sans connaissance de l'ancien)
+        if not must_change:
+            old_ph = hashlib.sha256((old + (user.get('salt') or '')).encode()).hexdigest()
+            if old_ph != user['password_hash']:
+                flash("❌ Mot de passe actuel incorrect", "error")
+                conn.close()
+                return render_template('extra_pages.html', page='pt_password_change',
+                                      company=company, user=user, must_change=must_change)
+        
+        if len(new1) < 4:
+            flash("❌ Le nouveau mot de passe doit contenir au moins 4 caractères", "error")
+        elif new1 != new2:
+            flash("❌ Les deux mots de passe ne correspondent pas", "error")
+        else:
+            new_salt = _s.token_hex(8)
+            new_hash = hashlib.sha256((new1 + new_salt).encode()).hexdigest()
+            conn.execute("""UPDATE pointage_company_users SET password_hash=?, salt=?,
+                must_change_password=0, password_changed_at=? WHERE id=?""",
+                (new_hash, new_salt, datetime.now().isoformat(), user['id']))
+            conn.commit()
+            session.pop('pt_must_change_password', None)
+            flash("✅ Mot de passe modifié avec succès", "success")
+            conn.close()
+            return redirect(url_for('pointage_company_dashboard', slug=slug))
+    
+    conn.close()
+    return render_template('extra_pages.html', page='pt_password_change',
+                          company=company, user=user, must_change=must_change)
+
+
+@app.route('/admin/pointage/companies/<int:cid>/user/<int:uid>/reset-password', methods=['POST'])
+@permission_required_any('admin', 'pointage_edit')
+def admin_pointage_company_user_reset_password(cid, uid):
+    """Admin réinitialise le mot de passe d'un employé pointage.
+    Le nouveau mot de passe est saisi par l'admin OU généré aléatoirement.
+    L'employé devra le changer à sa prochaine connexion (must_change_password=1)."""
+    import hashlib, secrets as _s
+    
+    new_pw = (request.form.get('new_password','') or '').strip()
+    if not new_pw:
+        # Générer un mot de passe simple aléatoire
+        new_pw = _s.token_urlsafe(6)[:8]
+    
+    if len(new_pw) < 4:
+        flash("Le mot de passe doit contenir au moins 4 caractères", "error")
+        return redirect(url_for('admin_pointage_company_detail', cid=cid))
+    
+    conn = _gdb()
+    try:
+        u = conn.execute("SELECT full_name, username FROM pointage_company_users WHERE id=? AND company_id=?",
+                        (uid, cid)).fetchone()
+        if not u:
+            flash("Employé introuvable", "error")
+            conn.close(); return redirect(url_for('admin_pointage_company_detail', cid=cid))
+        
+        new_salt = _s.token_hex(8)
+        new_hash = hashlib.sha256((new_pw + new_salt).encode()).hexdigest()
+        conn.execute("""UPDATE pointage_company_users SET password_hash=?, salt=?,
+            must_change_password=1 WHERE id=? AND company_id=?""",
+            (new_hash, new_salt, uid, cid))
+        conn.commit()
+        flash(f"✅ Mot de passe réinitialisé pour {u['full_name']} (login: {u['username']}) — Nouveau mot de passe : {new_pw} — L'employé devra le changer à sa prochaine connexion.", "success")
+    except Exception as e:
+        flash(f"❌ Erreur : {e}", "error")
+    conn.close()
+    return redirect(url_for('admin_pointage_company_detail', cid=cid))
+
+
 @app.route('/pt/<slug>/logout')
 def pointage_company_logout(slug):
     if session.get('pt_company_slug') == slug:
         session.clear()
     flash("👋 Vous êtes déconnecté(e).", "info")
     return redirect(url_for('pointage_company_login', slug=slug))
+
+
+@app.route('/pt/<slug>/scan', methods=['GET', 'POST'])
+def pointage_company_scan(slug):
+    """Scan QR : si déjà connecté → enregistre directement le pointage.
+    Si pas connecté → redirige vers login avec ?next=scan&type=...
+    Le type de pointage vient de ?type=arrivee|pause|retour|depart."""
+    conn = _gdb()
+    company = conn.execute("SELECT * FROM pointage_companies WHERE slug=? AND COALESCE(is_active,1)=1",
+                          (slug,)).fetchone()
+    if not company:
+        conn.close()
+        return render_template('extra_pages.html', page='pt_not_found', slug=slug), 404
+    company = dict(company)
+    
+    pt_type = (request.args.get('type','arrivee') or 'arrivee').strip().lower()
+    if pt_type not in ('arrivee','pause','retour','depart'):
+        pt_type = 'arrivee'
+    
+    # Si pas connecté à cette entreprise → login avec retour vers scan
+    if session.get('pt_company_slug') != slug or not session.get('pt_user_id'):
+        conn.close()
+        # Stocker le type dans la session pour redirection après login
+        session['pt_pending_scan_type'] = pt_type
+        session['pt_pending_scan_slug'] = slug
+        flash(f"🔐 Connectez-vous pour pointer ({pt_type})", "info")
+        return redirect(url_for('pointage_company_login', slug=slug) + f'?next=scan&type={pt_type}')
+    
+    # Déjà connecté → enregistrer directement
+    user_id = session['pt_user_id']
+    user = dict(conn.execute("SELECT * FROM pointage_company_users WHERE id=?", (user_id,)).fetchone())
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    pointages_today = [dict(r) for r in conn.execute(
+        "SELECT * FROM pointage_company_records WHERE company_user_id=? AND date=? ORDER BY datetime_full",
+        (user_id, today)).fetchall()]
+    types_done = [p['type'] for p in pointages_today]
+    
+    labels = {'arrivee':"l'arrivée", 'pause':"le début de pause",
+              'retour':"le retour de pause", 'depart':"le départ"}
+    error_msg = None
+    if pt_type in types_done:
+        error_msg = f"❌ Vous avez déjà pointé {labels[pt_type]} aujourd'hui."
+    elif pt_type != 'arrivee' and 'arrivee' not in types_done:
+        error_msg = f"⛔ Vous devez d'abord pointer votre ARRIVÉE avant de pointer {labels[pt_type]}."
+    elif pt_type == 'retour' and 'pause' not in types_done:
+        error_msg = "⛔ Vous devez d'abord pointer le DÉBUT DE PAUSE avant le retour de pause."
+    elif pt_type == 'depart' and 'pause' in types_done and 'retour' not in types_done:
+        error_msg = "⛔ Vous êtes en pause. Pointez d'abord le RETOUR DE PAUSE avant votre départ."
+    
+    if error_msg:
+        conn.close()
+        flash(error_msg, "warning")
+        return redirect(url_for('pointage_company_dashboard', slug=slug))
+    
+    # Enregistrer
+    from models import compute_penalty
+    now = datetime.now()
+    time_str = now.strftime('%H:%M')
+    expected_field = {'arrivee':'heure_arrivee','pause':'heure_pause',
+                      'retour':'heure_retour','depart':'heure_depart'}[pt_type]
+    expected = user.get(expected_field, '08:00')
+    tol = int(user.get('tolerance_retard_minutes', 10) or 10)
+    try:
+        eh, em = expected.split(':')[:2]
+        ah, am = time_str.split(':')[:2]
+        ecart = (int(ah)*60+int(am)) - (int(eh)*60+int(em))
+    except: ecart = 0
+    if pt_type in ('arrivee','retour'):
+        status = 'retard' if ecart > tol else ('avance' if ecart < -tol else 'normal')
+    else:
+        status = 'avance' if ecart < -tol else ('retard' if ecart > tol else 'normal')
+    pen = 0
+    if status == 'retard' and pt_type == 'arrivee':
+        pen = compute_penalty(ecart, company['penalty_per_minute'] or 0,
+                            company['grace_minutes'] or 0)
+    
+    try:
+        conn.execute("""INSERT INTO pointage_company_records
+            (company_id, company_user_id, type, date, time, datetime_full,
+             status, ecart_minutes, penalty_amount, ip, user_agent, method)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (company['id'], user_id, pt_type, today, time_str, now.isoformat(),
+             status, ecart, pen, request.remote_addr,
+             (request.headers.get('User-Agent','') or '')[:200], 'qr'))
+        conn.commit()
+        if status == 'retard':
+            flash(f"⚠️ {pt_type} enregistré à {time_str} — Retard {ecart}min" + (f" — Pénalité {pen:.0f} F CFA" if pen else ""), "warning")
+        elif status == 'avance':
+            flash(f"✅ {pt_type} à {time_str} — Avance {abs(ecart)}min", "info")
+        else:
+            flash(f"✅ {pt_type} enregistré à {time_str}", "success")
+    except Exception as e:
+        flash(f"❌ Erreur : {e}", "error")
+    conn.close()
+    return redirect(url_for('pointage_company_dashboard', slug=slug))
+
+
+@app.route('/admin/pointage/companies/<int:cid>/qr')
+@permission_required_any('admin', 'pointage_edit')
+def admin_pointage_company_qr(cid):
+    """Génère les QR codes spécifiques à une entreprise pointage.
+    Chaque QR pointe vers /pt/<slug>/scan?type=... (URL absolue avec host_url)."""
+    conn = _gdb()
+    company = conn.execute("SELECT * FROM pointage_companies WHERE id=?", (cid,)).fetchone()
+    if not company:
+        flash("Entreprise introuvable", "error")
+        conn.close(); return redirect(url_for('admin_pointage_companies_list'))
+    company = dict(company)
+    conn.close()
+    
+    base_url = request.host_url.rstrip('/')
+    types = [
+        ('arrivee', '🟢 Arrivée', '#2e7d32'),
+        ('pause', '🟡 Pause', '#f29f2f'),
+        ('retour', '🔵 Retour', '#1a7a6d'),
+        ('depart', '🔴 Départ', '#c53030'),
+    ]
+    qrs = []
+    for t, label, color in types:
+        url = f"{base_url}/pt/{company['slug']}/scan?type={t}"
+        qr_data_uri = ''
+        try:
+            import qrcode, io, base64
+            qr = qrcode.QRCode(version=1, box_size=10, border=2)
+            qr.add_data(url); qr.make(fit=True)
+            img = qr.make_image(fill_color=color, back_color="white")
+            buf = io.BytesIO(); img.save(buf, format='PNG')
+            qr_data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+        except Exception as e:
+            print(f"QR err: {e}")
+        qrs.append({'type': t, 'label': label, 'url': url, 'qr': qr_data_uri, 'color': color})
+    
+    return render_template('extra_pages.html', page='pt_company_qr',
+                          company=company, qrs=qrs, base_url=base_url)
 
 
 DEPARTMENTS = ['Administration', 'Direction Générale', 'Ressources Humaines',

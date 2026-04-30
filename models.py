@@ -3925,6 +3925,22 @@ def migrate_v59():
     conn.commit(); conn.close()
 
 
+def migrate_v60():
+    """v60 : Ajoute must_change_password aux employés pointage et utilisateurs internes."""
+    conn = get_db()
+    # Pointage company users
+    try: conn.execute("ALTER TABLE pointage_company_users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+    except: pass
+    try: conn.execute("ALTER TABLE pointage_company_users ADD COLUMN password_changed_at TEXT")
+    except: pass
+    # Users internes
+    try: conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+    except: pass
+    try: conn.execute("ALTER TABLE users ADD COLUMN password_changed_at TEXT")
+    except: pass
+    conn.commit(); conn.close()
+
+
 # ======================== SERVICES COMPTABLES ========================
 
 def compta_periode_est_ouverte(annee, mois):

@@ -2358,7 +2358,8 @@ function getMyPos(){
 {% elif page == 'pointage_company_detail' %}
 <div class="page-header">
     <h1>🏢 {{ company.name }}</h1>
-    <div style="display:flex;gap:6px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a href="/admin/pointage/companies/{{ company.id }}/qr" target="_blank" class="btn btn-sm" style="background:#7b1fa2;color:#fff">📱 QR codes pointage</a>
         <a href="/pt/{{ company.slug }}" target="_blank" class="btn btn-outline btn-sm">🚪 Voir login employé</a>
         <a href="/admin/pointage/companies" class="btn btn-outline btn-sm">← Liste</a>
         <form method="post" action="/admin/pointage/companies/{{ company.id }}/delete" style="display:inline" onsubmit="return confirm('⚠️ ATTENTION ⚠️\n\nSupprimer DÉFINITIVEMENT l\'entreprise « {{ company.name }} » va effacer :\n• L\'entreprise elle-même\n• TOUS ses employés\n• TOUS leurs pointages\n• Toutes les alertes associées\n\nCette action est IRRÉVERSIBLE.\n\nÊtes-vous absolument sûr ?')">
@@ -2459,6 +2460,7 @@ function getMyPos(){
             <button type="submit" class="btn btn-sm" style="background:#f29f2f;color:#fff;font-size:10px" title="Reset password">🔑</button>
         </form>
         <a href="/admin/pointage/companies/{{ company.id }}/user/{{ u.id }}/toggle" class="btn btn-sm" style="background:#888;color:#fff;font-size:10px" title="Activer/Désactiver">{% if u.is_active %}⏸️{% else %}▶️{% endif %}</a>
+        <button type="button" class="btn btn-sm" style="background:#7b1fa2;color:#fff;font-size:10px" title="Réinitialiser mot de passe" onclick="document.getElementById('resetPwd_{{ u.id }}').style.display='flex'">🔑</button>
         <form method="post" action="/admin/pointage/companies/{{ company.id }}/user/{{ u.id }}/delete" style="display:inline" onsubmit="return confirm('⚠️ Supprimer DÉFINITIVEMENT {{ u.full_name }} et TOUS ses pointages ? Cette action est irréversible.')">
             <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px" title="Supprimer définitivement">🗑️</button>
         </form>
@@ -2471,6 +2473,27 @@ function getMyPos(){
 <div style="text-align:center;padding:30px;color:#888">Aucun employé. Ajoutez-en avec le formulaire ci-dessus.</div>
 {% endif %}
 </div></div>
+
+<!-- Modales de réinitialisation mot de passe (1 par employé) -->
+{% for u in users %}
+<div id="resetPwd_{{ u.id }}" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:10px;padding:20px;max-width:480px;width:92%">
+    <h3 style="margin:0 0 8px;color:#7b1fa2">🔑 Réinitialiser mot de passe</h3>
+    <p style="font-size:12px;color:#666;margin-bottom:14px">Employé : <strong>{{ u.full_name }}</strong> (login : <code>{{ u.username }}</code>)<br><br>
+    Saisissez un nouveau mot de passe (ou laissez vide pour en générer un automatiquement). L'employé devra le changer à sa prochaine connexion.</p>
+    <form method="post" action="/admin/pointage/companies/{{ company.id }}/user/{{ u.id }}/reset-password">
+        <div style="margin-bottom:14px">
+            <label style="font-size:11px;color:#888;display:block">Nouveau mot de passe</label>
+            <input type="text" name="new_password" placeholder="Laissez vide pour génération auto" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px;font-family:monospace">
+            <p style="font-size:10px;color:#aaa;margin-top:4px">Min. 4 caractères. Le mot de passe sera affiché clairement après validation pour le communiquer à l'employé.</p>
+        </div>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('resetPwd_{{ u.id }}').style.display='none'">Annuler</button>
+            <button type="submit" class="btn btn-sm" style="background:#7b1fa2;color:#fff">🔑 Réinitialiser</button>
+        </div>
+    </form>
+</div></div>
+{% endfor %}
 
 <!-- Pointages récents -->
 <h3 style="font-size:13px;color:#1a3a5c;margin:14px 0 8px">📋 Pointages récents</h3>
@@ -3142,6 +3165,106 @@ function getMyPos(){
 </p>
 </div></div>
 
+{% elif page == 'pt_company_qr' %}
+<style>
+.qr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:18px}
+.qr-card{background:#fff;border-radius:12px;padding:20px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,0.08);border-top:5px solid var(--c)}
+.qr-card h3{margin:0 0 10px;font-size:18px;color:var(--c)}
+.qr-card img{width:240px;height:240px;display:block;margin:0 auto 10px;border:1px solid #f0f0f0;border-radius:8px}
+.qr-card .qr-link{font-size:10px;color:#888;word-break:break-all;font-family:monospace;background:#f5f5f5;padding:6px 8px;border-radius:6px}
+.qr-card .qr-instr{font-size:11px;color:#666;margin-top:8px}
+@media print {
+    .no-print{display:none}
+    body{background:#fff}
+    .main{margin:0!important;padding:10px!important}
+    .qr-grid{grid-template-columns:1fr 1fr;gap:8px}
+    .qr-card{box-shadow:none;border:1px solid #ccc;page-break-inside:avoid}
+    .qr-card img{width:200px;height:200px}
+}
+</style>
+<div class="page-header no-print">
+    <h1>📱 QR codes — {{ company.name }}</h1>
+    <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" style="background:#1a3a5c;color:#fff" onclick="window.print()">🖨️ Imprimer</button>
+        <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Retour</a>
+    </div>
+</div>
+
+<div class="card no-print" style="background:#e0f5f1;border-left:4px solid #1A7A6D;margin-bottom:14px"><div class="card-body">
+    <strong style="color:#1A7A6D">📋 Instructions</strong>
+    <p style="font-size:12px;margin:6px 0 0;color:#555">
+    1. Imprimez cette page et affichez les QR codes dans les zones de pointage.<br>
+    2. Les employés scannent avec leur téléphone (appareil photo).<br>
+    3. <strong>S'ils ne sont pas connectés</strong> à leur compte, ils sont invités à se connecter, puis le pointage est validé automatiquement.<br>
+    4. <strong>S'ils sont déjà connectés</strong>, le pointage est enregistré immédiatement sans re-saisie.<br>
+    5. Domaine actif : <code>{{ base_url }}</code>
+    </p>
+</div></div>
+
+<div style="text-align:center;margin:20px 0">
+    <h2 style="color:#1a3a5c;margin:0">🏢 {{ company.name }}</h2>
+    <p style="color:#666;font-size:13px;margin:4px 0 0">Slug : <code>{{ company.slug }}</code></p>
+</div>
+
+<div class="qr-grid">
+{% for q in qrs %}
+<div class="qr-card" style="--c:{{ q.color }}">
+    <h3>{{ q.label }}</h3>
+    {% if q.qr %}
+    <img src="{{ q.qr }}" alt="QR {{ q.type }}">
+    {% else %}
+    <div style="padding:60px;color:#c53030">QR non disponible</div>
+    {% endif %}
+    <div class="qr-link">{{ q.url }}</div>
+    <div class="qr-instr">Scannez pour pointer : <strong>{{ q.label }}</strong></div>
+</div>
+{% endfor %}
+</div>
+
+<div style="text-align:center;margin-top:20px;font-size:11px;color:#888" class="no-print">
+    💡 Astuce : pensez à coller chaque QR code à l'endroit approprié (entrée, salle de pause, sortie...).
+</div>
+
+{% elif page == 'pt_password_change' %}
+<style>
+body{background:linear-gradient(135deg, #1a7a6d 0%, #1a3a5c 100%);min-height:100vh}
+.pwd-box{max-width:440px;margin:60px auto;background:#fff;border-radius:14px;padding:30px;box-shadow:0 4px 20px rgba(0,0,0,0.2)}
+</style>
+<div class="pwd-box">
+    <h2 style="margin:0 0 6px;color:#1a7a6d;text-align:center">🔐 Changement de mot de passe</h2>
+    <p style="text-align:center;color:#666;font-size:13px;margin:0 0 18px">{{ company.name }}</p>
+    
+    {% if must_change %}
+    <div style="background:#fff3e0;border-left:4px solid #f29f2f;padding:10px;border-radius:6px;margin-bottom:16px">
+        <strong style="color:#b8561f">⚠️ Première connexion</strong>
+        <p style="font-size:12px;margin:4px 0 0;color:#555">Pour votre sécurité, vous devez choisir un nouveau mot de passe avant d'accéder à votre espace.</p>
+    </div>
+    {% endif %}
+    
+    <p style="font-size:13px;color:#444">Bonjour <strong>{{ user.full_name }}</strong>, choisissez un mot de passe que vous serez seul(e) à connaître.</p>
+    
+    <form method="post" style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
+        {% if not must_change %}
+        <div>
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">Mot de passe actuel</label>
+            <input type="password" name="old_password" required style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:14px">
+        </div>
+        {% endif %}
+        <div>
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">Nouveau mot de passe (min. 4 caractères)</label>
+            <input type="password" name="new_password" required minlength="4" style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:14px">
+        </div>
+        <div>
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">Confirmer</label>
+            <input type="password" name="new_password2" required minlength="4" style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:14px">
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-top:10px;padding:11px;font-size:14px">🔑 Modifier mon mot de passe</button>
+        {% if not must_change %}
+        <a href="/pt/{{ company.slug }}/dashboard" style="text-align:center;font-size:12px;color:#888;text-decoration:none;margin-top:6px">← Retour au tableau de bord</a>
+        {% endif %}
+    </form>
+</div>
+
 {% elif page == 'pt_login' %}
 <style>
 body{background:linear-gradient(135deg,{{ company.primary_color or '#1a7a6d' }} 0%, #1a3a5c 100%) !important; min-height:100vh}
@@ -3201,7 +3324,10 @@ body{background:#f5f7f9 !important}
 <div class="pt-hero">
     <div style="display:flex;justify-content:space-between;align-items:start;font-size:11px;opacity:0.9">
         <span>{{ user.full_name }}{% if user.poste %} · {{ user.poste }}{% endif %}</span>
-        <a href="/pt/{{ company.slug }}/logout" style="color:#fff;background:rgba(255,255,255,0.2);padding:4px 10px;border-radius:6px;text-decoration:none;font-size:10px">↪ Déconnexion</a>
+        <span style="display:flex;gap:6px">
+            <a href="/pt/{{ company.slug }}/password" style="color:#fff;background:rgba(255,255,255,0.2);padding:4px 10px;border-radius:6px;text-decoration:none;font-size:10px">🔐 Mot de passe</a>
+            <a href="/pt/{{ company.slug }}/logout" style="color:#fff;background:rgba(255,255,255,0.2);padding:4px 10px;border-radius:6px;text-decoration:none;font-size:10px">↪ Déconnexion</a>
+        </span>
     </div>
     <h1 style="margin:6px 0 0;font-size:18px">{{ company.name }}</h1>
     <div id="liveClock" style="font-size:36px;font-weight:800;margin-top:8px;font-family:monospace">--:--:--</div>
