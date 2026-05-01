@@ -359,6 +359,8 @@ from models import migrate_v61
 migrate_v61()
 from models import migrate_v62
 migrate_v62()
+from models import migrate_v63
+migrate_v63()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -1206,72 +1208,202 @@ def dashboard():
 @permission_required('dashboard_general')
 def dashboard_general():
     """Tableau de bord général — vue consolidée de toutes les activités."""
+    from datetime import date as _date, timedelta as _td
+    today = datetime.now()
+    today_str = today.strftime('%Y-%m-%d')
+    month_start = _date(today.year, today.month, 1).strftime('%Y-%m-%d')
+    week_start = (today - _td(days=today.weekday())).strftime('%Y-%m-%d')
+    
     conn = _gdb()
     data = {}
     
-    # CRM
-    data['clients'] = conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0]
-    data['prospects'] = conn.execute("SELECT COUNT(*) FROM prospects").fetchone()[0] if 'prospects' in _get_tables() else 0
-    data['devis'] = conn.execute("SELECT COUNT(*) FROM devis").fetchone()[0]
-    data['devis_acceptes'] = conn.execute("SELECT COUNT(*) FROM devis WHERE status='accepte'").fetchone()[0]
+    def _safe(query, default=0):
+        try: return conn.execute(query).fetchone()[0] or default
+        except: return default
+    def _safe_p(query, params, default=0):
+        try: return conn.execute(query, params).fetchone()[0] or default
+        except: return default
     
-    # Comptabilité
-    data['invoices'] = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0] if 'invoices' in _get_tables() else 0
-    data['revenue'] = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='payee'").fetchone()[0] if 'invoices' in _get_tables() else 0
-    data['expenses'] = conn.execute("SELECT COALESCE(SUM(amount),0) FROM pieces_caisse").fetchone()[0] if 'pieces_caisse' in _get_tables() else 0
-    data['profit'] = data['revenue'] - data['expenses']
+    tables = _get_tables()
     
-    # RH
-    data['employees'] = conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0] if 'employees' in _get_tables() else 0
-    data['formations'] = conn.execute("SELECT COUNT(*) FROM rh_trainings").fetchone()[0] if 'rh_trainings' in _get_tables() else 0
-    data['annonces'] = conn.execute("SELECT COUNT(*) FROM rh_announcements").fetchone()[0] if 'rh_announcements' in _get_tables() else 0
-    
-    # Stock & Achats
-    data['stock_items'] = conn.execute("SELECT COUNT(*) FROM stock_items").fetchone()[0] if 'stock_items' in _get_tables() else 0
-    data['stock_value'] = conn.execute("SELECT COALESCE(SUM(quantity*unit_price),0) FROM stock_items").fetchone()[0] if 'stock_items' in _get_tables() else 0
-    data['stock_low'] = conn.execute("SELECT COUNT(*) FROM stock_items WHERE quantity<=min_stock").fetchone()[0] if 'stock_items' in _get_tables() else 0
-    data['fournisseurs'] = conn.execute("SELECT COUNT(*) FROM achats_fournisseurs").fetchone()[0] if 'achats_fournisseurs' in _get_tables() else 0
-    data['commandes'] = conn.execute("SELECT COUNT(*) FROM achats_commandes").fetchone()[0] if 'achats_commandes' in _get_tables() else 0
-    
-    # Gestion du temps
-    data['rapports'] = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] if 'jobs' in _get_tables() else 0
-    data['rapports_j'] = conn.execute("SELECT COUNT(*) FROM rapports_journaliers").fetchone()[0] if 'rapports_journaliers' in _get_tables() else 0
-    
-    # Informatique
-    data['projets'] = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0] if 'projects' in _get_tables() else 0
-    data['tickets'] = conn.execute("SELECT COUNT(*) FROM tickets").fetchone()[0] if 'tickets' in _get_tables() else 0
-    
-    # Recent activity
-    data['recent_logs'] = []
-    try:
-        data['recent_logs'] = [dict(r) for r in conn.execute("SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 15").fetchall()]
-    except: pass
-    
-    # Monthly revenue chart
-    data['monthly_rev'] = [dict(r) for r in conn.execute("""SELECT strftime('%Y-%m', created_at) as month, SUM(amount) as total 
-        FROM invoices WHERE status='payee' GROUP BY month ORDER BY month DESC LIMIT 6""").fetchall()] if 'invoices' in _get_tables() else []
-    data['monthly_rev'].reverse()
-    
-    # Invoice stats
-    data['inv_stats'] = {}
-    if 'invoices' in _get_tables():
-        for s in ('a_envoyer','envoyee','en_attente_paiement','payee'):
-            data['inv_stats'][s] = conn.execute(f"SELECT COUNT(*) FROM invoices WHERE status='{s}'").fetchone()[0]
-        data['pending_amount'] = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status IN ('envoyee','en_attente_paiement')").fetchone()[0]
+    # ========== CRM ==========
+    data['clients'] = _safe("SELECT COUNT(*) FROM clients")
+    data['clients_actifs'] = _safe("SELECT COUNT(*) FROM clients WHERE COALESCE(status,'actif')='actif'")
+    data['prospects'] = _safe("SELECT COUNT(*) FROM prospects") if 'prospects' in tables else 0
+    data['devis'] = _safe("SELECT COUNT(*) FROM devis")
+    data['devis_acceptes'] = _safe("SELECT COUNT(*) FROM devis WHERE status='accepte'")
+    data['proformas'] = _safe("SELECT COUNT(*) FROM devis WHERE doc_type='proforma'")
+    data['contrats_actifs'] = _safe("SELECT COUNT(*) FROM contrats WHERE COALESCE(status,'actif')='actif'") if 'contrats' in tables else 0
     
     # Devis stats
     data['devis_stats'] = {}
     for s in ('brouillon','envoye','accepte','refuse'):
-        data['devis_stats'][s] = conn.execute(f"SELECT COUNT(*) FROM devis WHERE status='{s}'").fetchone()[0]
+        data['devis_stats'][s] = _safe_p("SELECT COUNT(*) FROM devis WHERE status=?", (s,))
+    
+    # ========== COMPTABILITÉ ==========
+    data['invoices'] = _safe("SELECT COUNT(*) FROM invoices") if 'invoices' in tables else 0
+    data['revenue'] = float(_safe("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='payee'") if 'invoices' in tables else 0)
+    data['revenue_month'] = float(_safe_p("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='payee' AND created_at >= ?", (month_start,)) if 'invoices' in tables else 0)
+    data['expenses'] = float(_safe("SELECT COALESCE(SUM(amount),0) FROM pieces_caisse")) if 'pieces_caisse' in tables else 0
+    data['expenses_month'] = float(_safe_p("SELECT COALESCE(SUM(amount),0) FROM pieces_caisse WHERE date >= ?", (month_start,))) if 'pieces_caisse' in tables else 0
+    data['profit'] = data['revenue'] - data['expenses']
+    data['profit_month'] = data['revenue_month'] - data['expenses_month']
+    
+    # Invoice stats
+    data['inv_stats'] = {}
+    if 'invoices' in tables:
+        for s in ('a_envoyer','envoyee','en_attente_paiement','payee'):
+            data['inv_stats'][s] = _safe_p("SELECT COUNT(*) FROM invoices WHERE status=?", (s,))
+        data['pending_amount'] = float(_safe("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status IN ('envoyee','en_attente_paiement')"))
+    else:
+        data['pending_amount'] = 0
+    
+    # Compta Pro
+    data['compta_ecritures'] = _safe("SELECT COUNT(*) FROM compta_ecritures") if 'compta_ecritures' in tables else 0
+    data['compta_brouillard'] = _safe("SELECT COUNT(*) FROM compta_ecritures WHERE statut='brouillard'") if 'compta_ecritures' in tables else 0
+    data['compta_validees'] = _safe("SELECT COUNT(*) FROM compta_ecritures WHERE statut='valide'") if 'compta_ecritures' in tables else 0
+    data['compta_creances'] = float(_safe("""SELECT COALESCE(SUM(l.debit - l.credit),0) FROM compta_lignes l
+        JOIN compta_comptes c ON l.compte_numero=c.numero WHERE c.numero LIKE '411%' """)) if 'compta_lignes' in tables else 0
+    data['compta_dettes'] = float(_safe("""SELECT COALESCE(SUM(l.credit - l.debit),0) FROM compta_lignes l
+        JOIN compta_comptes c ON l.compte_numero=c.numero WHERE c.numero LIKE '401%' """)) if 'compta_lignes' in tables else 0
+    
+    # ========== TRÉSORERIE ==========
+    data['solde_caisse'] = 0
+    data['solde_banque'] = 0
+    data['mvt_entrees_mois'] = 0
+    data['mvt_sorties_mois'] = 0
+    data['nb_banques'] = 0
+    if 'tresorerie_mouvements' in tables:
+        try:
+            from models import tresorerie_solde_caisse, tresorerie_solde_banque
+            data['solde_caisse'] = float(tresorerie_solde_caisse() or 0)
+            data['solde_banque'] = float(tresorerie_solde_banque() or 0)
+        except: pass
+        data['mvt_entrees_mois'] = float(_safe_p(
+            "SELECT COALESCE(SUM(montant),0) FROM tresorerie_mouvements WHERE sens='entree' AND date >= ?",
+            (month_start,)))
+        data['mvt_sorties_mois'] = float(_safe_p(
+            "SELECT COALESCE(SUM(montant),0) FROM tresorerie_mouvements WHERE sens='sortie' AND date >= ?",
+            (month_start,)))
+    if 'tresorerie_comptes_bancaires' in tables:
+        data['nb_banques'] = _safe("SELECT COUNT(*) FROM tresorerie_comptes_bancaires WHERE COALESCE(is_active,1)=1")
+    data['tresorerie_totale'] = data['solde_caisse'] + data['solde_banque']
+    
+    # ========== POINTAGE / RH ==========
+    data['employees'] = _safe("SELECT COUNT(*) FROM employees") if 'employees' in tables else 0
+    data['users_actifs'] = _safe("SELECT COUNT(*) FROM users WHERE COALESCE(is_active,1)=1")
+    data['formations'] = _safe("SELECT COUNT(*) FROM rh_trainings") if 'rh_trainings' in tables else 0
+    data['annonces'] = _safe("SELECT COUNT(*) FROM rh_announcements") if 'rh_announcements' in tables else 0
+    data['conges_attente'] = _safe("SELECT COUNT(*) FROM rh_conges WHERE status='en_attente'") if 'rh_conges' in tables else 0
+    
+    # Pointage RAMYA
+    if 'hr_pointages' in tables:
+        data['pointages_today'] = _safe_p("SELECT COUNT(DISTINCT user_id) FROM hr_pointages WHERE date=?", (today_str,))
+        data['retards_today'] = _safe_p("SELECT COUNT(*) FROM hr_pointages WHERE date=? AND status='retard'", (today_str,))
+        data['pointages_month'] = _safe_p("SELECT COUNT(*) FROM hr_pointages WHERE date >= ?", (month_start,))
+    else:
+        data['pointages_today'] = data['retards_today'] = data['pointages_month'] = 0
+    
+    # Pointage entreprises externes
+    if 'pointage_companies' in tables:
+        data['pointage_companies'] = _safe("SELECT COUNT(*) FROM pointage_companies WHERE COALESCE(is_active,1)=1")
+        data['pointage_users'] = _safe("SELECT COUNT(*) FROM pointage_company_users WHERE COALESCE(is_active,1)=1")
+        data['pointage_companies_continu'] = _safe("SELECT COUNT(*) FROM pointage_companies WHERE COALESCE(type_pointage,'continu')='continu'")
+        data['pointage_companies_session'] = _safe("SELECT COUNT(*) FROM pointage_companies WHERE type_pointage='session'")
+    else:
+        data['pointage_companies'] = data['pointage_users'] = 0
+        data['pointage_companies_continu'] = data['pointage_companies_session'] = 0
+    
+    # Sessions
+    if 'pointage_sessions' in tables:
+        data['sessions_today'] = _safe_p("SELECT COUNT(*) FROM pointage_sessions WHERE date=?", (today_str,))
+        data['sessions_en_cours'] = _safe("SELECT COUNT(*) FROM pointage_sessions WHERE statut='en_cours'")
+        data['sessions_retard_today'] = _safe_p("SELECT COUNT(*) FROM pointage_sessions WHERE date=? AND statut='retard'", (today_str,))
+    else:
+        data['sessions_today'] = data['sessions_en_cours'] = data['sessions_retard_today'] = 0
+    
+    if 'pointage_planning_sessions' in tables:
+        data['plannings_today'] = _safe_p("SELECT COUNT(*) FROM pointage_planning_sessions WHERE date=? AND COALESCE(is_active,1)=1", (today_str,))
+        data['plannings_absents_today'] = _safe_p("SELECT COUNT(*) FROM pointage_planning_sessions WHERE date=? AND statut='absente'", (today_str,))
+    else:
+        data['plannings_today'] = data['plannings_absents_today'] = 0
+    
+    # ========== STOCK & ACHATS ==========
+    data['stock_items'] = _safe("SELECT COUNT(*) FROM stock_items") if 'stock_items' in tables else 0
+    data['stock_value'] = float(_safe("SELECT COALESCE(SUM(quantity*unit_price),0) FROM stock_items")) if 'stock_items' in tables else 0
+    data['stock_low'] = _safe("SELECT COUNT(*) FROM stock_items WHERE quantity<=min_stock") if 'stock_items' in tables else 0
+    data['fournisseurs'] = _safe("SELECT COUNT(*) FROM suppliers") if 'suppliers' in tables else _safe("SELECT COUNT(*) FROM achats_fournisseurs") if 'achats_fournisseurs' in tables else 0
+    data['achats_total_month'] = float(_safe_p("SELECT COALESCE(SUM(montant_total),0) FROM supplier_purchases WHERE date_achat >= ?", (month_start,))) if 'supplier_purchases' in tables else 0
+    data['dettes_fournisseurs'] = float(_safe("""SELECT COALESCE(SUM(montant_total - COALESCE(montant_paye,0)),0)
+        FROM supplier_purchases WHERE statut != 'paye' """)) if 'supplier_purchases' in tables else 0
+    
+    # ========== INTERVENTIONS ==========
+    data['rapports'] = _safe("SELECT COUNT(*) FROM jobs") if 'jobs' in tables else 0
+    data['rapports_month'] = _safe_p("SELECT COUNT(*) FROM jobs WHERE created_at >= ?", (month_start,)) if 'jobs' in tables else 0
+    data['rapports_j'] = _safe("SELECT COUNT(*) FROM rapports_journaliers") if 'rapports_journaliers' in tables else 0
+    data['rapports_j_today'] = _safe_p("SELECT COUNT(*) FROM rapports_journaliers WHERE date_rapport=?", (today_str,)) if 'rapports_journaliers' in tables else 0
+    data['visites_month'] = _safe_p("SELECT COUNT(*) FROM visites WHERE date_visite >= ?", (month_start,)) if 'visites' in tables else 0
+    data['interventions_today'] = _safe_p("SELECT COUNT(*) FROM resp_projet_interventions WHERE date_planifiee=?", (today_str,)) if 'resp_projet_interventions' in tables else 0
+    
+    # ========== INFORMATIQUE ==========
+    data['projets'] = _safe("SELECT COUNT(*) FROM projects") if 'projects' in tables else 0
+    data['projets_actifs'] = _safe("SELECT COUNT(*) FROM projects WHERE status IN ('en_cours','planifie')") if 'projects' in tables else 0
+    data['tickets'] = _safe("SELECT COUNT(*) FROM tickets") if 'tickets' in tables else 0
+    data['tickets_ouverts'] = _safe("SELECT COUNT(*) FROM tickets WHERE status IN ('ouvert','en_cours')") if 'tickets' in tables else 0
+    data['parc_count'] = _safe("SELECT COUNT(*) FROM it_assets") if 'it_assets' in tables else 0
+    
+    # ========== ALERTES ==========
+    data['alertes_caisse'] = _safe("SELECT COUNT(*) FROM caisse_sorties WHERE status='en_attente'") if 'caisse_sorties' in tables else 0
+    data['virements_attente'] = _safe("SELECT COUNT(*) FROM virements WHERE status='en_attente'") if 'virements' in tables else 0
+    data['absences_alertes'] = _safe("SELECT COUNT(*) FROM hr_absence_alerts WHERE COALESCE(notified,0)=0") if 'hr_absence_alerts' in tables else 0
+    
+    # ========== TRACKING ==========
+    data['vehicules'] = _safe("SELECT COUNT(*) FROM vehicules") if 'vehicules' in tables else 0
+    data['vehicules_actifs'] = _safe("SELECT COUNT(*) FROM vehicules WHERE COALESCE(is_active,1)=1") if 'vehicules' in tables else 0
+    
+    # ========== BUDGETS ==========
+    data['budgets_count'] = _safe("SELECT COUNT(*) FROM budgets WHERE COALESCE(is_active,1)=1") if 'budgets' in tables else 0
+    data['budget_consomme'] = float(_safe("SELECT COALESCE(SUM(consumed),0) FROM budgets")) if 'budgets' in tables else 0
+    data['budget_alloue'] = float(_safe("SELECT COALESCE(SUM(allocated),0) FROM budgets")) if 'budgets' in tables else 0
+    
+    # ========== ACTIVITÉS RÉCENTES ==========
+    data['recent_logs'] = []
+    try:
+        data['recent_logs'] = [dict(r) for r in conn.execute(
+            "SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 10").fetchall()]
+    except: pass
+    
+    # ========== GRAPHIQUES MENSUELS ==========
+    data['monthly_rev'] = []
+    if 'invoices' in tables:
+        try:
+            data['monthly_rev'] = [dict(r) for r in conn.execute(
+                """SELECT strftime('%Y-%m', created_at) as month, SUM(amount) as total 
+                FROM invoices WHERE status='payee' GROUP BY month ORDER BY month DESC LIMIT 6""").fetchall()]
+            data['monthly_rev'].reverse()
+        except: pass
+    
+    # Trésorerie 6 derniers mois
+    data['monthly_treso'] = []
+    if 'tresorerie_mouvements' in tables:
+        try:
+            data['monthly_treso'] = [dict(r) for r in conn.execute(
+                """SELECT strftime('%Y-%m', date) as month,
+                    SUM(CASE WHEN sens='entree' THEN montant ELSE 0 END) as entrees,
+                    SUM(CASE WHEN sens='sortie' THEN montant ELSE 0 END) as sorties
+                FROM tresorerie_mouvements GROUP BY month ORDER BY month DESC LIMIT 6""").fetchall()]
+            data['monthly_treso'].reverse()
+        except: pass
     
     # Prospect stats
     data['prospect_stats'] = {}
-    if 'prospects' in _get_tables():
+    if 'prospects' in tables:
         for s in ('nouveau','contacte','qualifie','proposition','gagne','perdu'):
-            data['prospect_stats'][s] = conn.execute(f"SELECT COUNT(*) FROM prospects WHERE status='{s}'").fetchone()[0]
+            data['prospect_stats'][s] = _safe_p("SELECT COUNT(*) FROM prospects WHERE status=?", (s,))
     
     conn.close()
-    return render_template('dashboard_general.html', page='dashboard_general', data=data)
+    return render_template('dashboard_general.html', page='dashboard_general',
+                          data=data, today=today)
 
 def _get_tables():
     from models import get_db
@@ -11728,6 +11860,204 @@ def admin_pointage_company_qr(cid):
 # 📅 POINTAGE PAR SESSION — Planning + Démarrer/Terminer
 # ============================================================
 
+@app.route('/admin/pointage/companies/<int:cid>/groupes', methods=['GET', 'POST'])
+@permission_required_any('admin', 'pointage_edit')
+def admin_pointage_company_groupes(cid):
+    """Gestion des groupes d'employés (mode continu)."""
+    from models import groupe_creer, groupe_ajouter_membre, groupe_retirer_membre
+    conn = _gdb()
+    company = conn.execute("SELECT * FROM pointage_companies WHERE id=?", (cid,)).fetchone()
+    if not company:
+        conn.close()
+        flash("Entreprise introuvable", "error")
+        return redirect(url_for('admin_pointage_companies_list'))
+    company = dict(company)
+    
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+        if action == 'add':
+            nom = (request.form.get('nom','') or '').strip()
+            desc = (request.form.get('description','') or '').strip()
+            color = (request.form.get('color','#1A7A6D') or '#1A7A6D').strip()
+            if not nom:
+                flash("Nom du groupe requis", "error")
+            else:
+                gid, err = groupe_creer(cid, nom, desc, color, session.get('user_id'))
+                if err: flash(f"❌ {err}", "error")
+                else: flash(f"✅ Groupe '{nom}' créé", "success")
+        elif action == 'delete':
+            try:
+                gid = int(request.form.get('groupe_id', 0))
+                conn.execute("DELETE FROM pointage_groupe_membres WHERE groupe_id=?", (gid,))
+                conn.execute("DELETE FROM pointage_groupes WHERE id=? AND company_id=?", (gid, cid))
+                conn.commit()
+                flash("✅ Groupe supprimé", "success")
+            except Exception as e: flash(f"❌ {e}", "error")
+        elif action == 'add_member':
+            try:
+                gid = int(request.form.get('groupe_id', 0))
+                uid = int(request.form.get('user_id', 0))
+                ok, err = groupe_ajouter_membre(gid, uid)
+                if err: flash(f"❌ {err}", "error")
+                else: flash("✅ Membre ajouté", "success")
+            except: pass
+        elif action == 'remove_member':
+            try:
+                gid = int(request.form.get('groupe_id', 0))
+                uid = int(request.form.get('user_id', 0))
+                groupe_retirer_membre(gid, uid)
+                flash("✅ Membre retiré", "info")
+            except: pass
+        conn.close()
+        return redirect(url_for('admin_pointage_company_groupes', cid=cid))
+    
+    # GET
+    groupes = [dict(r) for r in conn.execute(
+        "SELECT * FROM pointage_groupes WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY nom",
+        (cid,)).fetchall()]
+    for g in groupes:
+        g['membres'] = [dict(r) for r in conn.execute("""
+            SELECT pcu.id, pcu.full_name, pcu.username FROM pointage_groupe_membres pgm
+            JOIN pointage_company_users pcu ON pgm.company_user_id = pcu.id
+            WHERE pgm.groupe_id=? ORDER BY pcu.full_name""", (g['id'],)).fetchall()]
+    
+    users = [dict(r) for r in conn.execute(
+        "SELECT * FROM pointage_company_users WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY full_name",
+        (cid,)).fetchall()]
+    
+    conn.close()
+    return render_template('extra_pages.html', page='pt_company_groupes',
+                          company=company, groupes=groupes, users=users)
+
+
+@app.route('/admin/pointage/companies/<int:cid>/edt', methods=['GET', 'POST'])
+@permission_required_any('admin', 'pointage_edit')
+def admin_pointage_company_edt(cid):
+    """Gestion des emplois du temps (mode continu)."""
+    conn = _gdb()
+    company = conn.execute("SELECT * FROM pointage_companies WHERE id=?", (cid,)).fetchone()
+    if not company:
+        conn.close()
+        flash("Entreprise introuvable", "error")
+        return redirect(url_for('admin_pointage_companies_list'))
+    company = dict(company)
+    
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+        if action == 'add':
+            nom = (request.form.get('nom','') or '').strip()
+            heure_debut = (request.form.get('heure_debut','08:00') or '08:00').strip()
+            heure_fin = (request.form.get('heure_fin','17:00') or '17:00').strip()
+            pause_debut = (request.form.get('pause_debut','') or '').strip() or None
+            pause_fin = (request.form.get('pause_fin','') or '').strip() or None
+            jours = (request.form.get('jours_actifs','1,2,3,4,5') or '1,2,3,4,5').strip()
+            tol = int(request.form.get('tolerance_minutes', 10) or 10)
+            ppm = float(request.form.get('penalty_per_minute', 0) or 0)
+            cible = request.form.get('cible', 'individuel')  # 'individuel' ou 'groupe'
+            cible_id = request.form.get('cible_id', '')
+            
+            if not nom or not cible_id:
+                flash("Nom et cible requis", "error")
+            else:
+                user_id = int(cible_id) if cible == 'individuel' else None
+                groupe_id = int(cible_id) if cible == 'groupe' else None
+                try:
+                    conn.execute("""INSERT INTO pointage_emploi_du_temps
+                        (company_id, nom, heure_debut, heure_fin, pause_debut, pause_fin,
+                         jours_actifs, tolerance_minutes, penalty_per_minute,
+                         company_user_id, groupe_id, created_by)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (cid, nom, heure_debut, heure_fin, pause_debut, pause_fin,
+                         jours, tol, ppm, user_id, groupe_id, session.get('user_id')))
+                    conn.commit()
+                    flash(f"✅ Emploi du temps '{nom}' créé", "success")
+                except Exception as e:
+                    flash(f"❌ {e}", "error")
+        elif action == 'delete':
+            try:
+                eid = int(request.form.get('edt_id', 0))
+                conn.execute("DELETE FROM pointage_emploi_du_temps WHERE id=? AND company_id=?", (eid, cid))
+                conn.commit()
+                flash("✅ Emploi du temps supprimé", "success")
+            except: pass
+        conn.close()
+        return redirect(url_for('admin_pointage_company_edt', cid=cid))
+    
+    # GET
+    edts = [dict(r) for r in conn.execute("""
+        SELECT edt.*,
+               pcu.full_name as user_name,
+               pg.nom as groupe_nom, pg.color as groupe_color
+        FROM pointage_emploi_du_temps edt
+        LEFT JOIN pointage_company_users pcu ON edt.company_user_id = pcu.id
+        LEFT JOIN pointage_groupes pg ON edt.groupe_id = pg.id
+        WHERE edt.company_id=? AND COALESCE(edt.is_active,1)=1
+        ORDER BY edt.nom""", (cid,)).fetchall()]
+    
+    users = [dict(r) for r in conn.execute(
+        "SELECT * FROM pointage_company_users WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY full_name",
+        (cid,)).fetchall()]
+    
+    groupes = [dict(r) for r in conn.execute(
+        "SELECT * FROM pointage_groupes WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY nom",
+        (cid,)).fetchall()]
+    
+    conn.close()
+    return render_template('extra_pages.html', page='pt_company_edt',
+                          company=company, edts=edts, users=users, groupes=groupes)
+
+
+@app.route('/admin/pointage/companies/<int:cid>/entreprises-externes', methods=['GET', 'POST'])
+@permission_required_any('admin', 'pointage_edit')
+def admin_pointage_company_externes(cid):
+    """Gestion des entreprises externes (mode session) — clients/sites où on intervient."""
+    conn = _gdb()
+    company = conn.execute("SELECT * FROM pointage_companies WHERE id=?", (cid,)).fetchone()
+    if not company:
+        conn.close()
+        flash("Entreprise introuvable", "error")
+        return redirect(url_for('admin_pointage_companies_list'))
+    company = dict(company)
+    
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+        if action == 'add':
+            nom = (request.form.get('nom','') or '').strip()
+            adresse = (request.form.get('adresse','') or '').strip()
+            ctn = (request.form.get('contact_nom','') or '').strip()
+            ctt = (request.form.get('contact_tel','') or '').strip()
+            cte = (request.form.get('contact_email','') or '').strip()
+            notes = (request.form.get('notes','') or '').strip()
+            if not nom:
+                flash("Nom requis", "error")
+            else:
+                try:
+                    conn.execute("""INSERT INTO pointage_entreprises_externes
+                        (company_id, nom, adresse, contact_nom, contact_tel, contact_email, notes, created_by)
+                        VALUES (?,?,?,?,?,?,?,?)""",
+                        (cid, nom, adresse, ctn, ctt, cte, notes, session.get('user_id')))
+                    conn.commit()
+                    flash(f"✅ Entreprise externe '{nom}' ajoutée", "success")
+                except Exception as e:
+                    flash(f"❌ {e}", "error")
+        elif action == 'delete':
+            try:
+                eid = int(request.form.get('externe_id', 0))
+                conn.execute("DELETE FROM pointage_entreprises_externes WHERE id=? AND company_id=?", (eid, cid))
+                conn.commit()
+                flash("✅ Entreprise externe supprimée", "success")
+            except: pass
+        conn.close()
+        return redirect(url_for('admin_pointage_company_externes', cid=cid))
+    
+    externes = [dict(r) for r in conn.execute(
+        "SELECT * FROM pointage_entreprises_externes WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY nom",
+        (cid,)).fetchall()]
+    conn.close()
+    return render_template('extra_pages.html', page='pt_company_externes',
+                          company=company, externes=externes)
+
+
 @app.route('/admin/pointage/companies/<int:cid>/planning', methods=['GET', 'POST'])
 @permission_required_any('admin', 'pointage_edit')
 def admin_pointage_company_planning(cid):
@@ -11753,6 +12083,16 @@ def admin_pointage_company_planning(cid):
                 client_nom = (request.form.get('client_nom', '') or '').strip()
                 tol = int(request.form.get('tolerance_minutes', 15) or 15)
                 ppm = float(request.form.get('penalty_per_minute', 0) or 0)
+                ext_id = request.form.get('entreprise_externe_id', '').strip()
+                ext_id = int(ext_id) if ext_id and ext_id.isdigit() else None
+                
+                # Si entreprise externe sélectionnée, prend son nom comme client_nom si vide
+                if ext_id and not client_nom:
+                    ext = conn.execute("SELECT nom, adresse FROM pointage_entreprises_externes WHERE id=?", (ext_id,)).fetchone()
+                    if ext:
+                        client_nom = ext['nom']
+                        if not lieu and ext['adresse']:
+                            lieu = ext['adresse']
                 
                 if not date or not heure or not user_id:
                     flash("❌ Date, heure et employé requis", "error")
@@ -11760,10 +12100,10 @@ def admin_pointage_company_planning(cid):
                     conn.execute("""INSERT INTO pointage_planning_sessions
                         (company_id, company_user_id, date, heure_prevue, duree_minutes,
                          libelle, lieu, client_nom, tolerance_minutes, penalty_per_minute,
-                         statut, created_by)
-                        VALUES (?,?,?,?,?,?,?,?,?,?, 'prevue', ?)""",
+                         entreprise_externe_id, statut, created_by)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?, 'prevue', ?)""",
                         (cid, user_id, date, heure, duree, libelle, lieu, client_nom,
-                         tol, ppm, session.get('user_id')))
+                         tol, ppm, ext_id, session.get('user_id')))
                     conn.commit()
                     flash(f"✅ Session planifiée le {date} à {heure}", "success")
             except Exception as e:
@@ -11785,29 +12125,55 @@ def admin_pointage_company_planning(cid):
         conn.close()
         return redirect(url_for('admin_pointage_company_planning', cid=cid))
     
-    # GET : afficher planning du jour ou semaine
+    # GET : afficher planning jour/semaine/mois
+    from datetime import date as _date, timedelta as _td
     date_filter = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
+    view = request.args.get('view', 'jour')  # jour | semaine | mois
     
     users = [dict(r) for r in conn.execute(
         "SELECT * FROM pointage_company_users WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY full_name",
         (cid,)).fetchall()]
     
+    externes = [dict(r) for r in conn.execute(
+        "SELECT * FROM pointage_entreprises_externes WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY nom",
+        (cid,)).fetchall()]
+    
+    # Calcul plage de dates selon view
+    try:
+        d = _date.fromisoformat(date_filter)
+    except: d = _date.today()
+    
+    if view == 'semaine':
+        start = d - _td(days=d.weekday())
+        end = start + _td(days=6)
+    elif view == 'mois':
+        start = d.replace(day=1)
+        if d.month == 12: end = _date(d.year + 1, 1, 1) - _td(days=1)
+        else: end = _date(d.year, d.month + 1, 1) - _td(days=1)
+    else:
+        start = end = d
+    
     plannings = [dict(r) for r in conn.execute("""
-        SELECT pps.*, pcu.full_name as user_name
+        SELECT pps.*, pcu.full_name as user_name,
+               pee.nom as externe_nom, pee.adresse as externe_adresse
         FROM pointage_planning_sessions pps
         LEFT JOIN pointage_company_users pcu ON pps.company_user_id = pcu.id
-        WHERE pps.company_id=? AND pps.date=? AND COALESCE(pps.is_active,1)=1
-        ORDER BY pps.heure_prevue""", (cid, date_filter)).fetchall()]
+        LEFT JOIN pointage_entreprises_externes pee ON pps.entreprise_externe_id = pee.id
+        WHERE pps.company_id=? AND pps.date BETWEEN ? AND ? AND COALESCE(pps.is_active,1)=1
+        ORDER BY pps.date, pps.heure_prevue""",
+        (cid, start.isoformat(), end.isoformat())).fetchall()]
     
-    # Sessions réalisées (pour stats du jour)
+    # Sessions réalisées sur la plage
     sessions_real = [dict(r) for r in conn.execute("""
-        SELECT * FROM pointage_sessions WHERE company_id=? AND date=?""",
-        (cid, date_filter)).fetchall()]
+        SELECT * FROM pointage_sessions WHERE company_id=? AND date BETWEEN ? AND ?""",
+        (cid, start.isoformat(), end.isoformat())).fetchall()]
     
     conn.close()
     return render_template('extra_pages.html', page='pt_company_planning',
                           company=company, users=users, plannings=plannings,
-                          sessions_real=sessions_real, date_filter=date_filter)
+                          sessions_real=sessions_real, date_filter=date_filter,
+                          view=view, range_start=start.isoformat(), range_end=end.isoformat(),
+                          externes=externes)
 
 
 @app.route('/pt/<slug>/session/start/<int:planning_id>', methods=['GET', 'POST'])

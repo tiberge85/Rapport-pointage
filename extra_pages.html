@@ -2381,6 +2381,10 @@ function getMyPos(){
         <a href="/admin/pointage/companies/{{ company.id }}/qr" target="_blank" class="btn btn-sm" style="background:#7b1fa2;color:#fff">📱 QR codes pointage</a>
         {% if company.type_pointage == 'session' %}
         <a href="/admin/pointage/companies/{{ company.id }}/planning" class="btn btn-sm" style="background:#1976d2;color:#fff">📅 Planning sessions</a>
+        <a href="/admin/pointage/companies/{{ company.id }}/entreprises-externes" class="btn btn-sm" style="background:#1A7A6D;color:#fff">🏢 Entreprises externes</a>
+        {% else %}
+        <a href="/admin/pointage/companies/{{ company.id }}/edt" class="btn btn-sm" style="background:#1976d2;color:#fff">🕒 Emplois du temps</a>
+        <a href="/admin/pointage/companies/{{ company.id }}/groupes" class="btn btn-sm" style="background:#1A7A6D;color:#fff">👥 Groupes</a>
         {% endif %}
         <a href="/pt/{{ company.slug }}" target="_blank" class="btn btn-outline btn-sm">🚪 Voir login employé</a>
         <a href="/admin/pointage/companies" class="btn btn-outline btn-sm">← Liste</a>
@@ -3207,6 +3211,241 @@ function getMyPos(){
 </p>
 </div></div>
 
+{% elif page == 'pt_company_groupes' %}
+<style>
+.gr-card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:14px;border-left:4px solid var(--c, #1A7A6D)}
+.gr-membre{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:#f5f7f9;border-radius:14px;font-size:11px;margin:3px}
+</style>
+<div class="page-header">
+    <h1>👥 Groupes — {{ company.name }}</h1>
+    <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Fiche entreprise</a>
+</div>
+
+<div class="gr-card" style="background:#e0f5f1;border-color:#1A7A6D">
+    <strong style="color:#1A7A6D">💡 À quoi sert un groupe ?</strong>
+    <p style="font-size:12px;margin:6px 0 0;color:#555">Les groupes permettent d'attribuer un emploi du temps unique à plusieurs employés en une seule fois (ex: équipe matin, équipe nuit, techniciens itinérants...).</p>
+</div>
+
+<div class="card" style="margin-bottom:14px"><div class="card-body">
+    <h3 style="margin-top:0">+ Nouveau groupe</h3>
+    <form method="post" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;align-items:end">
+        <input type="hidden" name="action" value="add">
+        <div><label style="font-size:11px;color:#888">Nom du groupe *</label>
+            <input name="nom" required placeholder="Ex: Équipe matin" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div style="grid-column:span 2"><label style="font-size:11px;color:#888">Description</label>
+            <input name="description" placeholder="Description optionnelle" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div><label style="font-size:11px;color:#888">Couleur</label>
+            <input type="color" name="color" value="#1A7A6D" style="width:100%;height:36px;padding:2px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <button type="submit" class="btn btn-primary btn-sm">+ Créer</button>
+    </form>
+</div></div>
+
+<h3 style="font-size:13px;color:#1a3a5c;margin:14px 0 8px">📋 Groupes ({{ groupes|length }})</h3>
+{% for g in groupes %}
+<div class="gr-card" style="--c:{{ g.color or '#1A7A6D' }}">
+    <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px">
+        <div>
+            <h3 style="margin:0;color:{{ g.color or '#1A7A6D' }}">👥 {{ g.nom }}</h3>
+            {% if g.description %}<p style="font-size:11px;color:#666;margin:2px 0 6px">{{ g.description }}</p>{% endif %}
+        </div>
+        <form method="post" style="display:inline" onsubmit="return confirm('Supprimer le groupe « {{ g.nom }} » ?')">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="groupe_id" value="{{ g.id }}">
+            <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px">🗑️</button>
+        </form>
+    </div>
+    
+    <div style="margin:8px 0">
+        <strong style="font-size:11px;color:#888">Membres ({{ g.membres|length }}) :</strong><br>
+        {% for m in g.membres %}
+        <span class="gr-membre">
+            {{ m.full_name }}
+            <form method="post" style="display:inline">
+                <input type="hidden" name="action" value="remove_member">
+                <input type="hidden" name="groupe_id" value="{{ g.id }}">
+                <input type="hidden" name="user_id" value="{{ m.id }}">
+                <button type="submit" style="background:none;border:none;color:#c53030;cursor:pointer;font-size:11px" title="Retirer">✕</button>
+            </form>
+        </span>
+        {% else %}
+        <span style="font-size:11px;color:#888;font-style:italic">Aucun membre</span>
+        {% endfor %}
+    </div>
+    
+    <form method="post" style="display:flex;gap:6px;align-items:end">
+        <input type="hidden" name="action" value="add_member">
+        <input type="hidden" name="groupe_id" value="{{ g.id }}">
+        <select name="user_id" required style="padding:6px;border:1.5px solid #ddd;border-radius:6px;font-size:12px">
+            <option value="">Ajouter un membre...</option>
+            {% for u in users %}
+            {% set in_group = false %}
+            {% for m in g.membres %}{% if m.id == u.id %}{% set in_group = true %}{% endif %}{% endfor %}
+            {% if not in_group %}<option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>{% endif %}
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-sm" style="background:{{ g.color or '#1A7A6D' }};color:#fff;font-size:11px">+ Ajouter</button>
+    </form>
+</div>
+{% else %}
+<div style="text-align:center;padding:30px;color:#888;background:#fff;border-radius:10px">Aucun groupe créé. Créez-en un avec le formulaire ci-dessus.</div>
+{% endfor %}
+
+{% elif page == 'pt_company_edt' %}
+<style>
+.edt-card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:10px;border-left:4px solid #1976d2}
+.edt-time{font-family:monospace;font-size:14px;font-weight:700;color:#1a3a5c}
+.edt-jour{display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:4px;font-size:9px;font-weight:700;margin:0 1px}
+.edt-jour.on{background:#1976d2;color:#fff}
+.edt-jour.off{background:#eee;color:#aaa}
+</style>
+<div class="page-header">
+    <h1>🕒 Emplois du temps — {{ company.name }}</h1>
+    <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Fiche entreprise</a>
+</div>
+
+<div class="edt-card" style="background:#e3f2fd;border-color:#1976d2">
+    <strong style="color:#1976d2">💡 Comment ça fonctionne ?</strong>
+    <p style="font-size:12px;margin:6px 0 0;color:#555">Créez des modèles d'horaires (ex: "8h-17h avec pause 12h-13h, lundi-vendredi"). Attribuez chaque modèle à un employé OU à un groupe entier. Le système applique automatiquement l'horaire pour calculer retards et heures supplémentaires.</p>
+</div>
+
+<div class="card" style="margin-bottom:14px"><div class="card-body">
+    <h3 style="margin-top:0">+ Nouvel emploi du temps</h3>
+    <form method="post" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;align-items:end">
+        <input type="hidden" name="action" value="add">
+        <div style="grid-column:span 2"><label style="font-size:11px;color:#888">Nom *</label>
+            <input name="nom" required placeholder="Ex: Horaire bureau standard" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div><label style="font-size:11px;color:#888">Heure début *</label>
+            <input type="time" name="heure_debut" value="08:00" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div><label style="font-size:11px;color:#888">Heure fin *</label>
+            <input type="time" name="heure_fin" value="17:00" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div><label style="font-size:11px;color:#888">Pause début</label>
+            <input type="time" name="pause_debut" value="12:00" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div><label style="font-size:11px;color:#888">Pause fin</label>
+            <input type="time" name="pause_fin" value="13:00" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div><label style="font-size:11px;color:#888">Tolérance retard (min)</label>
+            <input type="number" name="tolerance_minutes" value="10" min="0" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div><label style="font-size:11px;color:#888">Pénalité F/min</label>
+            <input type="number" name="penalty_per_minute" value="0" min="0" step="50" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div style="grid-column:span 2"><label style="font-size:11px;color:#888">Jours actifs (1=Lun, 2=Mar... 7=Dim)</label>
+            <input name="jours_actifs" value="1,2,3,4,5" placeholder="1,2,3,4,5" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px;font-family:monospace"></div>
+        <div><label style="font-size:11px;color:#888">Cible</label>
+            <select name="cible" id="edtCible" onchange="document.getElementById('edtCibleId').innerHTML=this.value=='groupe'?document.getElementById('groupesOpts').innerHTML:document.getElementById('usersOpts').innerHTML" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                <option value="individuel">👤 Employé individuel</option>
+                <option value="groupe">👥 Groupe entier</option>
+            </select></div>
+        <div style="grid-column:span 2"><label style="font-size:11px;color:#888">Cible (employé/groupe) *</label>
+            <select name="cible_id" id="edtCibleId" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                <option value="">-- Choisir --</option>
+                {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>{% endfor %}
+            </select></div>
+        <button type="submit" class="btn btn-primary btn-sm">+ Créer</button>
+    </form>
+    <select id="usersOpts" style="display:none">
+        <option value="">-- Choisir un employé --</option>
+        {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>{% endfor %}
+    </select>
+    <select id="groupesOpts" style="display:none">
+        <option value="">-- Choisir un groupe --</option>
+        {% for g in groupes %}<option value="{{ g.id }}">{{ g.nom }}</option>{% endfor %}
+    </select>
+</div></div>
+
+<h3 style="font-size:13px;color:#1a3a5c;margin:14px 0 8px">📋 Emplois du temps ({{ edts|length }})</h3>
+{% for e in edts %}
+<div class="edt-card">
+    <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px">
+        <div>
+            <h3 style="margin:0;color:#1976d2">🕒 {{ e.nom }}</h3>
+            <div style="margin-top:6px;font-size:13px">
+                <span class="edt-time">⏰ {{ e.heure_debut }} → {{ e.heure_fin }}</span>
+                {% if e.pause_debut and e.pause_fin %}
+                <span style="font-size:11px;color:#888;margin-left:8px">☕ Pause {{ e.pause_debut }} - {{ e.pause_fin }}</span>
+                {% endif %}
+            </div>
+            <div style="margin-top:4px">
+                {% set jours_list = (e.jours_actifs or '1,2,3,4,5').split(',') %}
+                {% for j_num in ['1','2','3','4','5','6','7'] %}
+                {% set jour_label = {'1':'L','2':'M','3':'M','4':'J','5':'V','6':'S','7':'D'}[j_num] %}
+                <span class="edt-jour {% if j_num in jours_list %}on{% else %}off{% endif %}">{{ jour_label }}</span>
+                {% endfor %}
+                <span style="font-size:11px;color:#888;margin-left:8px">Tolérance {{ e.tolerance_minutes }}min{% if e.penalty_per_minute %} · {{ "{:,.0f}".format(e.penalty_per_minute) }}F/min retard{% endif %}</span>
+            </div>
+            <div style="margin-top:6px;font-size:11px">
+                {% if e.user_name %}
+                <span style="background:#e3f2fd;color:#1976d2;padding:3px 8px;border-radius:6px">👤 {{ e.user_name }}</span>
+                {% elif e.groupe_nom %}
+                <span style="background:{{ e.groupe_color or '#1A7A6D' }};color:#fff;padding:3px 8px;border-radius:6px">👥 {{ e.groupe_nom }}</span>
+                {% else %}
+                <span style="color:#c53030;font-size:11px">⚠️ Aucune cible</span>
+                {% endif %}
+            </div>
+        </div>
+        <form method="post" style="display:inline" onsubmit="return confirm('Supprimer « {{ e.nom }} » ?')">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="edt_id" value="{{ e.id }}">
+            <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px">🗑️</button>
+        </form>
+    </div>
+</div>
+{% else %}
+<div style="text-align:center;padding:30px;color:#888;background:#fff;border-radius:10px">Aucun emploi du temps. Créez-en un avec le formulaire ci-dessus.</div>
+{% endfor %}
+
+{% elif page == 'pt_company_externes' %}
+<style>
+.ext-card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:10px;border-left:4px solid #1A7A6D}
+</style>
+<div class="page-header">
+    <h1>🏢 Entreprises externes — {{ company.name }}</h1>
+    <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Fiche entreprise</a>
+</div>
+
+<div class="ext-card" style="background:#e0f5f1;border-color:#1A7A6D">
+    <strong style="color:#1A7A6D">💡 Pourquoi enregistrer des entreprises externes ?</strong>
+    <p style="font-size:12px;margin:6px 0 0;color:#555">Pour les entreprises en mode "Pointage par session" (techniciens itinérants), enregistrez vos clients/sites récurrents. Vous pourrez ensuite leur attribuer des plannings d'intervention rapidement, sans re-saisir l'adresse à chaque fois.</p>
+</div>
+
+<div class="card" style="margin-bottom:14px"><div class="card-body">
+    <h3 style="margin-top:0">+ Nouvelle entreprise externe</h3>
+    <form method="post" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;align-items:end">
+        <input type="hidden" name="action" value="add">
+        <div style="grid-column:span 2"><label style="font-size:11px;color:#888">Nom *</label>
+            <input name="nom" required placeholder="Ex: Banque XYZ, Hôtel ABC..." style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div style="grid-column:span 2"><label style="font-size:11px;color:#888">Adresse</label>
+            <input name="adresse" placeholder="Cocody, Abidjan" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div><label style="font-size:11px;color:#888">Contact (nom)</label>
+            <input name="contact_nom" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div><label style="font-size:11px;color:#888">Téléphone</label>
+            <input name="contact_tel" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div><label style="font-size:11px;color:#888">Email</label>
+            <input type="email" name="contact_email" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div style="grid-column:span 2"><label style="font-size:11px;color:#888">Notes</label>
+            <input name="notes" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <button type="submit" class="btn btn-primary btn-sm">+ Ajouter</button>
+    </form>
+</div></div>
+
+<h3 style="font-size:13px;color:#1a3a5c;margin:14px 0 8px">📋 Entreprises externes ({{ externes|length }})</h3>
+{% for e in externes %}
+<div class="ext-card">
+    <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px">
+        <div>
+            <h3 style="margin:0;color:#1A7A6D">🏢 {{ e.nom }}</h3>
+            {% if e.adresse %}<div style="font-size:11px;color:#666;margin-top:2px">📍 {{ e.adresse }}</div>{% endif %}
+            {% if e.contact_nom %}<div style="font-size:11px;color:#666;margin-top:4px">👤 {{ e.contact_nom }}{% if e.contact_tel %} · 📞 {{ e.contact_tel }}{% endif %}{% if e.contact_email %} · ✉️ {{ e.contact_email }}{% endif %}</div>{% endif %}
+            {% if e.notes %}<div style="font-size:11px;color:#888;margin-top:4px;font-style:italic">{{ e.notes }}</div>{% endif %}
+        </div>
+        <form method="post" style="display:inline" onsubmit="return confirm('Supprimer « {{ e.nom }} » ?')">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="externe_id" value="{{ e.id }}">
+            <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px">🗑️</button>
+        </form>
+    </div>
+</div>
+{% else %}
+<div style="text-align:center;padding:30px;color:#888;background:#fff;border-radius:10px">Aucune entreprise externe enregistrée.</div>
+{% endfor %}
+
 {% elif page == 'pt_company_planning' %}
 <style>
 .pl-card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:14px}
@@ -3235,18 +3474,29 @@ function getMyPos(){
 {% endif %}
 
 <form method="get" class="pl-card" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
-    <div><label style="font-size:11px;color:#888;display:block">Date</label>
+    <div><label style="font-size:11px;color:#888;display:block">Date de référence</label>
         <input type="date" name="date" value="{{ date_filter }}" onchange="this.form.submit()" style="padding:7px;border:1.5px solid #ddd;border-radius:6px"></div>
+    <div><label style="font-size:11px;color:#888;display:block">Affichage</label>
+        <select name="view" onchange="this.form.submit()" style="padding:7px;border:1.5px solid #ddd;border-radius:6px">
+            <option value="jour" {% if view=='jour' %}selected{% endif %}>📆 Jour</option>
+            <option value="semaine" {% if view=='semaine' %}selected{% endif %}>📅 Semaine</option>
+            <option value="mois" {% if view=='mois' %}selected{% endif %}>🗓️ Mois</option>
+        </select></div>
     <div style="flex:1"></div>
     <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('newPlanModal').style.display='flex'">+ Planifier une session</button>
 </form>
 
-<h3 style="font-size:14px;color:#1a3a5c;margin:14px 0 8px">📋 Sessions planifiées le {{ date_filter }} ({{ plannings|length }})</h3>
+{% if view == 'jour' %}
+<h3 style="font-size:14px;color:#1a3a5c;margin:14px 0 8px">📋 Sessions le {{ date_filter }} ({{ plannings|length }})</h3>
+{% else %}
+<h3 style="font-size:14px;color:#1a3a5c;margin:14px 0 8px">📋 Sessions du {{ range_start }} au {{ range_end }} ({{ plannings|length }})</h3>
+{% endif %}
 
 <div class="pl-card" style="padding:0">
 {% if plannings %}
 <table style="width:100%;font-size:12px;border-collapse:collapse">
 <thead><tr style="background:#1a3a5c;color:#fff">
+    {% if view != 'jour' %}<th style="padding:8px;text-align:left">Date</th>{% endif %}
     <th style="padding:8px;text-align:left">Heure</th>
     <th style="padding:8px;text-align:left">Durée</th>
     <th style="padding:8px;text-align:left">Employé</th>
@@ -3258,11 +3508,12 @@ function getMyPos(){
 <tbody>
 {% for p in plannings %}
 <tr style="border-bottom:1px solid #f0f0f0">
+    {% if view != 'jour' %}<td style="padding:6px 8px;font-family:monospace;font-size:11px">{{ p.date }}</td>{% endif %}
     <td style="padding:6px 8px"><span class="pl-time">{{ p.heure_prevue }}</span></td>
     <td style="padding:6px 8px;font-size:11px">{{ p.duree_minutes }}min</td>
     <td style="padding:6px 8px"><strong>{{ p.user_name or '—' }}</strong></td>
     <td style="padding:6px 8px">{{ p.libelle or '—' }}</td>
-    <td style="padding:6px 8px;font-size:11px">{% if p.client_nom %}👤 {{ p.client_nom }}<br>{% endif %}{% if p.lieu %}📍 {{ p.lieu }}{% endif %}</td>
+    <td style="padding:6px 8px;font-size:11px">{% if p.externe_nom %}🏢 {{ p.externe_nom }}<br>{% elif p.client_nom %}👤 {{ p.client_nom }}<br>{% endif %}{% if p.lieu %}📍 {{ p.lieu }}{% endif %}</td>
     <td style="padding:6px 8px"><span class="pl-st-{{ p.statut }}">{{ p.statut }}</span></td>
     <td style="padding:6px 8px;text-align:right;white-space:nowrap">
         {% if p.statut == 'prevue' %}
@@ -3312,8 +3563,18 @@ function getMyPos(){
             <label style="font-size:11px;color:#888">Libellé / Mission</label>
             <input name="libelle" placeholder="Ex: Maintenance caméra rue X" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
         </div>
+        {% if externes %}
+        <div style="margin-bottom:10px">
+            <label style="font-size:11px;color:#888">🏢 Entreprise externe (optionnel)</label>
+            <select name="entreprise_externe_id" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                <option value="">-- Saisir manuellement client/lieu ci-dessous --</option>
+                {% for e in externes %}<option value="{{ e.id }}">{{ e.nom }}{% if e.adresse %} — {{ e.adresse }}{% endif %}</option>{% endfor %}
+            </select>
+            <p style="font-size:10px;color:#888;margin:3px 0 0">💡 Si sélectionnée, le nom et l'adresse remplissent automatiquement les champs Client/Lieu.</p>
+        </div>
+        {% endif %}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-            <div><label style="font-size:11px;color:#888">Client</label>
+            <div><label style="font-size:11px;color:#888">Client (si pas d'entreprise externe)</label>
                 <input name="client_nom" placeholder="Ex: Société XYZ" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
             <div><label style="font-size:11px;color:#888">Lieu</label>
                 <input name="lieu" placeholder="Ex: Cocody, Abidjan" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>

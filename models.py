@@ -4081,7 +4081,179 @@ def migrate_v62():
     conn.commit(); conn.close()
 
 
-# ======================== SERVICES POINTAGE PAR SESSION ========================
+def migrate_v63():
+    """v63 : Emploi du temps (mode continu) + Groupes d'employés + Entreprises externes (mode session).
+    Permet d'attribuer :
+    - Un emploi du temps à un employé OU à un groupe (mode continu)
+    - Un planning de session à un employé OU à une entreprise externe (mode session)"""
+    conn = get_db()
+    
+    # 1. Groupes d'employés (mode continu)
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pointage_groupes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL,
+            nom TEXT NOT NULL,
+            description TEXT,
+            color TEXT DEFAULT '#1A7A6D',
+            is_active INTEGER DEFAULT 1,
+            created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_pg_company ON pointage_groupes(company_id)")
+    except: pass
+    
+    # 2. Lien employé ↔ groupe (un employé peut être dans plusieurs groupes)
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pointage_groupe_membres (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            groupe_id INTEGER NOT NULL,
+            company_user_id INTEGER NOT NULL,
+            added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(groupe_id, company_user_id)
+        )""")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_pgm_groupe ON pointage_groupe_membres(groupe_id)")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_pgm_user ON pointage_groupe_membres(company_user_id)")
+    except: pass
+    
+    # 3. Emploi du temps (template horaire pour mode continu)
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pointage_emploi_du_temps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL,
+            nom TEXT NOT NULL,
+            heure_debut TEXT NOT NULL,
+            heure_fin TEXT NOT NULL,
+            pause_debut TEXT,
+            pause_fin TEXT,
+            jours_actifs TEXT DEFAULT '1,2,3,4,5',
+            tolerance_minutes INTEGER DEFAULT 10,
+            penalty_per_minute REAL DEFAULT 0,
+            company_user_id INTEGER,
+            groupe_id INTEGER,
+            is_active INTEGER DEFAULT 1,
+            created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_edt_company ON pointage_emploi_du_temps(company_id)")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_edt_user ON pointage_emploi_du_temps(company_user_id)")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_edt_groupe ON pointage_emploi_du_temps(groupe_id)")
+    except: pass
+    
+    # 4. Entreprises externes (mode session) — ex: clients réguliers à qui on assigne des plannings
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pointage_entreprises_externes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL,
+            nom TEXT NOT NULL,
+            adresse TEXT,
+            contact_nom TEXT,
+            contact_tel TEXT,
+            contact_email TEXT,
+            notes TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_pee_company ON pointage_entreprises_externes(company_id)")
+    except: pass
+    
+    # 5. Étendre pointage_planning_sessions : possibilité de cibler entreprise externe
+    try: conn.execute("ALTER TABLE pointage_planning_sessions ADD COLUMN entreprise_externe_id INTEGER")
+    except: pass
+    
+    conn.commit(); conn.close()
+
+
+# ======================== SERVICES EMPLOI DU TEMPS + GROUPES ========================
+
+def edt_get_for_user(company_user_id, date_iso=None):
+    """Retourne l'emploi du temps applicable à un employé pour une date donnée.
+    Cherche d'abord un EDT individuel actif, sinon un EDT de groupe.
+    Retourne dict ou None."""
+    from datetime import datetime as _dt
+    conn = get_db()
+    # 1. EDT individuel
+    edt = conn.execute("""SELECT * FROM pointage_emploi_du_temps
+        WHERE company_user_id=? AND COALESCE(is_active,1)=1
+        ORDER BY id DESC LIMIT 1""", (company_user_id,)).fetchone()
+    if edt:
+        edt = dict(edt)
+        # Vérifier jour de la semaine
+        if date_iso:
+            try:
+                d = _dt.strptime(date_iso, '%Y-%m-%d')
+                jour = d.isoweekday()  # 1=lundi, 7=dimanche
+                jours = (edt.get('jours_actifs') or '1,2,3,4,5').split(',')
+                if str(jour) not in jours:
+                    conn.close(); return None
+            except: pass
+        conn.close(); return edt
+    
+    # 2. EDT de groupe
+    edt = conn.execute("""SELECT edt.* FROM pointage_emploi_du_temps edt
+        JOIN pointage_groupe_membres pgm ON pgm.groupe_id = edt.groupe_id
+        WHERE pgm.company_user_id=? AND COALESCE(edt.is_active,1)=1
+        ORDER BY edt.id DESC LIMIT 1""", (company_user_id,)).fetchone()
+    if edt:
+        edt = dict(edt)
+        if date_iso:
+            try:
+                d = _dt.strptime(date_iso, '%Y-%m-%d')
+                jour = d.isoweekday()
+                jours = (edt.get('jours_actifs') or '1,2,3,4,5').split(',')
+                if str(jour) not in jours:
+                    conn.close(); return None
+            except: pass
+        conn.close(); return edt
+    
+    conn.close()
+    return None
+
+
+def groupe_creer(company_id, nom, description='', color='#1A7A6D', user_id=None):
+    """Crée un groupe d'employés."""
+    conn = get_db()
+    try:
+        conn.execute("""INSERT INTO pointage_groupes
+            (company_id, nom, description, color, created_by) VALUES (?,?,?,?,?)""",
+            (company_id, nom, description, color, user_id))
+        gid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.commit(); conn.close()
+        return gid, None
+    except Exception as e:
+        conn.close(); return None, str(e)
+
+
+def groupe_ajouter_membre(groupe_id, company_user_id):
+    """Ajoute un employé à un groupe."""
+    conn = get_db()
+    try:
+        conn.execute("INSERT OR IGNORE INTO pointage_groupe_membres (groupe_id, company_user_id) VALUES (?,?)",
+                    (groupe_id, company_user_id))
+        conn.commit(); conn.close()
+        return True, None
+    except Exception as e:
+        conn.close(); return False, str(e)
+
+
+def groupe_retirer_membre(groupe_id, company_user_id):
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM pointage_groupe_membres WHERE groupe_id=? AND company_user_id=?",
+                    (groupe_id, company_user_id))
+        conn.commit(); conn.close()
+        return True, None
+    except Exception as e:
+        conn.close(); return False, str(e)
+
 
 def session_demarrer(company_user_id, planning_id=None, latitude=None, longitude=None, method='button'):
     """Démarre une session de pointage. Si planning_id fourni, calcule l'écart vs heure prévue."""

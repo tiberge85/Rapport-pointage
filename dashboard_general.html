@@ -1,114 +1,359 @@
-{% extends "base.html" %}{% block title %}WannyGest - Tableau de bord général{% endblock %}{% block content %}
+{% extends 'base.html' %}
+{% block title %}📊 Tableau de bord général{% endblock %}
+{% block content %}
 <style>
-.db-top{display:flex;gap:0;border:1px solid #eee;border-radius:10px;overflow:hidden;margin-bottom:14px}
-.db-top-item{flex:1;padding:10px 16px;border-right:1px solid #eee;display:flex;align-items:center;gap:8px}
-.db-top-item:last-child{border-right:none}
-.db-top-icon{font-size:18px;opacity:0.6}
-.db-overview{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}
-.overview-card{background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.05);padding:16px}
-.overview-card h4{font-size:13px;margin:0 0 12px;color:#1a3a5c}
-.ov-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px}
-.ov-bar{height:5px;border-radius:3px;margin-top:2px;margin-bottom:6px}
-.db-bottom{display:grid;grid-template-columns:2fr 1fr;gap:14px}
-.db-side{display:flex;flex-direction:column;gap:14px}
+.dg-hero{background:linear-gradient(135deg,#1a3a5c 0%, #1A7A6D 100%);color:#fff;padding:18px 22px;border-radius:14px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.dg-hero h1{margin:0;font-size:22px}
+.dg-hero p{margin:4px 0 0;opacity:0.85;font-size:12px}
+.dg-section-title{font-size:14px;color:#1a3a5c;font-weight:800;margin:18px 0 8px;padding-bottom:6px;border-bottom:2px solid #f29f2f;display:flex;align-items:center;gap:8px}
+.dg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:8px}
+.dg-card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);border-left:4px solid var(--c, #1A7A6D);transition:transform 0.15s, box-shadow 0.15s}
+.dg-card:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.1)}
+.dg-card a{text-decoration:none;color:inherit;display:block}
+.dg-num{font-size:24px;font-weight:800;line-height:1.05;color:var(--c, #1a3a5c)}
+.dg-lbl{font-size:11px;color:#666;margin-top:3px;line-height:1.3}
+.dg-sub{font-size:10px;color:#999;margin-top:2px}
+.dg-badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-right:3px}
+.dg-flex2{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
+@media (max-width:768px){.dg-flex2{grid-template-columns:1fr}}
 </style>
 
-<!-- Top bar -->
-<div class="db-top">
-    <div class="db-top-item"><span class="db-top-icon">📋</span><div><strong>{{ data.invoices }}</strong> factures<br><span style="font-size:10px;color:#888">{{ '{:,.0f}'.format(data.revenue) }} FCFA encaissé</span></div></div>
-    <div class="db-top-item"><span class="db-top-icon">🎯</span><div><strong>{{ data.prospects }}</strong> prospects<br><span style="font-size:10px;color:#888">{{ data.devis_acceptes }} convertis</span></div></div>
-    <div class="db-top-item"><span class="db-top-icon">📁</span><div><strong>{{ data.projets }}</strong> projets<br><span style="font-size:10px;color:#888">en cours</span></div></div>
-    <div class="db-top-item"><span class="db-top-icon">✅</span><div><strong>{{ data.tickets }}</strong> tickets<br><span style="font-size:10px;color:#888">support</span></div></div>
+<div class="dg-hero">
+    <div>
+        <h1>📊 Tableau de bord général</h1>
+        <p>Vue consolidée de toute l'activité — {{ today.strftime('%A %d %B %Y · %H:%M') }}</p>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a href="/dashboard" class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff">📊 Mon dashboard</a>
+        <a href="/admin" class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff">⚙️ Admin</a>
+    </div>
 </div>
 
-<!-- Overview cards (like Image 5: Factures, Devis, Stock) -->
-<div class="db-overview">
-    <!-- Aperçu des factures -->
-    <div class="overview-card">
-        <h4>📋 Aperçu des factures</h4>
-        {% set inv = data.get('inv_stats', {}) %}
-        {% for status, label, color, pct in [('a_envoyer','À envoyer','#1A7A6D',0),('envoyee','Envoyée','#2e7d32',0),('en_attente_paiement','En attente','#e8672a',0),('payee','Payée','#2e7d32',0)] %}
-        <div class="ov-row"><span style="color:{{ color }}">{{ inv.get(status, 0) }} {{ label }}</span><span style="color:#888">{% if data.invoices > 0 %}{{ (inv.get(status,0)*100/data.invoices)|round(1) }}%{% else %}0%{% endif %}</span></div>
-        <div class="ov-bar" style="background:#eee"><div style="width:{% if data.invoices > 0 %}{{ inv.get(status,0)*100/data.invoices }}{% else %}0{% endif %}%;height:100%;background:{{ color }};border-radius:3px"></div></div>
-        {% endfor %}
-        <div style="display:flex;gap:6px;margin-top:8px;font-size:11px">
-            <div style="flex:1;padding:6px;background:#fff3e0;border-radius:6px;text-align:center"><span style="color:#e8672a">En attente</span><br><strong>{{ '{:,.0f}'.format(data.get('pending_amount',0)) }} F</strong></div>
-            <div style="flex:1;padding:6px;background:#e8f5e9;border-radius:6px;text-align:center"><span style="color:#2e7d32">Payées</span><br><strong>{{ '{:,.0f}'.format(data.revenue) }} F</strong></div>
+{% set total_alertes = (data.alertes_caisse or 0) + (data.virements_attente or 0) + (data.absences_alertes or 0) + (data.conges_attente or 0) + (data.compta_brouillard or 0) %}
+{% if total_alertes > 0 %}
+<div class="dg-section-title">🚨 Alertes & actions à traiter <span style="background:#c53030;color:#fff;padding:1px 8px;border-radius:10px;font-size:10px">{{ total_alertes }}</span></div>
+<div class="dg-grid">
+    {% if data.alertes_caisse %}<div class="dg-card" style="--c:#e8672a"><a href="/caisse-sortie"><div class="dg-num">{{ data.alertes_caisse }}</div><div class="dg-lbl">📤 Sorties caisse en attente</div></a></div>{% endif %}
+    {% if data.virements_attente %}<div class="dg-card" style="--c:#1976d2"><a href="/comptabilite/virements"><div class="dg-num">{{ data.virements_attente }}</div><div class="dg-lbl">💸 Virements à valider</div></a></div>{% endif %}
+    {% if data.compta_brouillard %}<div class="dg-card" style="--c:#7b1fa2"><a href="/compta-pro/ecritures"><div class="dg-num">{{ data.compta_brouillard }}</div><div class="dg-lbl">📋 Écritures en brouillard</div></a></div>{% endif %}
+    {% if data.conges_attente %}<div class="dg-card" style="--c:#f29f2f"><a href="/rh/conges"><div class="dg-num">{{ data.conges_attente }}</div><div class="dg-lbl">🏖️ Congés en attente</div></a></div>{% endif %}
+    {% if data.absences_alertes %}<div class="dg-card" style="--c:#c53030"><a href="/admin/pointage/absences"><div class="dg-num">{{ data.absences_alertes }}</div><div class="dg-lbl">⚠️ Alertes absences</div></a></div>{% endif %}
+    {% if data.stock_low %}<div class="dg-card" style="--c:#c53030"><a href="/it/parc"><div class="dg-num">{{ data.stock_low }}</div><div class="dg-lbl">📦 Stock bas (réappro)</div></a></div>{% endif %}
+</div>
+{% endif %}
+
+<div class="dg-section-title">💰 Synthèse financière <span style="font-weight:400;font-size:11px;color:#888">— Mois en cours</span></div>
+<div class="dg-grid">
+    <div class="dg-card" style="--c:#2e7d32"><a href="/comptabilite">
+        <div class="dg-num">{{ "{:,.0f}".format(data.revenue_month) }} F</div>
+        <div class="dg-lbl">📈 Revenus du mois</div>
+        <div class="dg-sub">Total cumulé : {{ "{:,.0f}".format(data.revenue) }} F</div>
+    </a></div>
+    <div class="dg-card" style="--c:#c53030"><a href="/depenses">
+        <div class="dg-num">{{ "{:,.0f}".format(data.expenses_month) }} F</div>
+        <div class="dg-lbl">📉 Dépenses du mois</div>
+        <div class="dg-sub">Total cumulé : {{ "{:,.0f}".format(data.expenses) }} F</div>
+    </a></div>
+    <div class="dg-card" style="--c:{% if data.profit_month >= 0 %}#1A7A6D{% else %}#c53030{% endif %}"><a href="/compta-pro/resultat">
+        <div class="dg-num">{{ "{:+,.0f}".format(data.profit_month) }} F</div>
+        <div class="dg-lbl">💹 Profit du mois</div>
+        <div class="dg-sub">Total cumulé : {{ "{:+,.0f}".format(data.profit) }} F</div>
+    </a></div>
+    <div class="dg-card" style="--c:#1976d2"><a href="/comptabilite">
+        <div class="dg-num">{{ "{:,.0f}".format(data.pending_amount) }} F</div>
+        <div class="dg-lbl">⏳ Factures en attente</div>
+        <div class="dg-sub">{{ data.inv_stats.get('envoyee',0) + data.inv_stats.get('en_attente_paiement',0) }} facture(s)</div>
+    </a></div>
+</div>
+
+<div class="dg-section-title">💵 Trésorerie</div>
+<div class="dg-grid">
+    <div class="dg-card" style="--c:#2e7d32"><a href="/tresorerie/caisse">
+        <div class="dg-num">{{ "{:,.0f}".format(data.solde_caisse) }} F</div>
+        <div class="dg-lbl">💰 Solde caisse total</div>
+    </a></div>
+    <div class="dg-card" style="--c:#1976d2"><a href="/tresorerie/banque">
+        <div class="dg-num">{{ "{:,.0f}".format(data.solde_banque) }} F</div>
+        <div class="dg-lbl">🏦 Solde banque ({{ data.nb_banques }} compte{% if data.nb_banques > 1 %}s{% endif %})</div>
+    </a></div>
+    <div class="dg-card" style="--c:#1A7A6D"><a href="/tresorerie/dashboard">
+        <div class="dg-num">{{ "{:,.0f}".format(data.tresorerie_totale) }} F</div>
+        <div class="dg-lbl">💼 Trésorerie globale</div>
+    </a></div>
+    <div class="dg-card" style="--c:#2e7d32"><a href="/tresorerie/dashboard">
+        <div class="dg-num" style="color:#2e7d32">+{{ "{:,.0f}".format(data.mvt_entrees_mois) }}</div>
+        <div class="dg-lbl">📥 Entrées ce mois</div>
+    </a></div>
+    <div class="dg-card" style="--c:#c53030"><a href="/tresorerie/dashboard">
+        <div class="dg-num" style="color:#c53030">−{{ "{:,.0f}".format(data.mvt_sorties_mois) }}</div>
+        <div class="dg-lbl">📤 Sorties ce mois</div>
+    </a></div>
+</div>
+
+<div class="dg-section-title">📚 Comptabilité (SYSCOHADA)</div>
+<div class="dg-grid">
+    <div class="dg-card" style="--c:#7b1fa2"><a href="/compta-pro/ecritures">
+        <div class="dg-num">{{ data.compta_ecritures }}</div>
+        <div class="dg-lbl">📋 Écritures comptables</div>
+        <div class="dg-sub">{{ data.compta_brouillard }} brouillard · {{ data.compta_validees }} validées</div>
+    </a></div>
+    <div class="dg-card" style="--c:#1976d2"><a href="/comptabilite/creances">
+        <div class="dg-num">{{ "{:,.0f}".format(data.compta_creances) }} F</div>
+        <div class="dg-lbl">📥 Créances clients (411)</div>
+    </a></div>
+    <div class="dg-card" style="--c:#c53030"><a href="/comptabilite/dettes">
+        <div class="dg-num">{{ "{:,.0f}".format(data.compta_dettes) }} F</div>
+        <div class="dg-lbl">📤 Dettes fournisseurs (401)</div>
+    </a></div>
+    <div class="dg-card" style="--c:#1A7A6D"><a href="/compta-pro/bilan">
+        <div class="dg-num">📊</div>
+        <div class="dg-lbl">Bilan SYSCOHADA</div>
+        <div class="dg-sub">Voir l'état comptable</div>
+    </a></div>
+</div>
+
+<div class="dg-section-title">👥 CRM & Commerce</div>
+<div class="dg-grid">
+    <div class="dg-card" style="--c:#1A7A6D"><a href="/clients">
+        <div class="dg-num">{{ data.clients }}</div>
+        <div class="dg-lbl">🏢 Clients ({{ data.clients_actifs }} actifs)</div>
+    </a></div>
+    {% if data.prospects %}
+    <div class="dg-card" style="--c:#7b1fa2"><a href="/prospects">
+        <div class="dg-num">{{ data.prospects }}</div>
+        <div class="dg-lbl">🎯 Prospects</div>
+        <div class="dg-sub">{{ data.prospect_stats.get('qualifie',0) }} qualifiés · {{ data.prospect_stats.get('proposition',0) }} en proposition</div>
+    </a></div>
+    {% endif %}
+    <div class="dg-card" style="--c:#1976d2"><a href="/devis">
+        <div class="dg-num">{{ data.devis }}</div>
+        <div class="dg-lbl">📄 Devis</div>
+        <div class="dg-sub">{{ data.devis_stats.get('envoye',0) }} envoyés · {{ data.devis_stats.get('accepte',0) }} acceptés</div>
+    </a></div>
+    <div class="dg-card" style="--c:#f29f2f"><a href="/devis?type=proforma">
+        <div class="dg-num">{{ data.proformas }}</div>
+        <div class="dg-lbl">📋 Proformas</div>
+    </a></div>
+    {% if data.contrats_actifs %}
+    <div class="dg-card" style="--c:#1A7A6D"><a href="/contrats">
+        <div class="dg-num">{{ data.contrats_actifs }}</div>
+        <div class="dg-lbl">📜 Contrats actifs</div>
+    </a></div>
+    {% endif %}
+    {% if data.invoices %}
+    <div class="dg-card" style="--c:#2e7d32"><a href="/comptabilite/factures">
+        <div class="dg-num">{{ data.invoices }}</div>
+        <div class="dg-lbl">🧾 Factures émises</div>
+        <div class="dg-sub">{{ data.inv_stats.get('payee',0) }} payées</div>
+    </a></div>
+    {% endif %}
+</div>
+
+<div class="dg-section-title">⏰ Pointage & RH</div>
+<div class="dg-grid">
+    <div class="dg-card" style="--c:#1A7A6D"><a href="/admin/pointage">
+        <div class="dg-num">{{ data.pointages_today }}</div>
+        <div class="dg-lbl">✅ Pointés aujourd'hui (RAMYA)</div>
+        <div class="dg-sub">{% if data.retards_today %}<span style="color:#c53030">⏰ {{ data.retards_today }} retard(s)</span>{% else %}Aucun retard{% endif %}</div>
+    </a></div>
+    {% if data.pointage_companies %}
+    <div class="dg-card" style="--c:#7b1fa2"><a href="/admin/pointage/companies">
+        <div class="dg-num">{{ data.pointage_companies }}</div>
+        <div class="dg-lbl">🏭 Entreprises pointage</div>
+        <div class="dg-sub">{{ data.pointage_companies_continu }} continu · {{ data.pointage_companies_session }} session</div>
+    </a></div>
+    <div class="dg-card" style="--c:#1976d2"><a href="/admin/pointage/companies">
+        <div class="dg-num">{{ data.pointage_users }}</div>
+        <div class="dg-lbl">👷 Employés externes</div>
+    </a></div>
+    {% endif %}
+    {% if data.sessions_today or data.plannings_today %}
+    <div class="dg-card" style="--c:#f29f2f">
+        <div class="dg-num">{{ data.plannings_today }}</div>
+        <div class="dg-lbl">📅 Sessions planifiées aujourd'hui</div>
+        <div class="dg-sub">
+            {% if data.sessions_en_cours %}<span class="dg-badge" style="background:#fff3e0;color:#b8561f">⏳ {{ data.sessions_en_cours }} en cours</span>{% endif %}
+            {% if data.sessions_retard_today %}<span class="dg-badge" style="background:#fde8e8;color:#c53030">⏰ {{ data.sessions_retard_today }} retard</span>{% endif %}
+            {% if data.plannings_absents_today %}<span class="dg-badge" style="background:#444;color:#fff">❌ {{ data.plannings_absents_today }} absent</span>{% endif %}
         </div>
     </div>
-    
-    <!-- Aperçu des devis -->
-    <div class="overview-card">
-        <h4>📝 Aperçu des devis</h4>
-        {% set ds = data.get('devis_stats', {}) %}
-        {% for status, label, color in [('brouillon','Brouillon','#888'),('envoye','Envoyé','#1A7A6D'),('accepte','Accepté','#2e7d32'),('refuse','Refusé','#c53030')] %}
-        <div class="ov-row"><span style="color:{{ color }}">{{ ds.get(status, 0) }} {{ label }}</span><span style="color:#888">{% if data.devis > 0 %}{{ (ds.get(status,0)*100/data.devis)|round(1) }}%{% else %}0%{% endif %}</span></div>
-        <div class="ov-bar" style="background:#eee"><div style="width:{% if data.devis > 0 %}{{ ds.get(status,0)*100/data.devis }}{% else %}0{% endif %}%;height:100%;background:{{ color }};border-radius:3px"></div></div>
-        {% endfor %}
-    </div>
-    
-    <!-- Stock & RH -->
-    <div class="overview-card">
-        <h4>📦 Stock & 👥 RH</h4>
-        <div class="ov-row"><span>Articles en stock</span><strong>{{ data.stock_items }}</strong></div>
-        <div class="ov-row"><span>Valeur stock</span><strong>{{ '{:,.0f}'.format(data.stock_value) }} F</strong></div>
-        <div class="ov-row"><span style="color:#c53030">Stock bas / rupture</span><strong style="color:#c53030">{{ data.stock_low }}</strong></div>
-        <div style="height:1px;background:#eee;margin:8px 0"></div>
-        <div class="ov-row"><span>Employés</span><strong>{{ data.employees }}</strong></div>
-        <div class="ov-row"><span>Formations</span><strong>{{ data.formations }}</strong></div>
-        <div class="ov-row"><span>Fournisseurs</span><strong>{{ data.fournisseurs }}</strong></div>
-        <div class="ov-row"><span>Commandes achats</span><strong>{{ data.commandes }}</strong></div>
-    </div>
+    {% endif %}
+    <div class="dg-card" style="--c:#1A7A6D"><a href="/rh/personnel">
+        <div class="dg-num">{{ data.users_actifs }}</div>
+        <div class="dg-lbl">👤 Utilisateurs internes</div>
+    </a></div>
+    {% if data.employees %}
+    <div class="dg-card" style="--c:#1976d2"><a href="/rh/personnel">
+        <div class="dg-num">{{ data.employees }}</div>
+        <div class="dg-lbl">👥 Employés (fiches RH)</div>
+    </a></div>
+    {% endif %}
 </div>
 
-<!-- Bottom: Activity + Side -->
-<div class="db-bottom">
-    <!-- Activité récente -->
-    <div class="card"><div class="card-header"><h3>🕐 Dernières activités</h3></div><div class="card-body" style="padding:0;max-height:350px;overflow-y:auto">
-    {% if data.recent_logs %}
-    {% for log in data.recent_logs %}
-    <div style="padding:8px 14px;border-bottom:1px solid #f5f5f5;display:flex;gap:8px;align-items:center;font-size:11px">
-        <span style="color:#aaa;min-width:110px">{{ log.created_at[:16] if log.created_at else '' }}</span>
-        <strong style="min-width:90px;color:#1a3a5c">{{ log.user_name or '' }}</strong>
-        <span style="background:#e3f2fd;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;color:#1A7A6D">{{ log.action or '' }}</span>
-        <span style="flex:1;color:#555">{{ (log.detail or '')[:60] }}</span>
+<div class="dg-section-title">🔧 Interventions & Activité terrain</div>
+<div class="dg-grid">
+    <div class="dg-card" style="--c:#1A7A6D"><a href="/visites">
+        <div class="dg-num">{{ data.visites_month }}</div>
+        <div class="dg-lbl">📋 Visites du mois</div>
+    </a></div>
+    <div class="dg-card" style="--c:#f29f2f"><a href="/centre-technique/mes-interventions">
+        <div class="dg-num">{{ data.interventions_today }}</div>
+        <div class="dg-lbl">🛠️ Interventions aujourd'hui</div>
+    </a></div>
+    <div class="dg-card" style="--c:#1976d2"><a href="/rapports-j">
+        <div class="dg-num">{{ data.rapports_j_today }}</div>
+        <div class="dg-lbl">📝 Rapports journaliers (jour)</div>
+        <div class="dg-sub">{{ data.rapports_j }} au total</div>
+    </a></div>
+    {% if data.rapports %}
+    <div class="dg-card" style="--c:#7b1fa2"><a href="/jobs">
+        <div class="dg-num">{{ data.rapports_month }}</div>
+        <div class="dg-lbl">📊 Rapports techniques (mois)</div>
+        <div class="dg-sub">{{ data.rapports }} au total</div>
+    </a></div>
+    {% endif %}
+    {% if data.vehicules_actifs %}
+    <div class="dg-card" style="--c:#2e7d32"><a href="/tracking">
+        <div class="dg-num">{{ data.vehicules_actifs }}</div>
+        <div class="dg-lbl">🚗 Véhicules actifs (tracking)</div>
+    </a></div>
+    {% endif %}
+</div>
+
+{% if data.stock_items or data.fournisseurs %}
+<div class="dg-section-title">📦 Stock & Achats</div>
+<div class="dg-grid">
+    {% if data.stock_items %}
+    <div class="dg-card" style="--c:#1976d2"><a href="/it/parc">
+        <div class="dg-num">{{ data.stock_items }}</div>
+        <div class="dg-lbl">📦 Articles en stock</div>
+        <div class="dg-sub">Valeur : {{ "{:,.0f}".format(data.stock_value) }} F</div>
+    </a></div>
+    {% endif %}
+    {% if data.fournisseurs %}
+    <div class="dg-card" style="--c:#7b1fa2"><a href="/fournisseurs">
+        <div class="dg-num">{{ data.fournisseurs }}</div>
+        <div class="dg-lbl">🏭 Fournisseurs</div>
+    </a></div>
+    {% endif %}
+    {% if data.achats_total_month %}
+    <div class="dg-card" style="--c:#f29f2f"><a href="/fournisseurs">
+        <div class="dg-num">{{ "{:,.0f}".format(data.achats_total_month) }} F</div>
+        <div class="dg-lbl">🛒 Achats du mois</div>
+    </a></div>
+    {% endif %}
+    {% if data.dettes_fournisseurs %}
+    <div class="dg-card" style="--c:#c53030"><a href="/fournisseurs">
+        <div class="dg-num">{{ "{:,.0f}".format(data.dettes_fournisseurs) }} F</div>
+        <div class="dg-lbl">💳 Restes à payer</div>
+    </a></div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if data.projets or data.tickets %}
+<div class="dg-section-title">💻 IT & Projets</div>
+<div class="dg-grid">
+    {% if data.projets %}
+    <div class="dg-card" style="--c:#1A7A6D"><a href="/projets">
+        <div class="dg-num">{{ data.projets_actifs }}</div>
+        <div class="dg-lbl">📁 Projets actifs</div>
+        <div class="dg-sub">{{ data.projets }} au total</div>
+    </a></div>
+    {% endif %}
+    {% if data.tickets %}
+    <div class="dg-card" style="--c:#f29f2f"><a href="/it/tickets">
+        <div class="dg-num">{{ data.tickets_ouverts }}</div>
+        <div class="dg-lbl">🎫 Tickets ouverts</div>
+        <div class="dg-sub">{{ data.tickets }} au total</div>
+    </a></div>
+    {% endif %}
+    {% if data.parc_count %}
+    <div class="dg-card" style="--c:#1976d2"><a href="/it/parc">
+        <div class="dg-num">{{ data.parc_count }}</div>
+        <div class="dg-lbl">🖥️ Parc informatique</div>
+    </a></div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if data.budgets_count %}
+<div class="dg-section-title">💼 Budgets départements</div>
+<div class="dg-grid">
+    <div class="dg-card" style="--c:#1976d2"><a href="/budgets">
+        <div class="dg-num">{{ data.budgets_count }}</div>
+        <div class="dg-lbl">📋 Budgets actifs</div>
+    </a></div>
+    <div class="dg-card" style="--c:#1A7A6D"><a href="/budgets">
+        <div class="dg-num">{{ "{:,.0f}".format(data.budget_alloue) }} F</div>
+        <div class="dg-lbl">💰 Total alloué</div>
+    </a></div>
+    <div class="dg-card" style="--c:#f29f2f"><a href="/budgets">
+        <div class="dg-num">{{ "{:,.0f}".format(data.budget_consomme) }} F</div>
+        <div class="dg-lbl">📊 Total consommé</div>
+        {% if data.budget_alloue > 0 %}
+        <div class="dg-sub">{{ "{:.0f}".format(data.budget_consomme / data.budget_alloue * 100) }}% utilisé</div>
+        {% endif %}
+    </a></div>
+</div>
+{% endif %}
+
+<div class="dg-flex2">
+    <div>
+        {% if data.monthly_treso %}
+        <div class="dg-section-title" style="margin-top:0">📈 Évolution trésorerie (6 derniers mois)</div>
+        <div class="dg-card" style="border-left:none;padding:18px">
+            <canvas id="dgTresoChart" style="max-height:250px"></canvas>
+        </div>
+        {% elif data.monthly_rev %}
+        <div class="dg-section-title" style="margin-top:0">📈 Revenus (6 derniers mois)</div>
+        <div class="dg-card" style="border-left:none;padding:18px">
+            <canvas id="dgRevChart" style="max-height:250px"></canvas>
+        </div>
+        {% endif %}
     </div>
-    {% endfor %}
-    {% else %}<p style="text-align:center;color:#999;padding:20px;font-size:12px">Aucune activité récente</p>{% endif %}
-    </div></div>
     
-    <!-- Side -->
-    <div class="db-side">
-        <!-- Aperçu prospects -->
-        <div class="overview-card">
-            <h4>🎯 Aperçu des prospects</h4>
-            <div style="text-align:center;padding:10px">
-                <canvas id="prospectChart" style="max-height:140px"></canvas>
+    <div>
+        <div class="dg-section-title" style="margin-top:0">📋 Activité récente</div>
+        <div class="dg-card" style="border-left:none;padding:0;max-height:340px;overflow:auto">
+        {% if data.recent_logs %}
+            {% for log in data.recent_logs %}
+            <div style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:11px">
+                <div style="font-weight:600;color:#1a3a5c">{{ log.action or 'Action' }}</div>
+                <div style="color:#666;margin-top:1px">{{ (log.details or '')[:80] }}{% if log.details and log.details|length > 80 %}...{% endif %}</div>
+                <div style="color:#aaa;font-size:9px;margin-top:2px">{{ log.created_at }}</div>
             </div>
-        </div>
-        
-        <!-- Rapports -->
-        <div class="overview-card">
-            <h4>⏱️ Gestion du temps</h4>
-            <div class="ov-row"><span>Rapports traités</span><strong>{{ data.rapports }}</strong></div>
-            <div class="ov-row"><span>Rapports journaliers</span><strong>{{ data.rapports_j }}</strong></div>
-        </div>
-        
-        <!-- Bénéfice -->
-        <div class="overview-card" style="{% if data.profit >= 0 %}border-left:4px solid #2e7d32{% else %}border-left:4px solid #c53030{% endif %}">
-            <h4>💰 Bénéfice net</h4>
-            <div style="font-size:24px;font-weight:800;color:{% if data.profit >= 0 %}#2e7d32{% else %}#c53030{% endif %};text-align:center">{{ '{:,.0f}'.format(data.profit) }} F</div>
+            {% endfor %}
+        {% else %}
+            <div style="text-align:center;color:#888;padding:30px">Aucune activité récente</div>
+        {% endif %}
         </div>
     </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-{% set ps = data.get('prospect_stats', {}) %}
-new Chart(document.getElementById('prospectChart'),{type:'doughnut',data:{
-    labels:['Nouveau','Contacté','Qualifié','Proposition','Gagné','Perdu'],
-    datasets:[{data:[{{ ps.get('nouveau',0) }},{{ ps.get('contacte',0) }},{{ ps.get('qualifie',0) }},{{ ps.get('proposition',0) }},{{ ps.get('gagne',0) }},{{ ps.get('perdu',0) }}],
-    backgroundColor:['#1A7A6D','#e8672a','#0D6B5E','#B8860B','#2e7d32','#c53030']}]
-},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:9}}}}}});
+{% if data.monthly_treso %}
+new Chart(document.getElementById('dgTresoChart'), {
+    type: 'bar',
+    data: {
+        labels: [{% for r in data.monthly_treso %}'{{ r.month }}'{% if not loop.last %},{% endif %}{% endfor %}],
+        datasets: [
+            {label:'Entrées', data:[{% for r in data.monthly_treso %}{{ r.entrees or 0 }}{% if not loop.last %},{% endif %}{% endfor %}], backgroundColor:'#2e7d32'},
+            {label:'Sorties', data:[{% for r in data.monthly_treso %}{{ r.sorties or 0 }}{% if not loop.last %},{% endif %}{% endfor %}], backgroundColor:'#c53030'}
+        ]
+    },
+    options: {responsive:true, plugins:{legend:{position:'bottom'}}, scales:{y:{beginAtZero:true, ticks:{callback:function(v){return (v/1000)+'k';}}}}}
+});
+{% elif data.monthly_rev %}
+new Chart(document.getElementById('dgRevChart'), {
+    type: 'line',
+    data: {
+        labels: [{% for r in data.monthly_rev %}'{{ r.month }}'{% if not loop.last %},{% endif %}{% endfor %}],
+        datasets: [{label:'Revenus', data:[{% for r in data.monthly_rev %}{{ r.total or 0 }}{% if not loop.last %},{% endif %}{% endfor %}], borderColor:'#1A7A6D', backgroundColor:'rgba(26,122,109,0.1)', tension:0.3, fill:true}]
+    },
+    options: {responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, ticks:{callback:function(v){return (v/1000)+'k';}}}}}
+});
+{% endif %}
 </script>
 {% endblock %}
