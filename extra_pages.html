@@ -2320,6 +2320,25 @@ function getMyPos(){
             <input type="number" name="grace_minutes" value="10" min="0" max="60" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
         </div>
         <div style="grid-column:1/-1">
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:4px">⚙️ Mode de pointage *</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <label style="display:flex;align-items:start;gap:8px;padding:10px;border:2px solid #1a7a6d;background:#e0f5f1;border-radius:8px;cursor:pointer">
+                    <input type="radio" name="type_pointage" value="continu" checked>
+                    <div>
+                        <strong style="color:#1a7a6d;font-size:12px">🔵 Présence continue</strong>
+                        <div style="font-size:10px;color:#666;margin-top:2px">Arrivée → Pause → Retour → Départ.<br>Un seul cycle par jour. Idéal pour bureaux.</div>
+                    </div>
+                </label>
+                <label style="display:flex;align-items:start;gap:8px;padding:10px;border:2px solid #ddd;background:#fff;border-radius:8px;cursor:pointer">
+                    <input type="radio" name="type_pointage" value="session">
+                    <div>
+                        <strong style="color:#7b1fa2;font-size:12px">📅 Pointage par session</strong>
+                        <div style="font-size:10px;color:#666;margin-top:2px">Plusieurs interventions/jour avec planning.<br>Démarrer / Terminer chaque mission. Idéal pour techniciens itinérants.</div>
+                    </div>
+                </label>
+            </div>
+        </div>
+        <div style="grid-column:1/-1">
             <label style="font-size:11px;color:#888;display:block">Message de bienvenue</label>
             <input name="welcome_message" placeholder="Bienvenue sur l'espace pointage de votre entreprise !" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
         </div>
@@ -2360,6 +2379,9 @@ function getMyPos(){
     <h1>🏢 {{ company.name }}</h1>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
         <a href="/admin/pointage/companies/{{ company.id }}/qr" target="_blank" class="btn btn-sm" style="background:#7b1fa2;color:#fff">📱 QR codes pointage</a>
+        {% if company.type_pointage == 'session' %}
+        <a href="/admin/pointage/companies/{{ company.id }}/planning" class="btn btn-sm" style="background:#1976d2;color:#fff">📅 Planning sessions</a>
+        {% endif %}
         <a href="/pt/{{ company.slug }}" target="_blank" class="btn btn-outline btn-sm">🚪 Voir login employé</a>
         <a href="/admin/pointage/companies" class="btn btn-outline btn-sm">← Liste</a>
         <form method="post" action="/admin/pointage/companies/{{ company.id }}/delete" style="display:inline" onsubmit="return confirm('⚠️ ATTENTION ⚠️\n\nSupprimer DÉFINITIVEMENT l\'entreprise « {{ company.name }} » va effacer :\n• L\'entreprise elle-même\n• TOUS ses employés\n• TOUS leurs pointages\n• Toutes les alertes associées\n\nCette action est IRRÉVERSIBLE.\n\nÊtes-vous absolument sûr ?')">
@@ -2388,6 +2410,26 @@ function getMyPos(){
         <div>
             <label style="font-size:11px;color:#888;display:block">Tolérance (min)</label>
             <input type="number" name="grace_minutes" value="{{ company.grace_minutes or 10 }}" min="0" max="60" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+        </div>
+        <div style="grid-column:1/-1">
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:4px">⚙️ Mode de pointage</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <label style="display:flex;align-items:start;gap:8px;padding:10px;border:2px solid {% if company.type_pointage != 'session' %}#1a7a6d{% else %}#ddd{% endif %};background:{% if company.type_pointage != 'session' %}#e0f5f1{% else %}#fff{% endif %};border-radius:8px;cursor:pointer">
+                    <input type="radio" name="type_pointage" value="continu" {% if company.type_pointage != 'session' %}checked{% endif %}>
+                    <div>
+                        <strong style="color:#1a7a6d;font-size:12px">🔵 Présence continue</strong>
+                        <div style="font-size:10px;color:#666;margin-top:2px">Arrivée → Pause → Retour → Départ. Un seul cycle par jour.</div>
+                    </div>
+                </label>
+                <label style="display:flex;align-items:start;gap:8px;padding:10px;border:2px solid {% if company.type_pointage == 'session' %}#7b1fa2{% else %}#ddd{% endif %};background:{% if company.type_pointage == 'session' %}#f3e5f5{% else %}#fff{% endif %};border-radius:8px;cursor:pointer">
+                    <input type="radio" name="type_pointage" value="session" {% if company.type_pointage == 'session' %}checked{% endif %}>
+                    <div>
+                        <strong style="color:#7b1fa2;font-size:12px">📅 Pointage par session</strong>
+                        <div style="font-size:10px;color:#666;margin-top:2px">Plusieurs interventions/jour avec planning. Démarrer/Terminer chaque mission.</div>
+                    </div>
+                </label>
+            </div>
+            {% if company.type_pointage == 'session' %}<p style="font-size:11px;color:#7b1fa2;margin:6px 0 0">📅 <a href="/admin/pointage/companies/{{ company.id }}/planning" style="color:#7b1fa2;font-weight:700">Gérer le planning des sessions →</a></p>{% endif %}
         </div>
         <div style="grid-column:1/-1">
             <label style="font-size:11px;color:#888;display:block">Message de bienvenue (s'affiche à chaque connexion)</label>
@@ -3165,6 +3207,130 @@ function getMyPos(){
 </p>
 </div></div>
 
+{% elif page == 'pt_company_planning' %}
+<style>
+.pl-card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:14px}
+.pl-row{display:grid;grid-template-columns:80px 1fr 100px 80px;gap:10px;padding:8px;border-bottom:1px solid #f0f0f0;align-items:center}
+.pl-time{font-family:monospace;font-size:16px;font-weight:800;color:#1a3a5c}
+.pl-st-prevue{background:#e3f2fd;color:#1976d2;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700}
+.pl-st-en_cours{background:#fff3e0;color:#b8561f;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700}
+.pl-st-ok{background:#e8f5e9;color:#2e7d32;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700}
+.pl-st-retard{background:#fde8e8;color:#c53030;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700}
+.pl-st-absente{background:#444;color:#fff;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700}
+.pl-st-termine{background:#e0f2f1;color:#1A7A6D;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700}
+</style>
+<div class="page-header">
+    <h1>📅 Planning sessions — {{ company.name }}</h1>
+    <div style="display:flex;gap:6px">
+        <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Fiche entreprise</a>
+    </div>
+</div>
+
+{% if company.type_pointage != 'session' %}
+<div class="pl-card" style="background:#fde8e8;border-left:4px solid #c53030">
+    <strong style="color:#c53030">⚠️ Cette entreprise n'est pas en mode session</strong>
+    <p style="font-size:12px;margin:6px 0 0;color:#555">Le planning des sessions n'est utilisé que pour les entreprises en mode "Pointage par session". 
+    Vous pouvez changer le mode dans la <a href="/admin/pointage/companies/{{ company.id }}">fiche entreprise</a>.</p>
+</div>
+{% endif %}
+
+<form method="get" class="pl-card" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+    <div><label style="font-size:11px;color:#888;display:block">Date</label>
+        <input type="date" name="date" value="{{ date_filter }}" onchange="this.form.submit()" style="padding:7px;border:1.5px solid #ddd;border-radius:6px"></div>
+    <div style="flex:1"></div>
+    <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('newPlanModal').style.display='flex'">+ Planifier une session</button>
+</form>
+
+<h3 style="font-size:14px;color:#1a3a5c;margin:14px 0 8px">📋 Sessions planifiées le {{ date_filter }} ({{ plannings|length }})</h3>
+
+<div class="pl-card" style="padding:0">
+{% if plannings %}
+<table style="width:100%;font-size:12px;border-collapse:collapse">
+<thead><tr style="background:#1a3a5c;color:#fff">
+    <th style="padding:8px;text-align:left">Heure</th>
+    <th style="padding:8px;text-align:left">Durée</th>
+    <th style="padding:8px;text-align:left">Employé</th>
+    <th style="padding:8px;text-align:left">Libellé</th>
+    <th style="padding:8px;text-align:left">Client / Lieu</th>
+    <th style="padding:8px;text-align:left">Statut</th>
+    <th style="padding:8px;text-align:right">Actions</th>
+</tr></thead>
+<tbody>
+{% for p in plannings %}
+<tr style="border-bottom:1px solid #f0f0f0">
+    <td style="padding:6px 8px"><span class="pl-time">{{ p.heure_prevue }}</span></td>
+    <td style="padding:6px 8px;font-size:11px">{{ p.duree_minutes }}min</td>
+    <td style="padding:6px 8px"><strong>{{ p.user_name or '—' }}</strong></td>
+    <td style="padding:6px 8px">{{ p.libelle or '—' }}</td>
+    <td style="padding:6px 8px;font-size:11px">{% if p.client_nom %}👤 {{ p.client_nom }}<br>{% endif %}{% if p.lieu %}📍 {{ p.lieu }}{% endif %}</td>
+    <td style="padding:6px 8px"><span class="pl-st-{{ p.statut }}">{{ p.statut }}</span></td>
+    <td style="padding:6px 8px;text-align:right;white-space:nowrap">
+        {% if p.statut == 'prevue' %}
+        <form method="post" style="display:inline" onsubmit="return confirm('Marquer cette session comme absente ?')">
+            <input type="hidden" name="action" value="mark_absent">
+            <input type="hidden" name="planning_id" value="{{ p.id }}">
+            <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px">❌ Absent</button>
+        </form>
+        {% endif %}
+        <form method="post" style="display:inline" onsubmit="return confirm('Supprimer cette session planifiée ?')">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="planning_id" value="{{ p.id }}">
+            <button type="submit" class="btn btn-sm" style="background:#888;color:#fff;font-size:10px">🗑️</button>
+        </form>
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}
+<div style="text-align:center;padding:30px;color:#888">Aucune session planifiée pour cette date.</div>
+{% endif %}
+</div>
+
+<!-- Modal nouvelle session -->
+<div id="newPlanModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:10px;padding:20px;max-width:540px;width:92%">
+    <h3 style="margin:0 0 12px;color:#7b1fa2">📅 Planifier une session</h3>
+    <form method="post">
+        <input type="hidden" name="action" value="add">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div><label style="font-size:11px;color:#888">Employé *</label>
+                <select name="company_user_id" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                    <option value="">-- Choisir --</option>
+                    {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>{% endfor %}
+                </select></div>
+            <div><label style="font-size:11px;color:#888">Date *</label>
+                <input type="date" name="date" required value="{{ date_filter }}" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div><label style="font-size:11px;color:#888">Heure prévue *</label>
+                <input type="time" name="heure_prevue" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+            <div><label style="font-size:11px;color:#888">Durée (min)</label>
+                <input type="number" name="duree_minutes" value="60" min="5" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        </div>
+        <div style="margin-bottom:10px">
+            <label style="font-size:11px;color:#888">Libellé / Mission</label>
+            <input name="libelle" placeholder="Ex: Maintenance caméra rue X" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div><label style="font-size:11px;color:#888">Client</label>
+                <input name="client_nom" placeholder="Ex: Société XYZ" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+            <div><label style="font-size:11px;color:#888">Lieu</label>
+                <input name="lieu" placeholder="Ex: Cocody, Abidjan" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+            <div><label style="font-size:11px;color:#888">Tolérance retard (min)</label>
+                <input type="number" name="tolerance_minutes" value="15" min="0" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+            <div><label style="font-size:11px;color:#888">Pénalité F/min retard</label>
+                <input type="number" name="penalty_per_minute" value="0" min="0" step="50" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        </div>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('newPlanModal').style.display='none'">Annuler</button>
+            <button type="submit" class="btn btn-primary btn-sm">+ Créer</button>
+        </div>
+    </form>
+</div></div>
+
 {% elif page == 'pt_company_qr' %}
 <style>
 .qr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:18px}
@@ -3687,6 +3853,76 @@ body{background:#f5f7f9 !important}
     <input type="hidden" name="type" id="ptCType">
     <input type="hidden" name="latitude" id="ptCLat">
     <input type="hidden" name="longitude" id="ptCLng">
+    
+    {% if company.type_pointage == 'session' %}
+    {# ============================================================ #}
+    {# MODE SESSION : Liste des interventions du jour                #}
+    {# ============================================================ #}
+    <div style="background:#fff;border-radius:14px;padding:14px;margin-bottom:14px">
+        <h2 style="margin:0 0 4px;font-size:16px;color:#7b1fa2">📅 Mes interventions du jour</h2>
+        <p style="font-size:11px;color:#888;margin:0 0 14px">{{ today }}</p>
+        
+        {% if session_en_cours %}
+        <div style="background:#fff3e0;border-left:4px solid #f29f2f;padding:12px;border-radius:8px;margin-bottom:14px">
+            <div style="font-size:13px;font-weight:700;color:#b8561f">⏳ Session en cours</div>
+            <div style="font-size:11px;color:#666;margin-top:2px">Démarrée à {{ session_en_cours.heure_debut }}</div>
+            <a href="/pt/{{ company.slug }}/session/finish/{{ session_en_cours.id }}"
+               style="display:inline-block;margin-top:8px;background:#c53030;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px"
+               onclick="return confirm('Terminer cette session maintenant ?')">🛑 Terminer la session</a>
+        </div>
+        {% endif %}
+        
+        {% if plannings_today %}
+        <div style="display:flex;flex-direction:column;gap:10px">
+        {% for p in plannings_today %}
+        {% set done = p.session_done %}
+        <div style="border:1.5px solid {% if done and done.statut == 'ok' %}#2e7d32{% elif done and done.statut == 'retard' %}#c53030{% elif p.statut == 'absente' %}#c53030{% elif done and done.statut == 'en_cours' %}#f29f2f{% else %}#ddd{% endif %};border-radius:10px;padding:12px;background:{% if done and done.statut == 'ok' %}#e8f5e9{% elif done and done.statut == 'retard' %}#fde8e8{% elif p.statut == 'absente' %}#fde8e8{% elif done and done.statut == 'en_cours' %}#fff3e0{% else %}#fff{% endif %}">
+            <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px">
+                <div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <span style="font-size:18px;font-weight:800;color:#1a3a5c;font-family:monospace">{{ p.heure_prevue }}</span>
+                        <span style="font-size:11px;color:#888">→ {{ p.duree_minutes }}min</span>
+                    </div>
+                    <div style="font-size:13px;font-weight:600;margin-top:4px">{{ p.libelle or 'Intervention' }}</div>
+                    {% if p.client_nom %}<div style="font-size:11px;color:#666">👤 {{ p.client_nom }}</div>{% endif %}
+                    {% if p.lieu %}<div style="font-size:11px;color:#666">📍 {{ p.lieu }}</div>{% endif %}
+                </div>
+                <div>
+                {% if p.statut == 'absente' %}
+                    <span style="background:#c53030;color:#fff;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700">❌ Absent(e)</span>
+                {% elif done and done.statut == 'ok' %}
+                    <span style="background:#2e7d32;color:#fff;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700">✅ Terminée OK</span>
+                    <div style="font-size:10px;color:#666;margin-top:2px;text-align:right">{{ done.heure_debut }} → {{ done.heure_fin }} ({{ done.duree_reelle_minutes }}min)</div>
+                {% elif done and done.statut == 'retard' %}
+                    <span style="background:#c53030;color:#fff;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700">⏰ Retard</span>
+                    <div style="font-size:10px;color:#666;margin-top:2px;text-align:right">{{ done.heure_debut }} → {{ done.heure_fin }} ({{ done.duree_reelle_minutes }}min)</div>
+                {% elif done and done.statut == 'en_cours' %}
+                    <a href="/pt/{{ company.slug }}/session/finish/{{ done.id }}" style="background:#c53030;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;font-size:12px">🛑 Terminer</a>
+                {% else %}
+                    {% if not session_en_cours %}
+                    <a href="/pt/{{ company.slug }}/session/start/{{ p.id }}" style="background:#2e7d32;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:700;font-size:12px">▶ Démarrer</a>
+                    {% else %}
+                    <span style="background:#ddd;color:#666;padding:6px 14px;border-radius:8px;font-size:11px">⏸️ En attente</span>
+                    {% endif %}
+                {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        </div>
+        {% else %}
+        <div style="text-align:center;padding:30px;color:#888;background:#f9f9f9;border-radius:10px">
+            <div style="font-size:36px;margin-bottom:8px">📅</div>
+            <div style="font-size:13px">Aucune intervention planifiée aujourd'hui</div>
+            <div style="font-size:11px;margin-top:4px">Contactez votre responsable si vous attendiez un planning.</div>
+        </div>
+        {% endif %}
+    </div>
+    
+    {% else %}
+    {# ============================================================ #}
+    {# MODE CONTINU : 4 boutons classiques                           #}
+    {# ============================================================ #}
     <div class="pt-grid">
         {% set labels = {'arrivee':'🟢 Arrivée','pause':'☕ Début pause','retour':'🔄 Retour pause','depart':'🔴 Départ'} %}
         {% for t in ['arrivee','pause','retour','depart'] %}
@@ -3698,9 +3934,10 @@ body{background:#f5f7f9 !important}
         </button>
         {% endfor %}
     </div>
+    {% endif %}
 </form>
 
-{% if pointages %}
+{% if pointages and company.type_pointage != 'session' %}
 <div style="background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
     <h3 style="margin:0 0 10px;color:#1a3a5c;font-size:14px">📋 Aujourd'hui</h3>
     {% for p in pointages %}

@@ -4012,6 +4012,231 @@ def migrate_v61():
     conn.commit(); conn.close()
 
 
+def migrate_v62():
+    """v62 : Pointage par session. Chaque entreprise peut être en mode :
+    - 'continu' : pointage classique (arrivée/pause/retour/départ une seule fois par jour)
+    - 'session' : interventions multiples planifiées (démarrer/terminer chaque session)"""
+    conn = get_db()
+    
+    # Ajouter type_pointage à pointage_companies
+    try: conn.execute("ALTER TABLE pointage_companies ADD COLUMN type_pointage TEXT DEFAULT 'continu'")
+    except: pass
+    
+    # Table planning : créneaux prévus par employé/jour pour le mode session
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pointage_planning_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL,
+            company_user_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            heure_prevue TEXT NOT NULL,
+            duree_minutes INTEGER DEFAULT 60,
+            libelle TEXT,
+            lieu TEXT,
+            client_nom TEXT,
+            tolerance_minutes INTEGER DEFAULT 15,
+            penalty_per_minute REAL DEFAULT 0,
+            statut TEXT DEFAULT 'prevue',
+            is_active INTEGER DEFAULT 1,
+            created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_pps_user_date ON pointage_planning_sessions(company_user_id, date)")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_pps_company ON pointage_planning_sessions(company_id)")
+    except: pass
+    
+    # Table pointage_sessions : exécution réelle d'une session
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pointage_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL,
+            company_user_id INTEGER NOT NULL,
+            planning_id INTEGER,
+            date TEXT NOT NULL,
+            heure_debut TEXT,
+            heure_fin TEXT,
+            datetime_debut TEXT,
+            datetime_fin TEXT,
+            duree_reelle_minutes INTEGER,
+            statut TEXT DEFAULT 'en_cours',
+            ecart_debut_minutes INTEGER DEFAULT 0,
+            ecart_fin_minutes INTEGER DEFAULT 0,
+            penalty_amount REAL DEFAULT 0,
+            latitude_debut REAL,
+            longitude_debut REAL,
+            latitude_fin REAL,
+            longitude_fin REAL,
+            method TEXT DEFAULT 'button',
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_ps_user_date ON pointage_sessions(company_user_id, date)")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_ps_planning ON pointage_sessions(planning_id)")
+    except: pass
+    
+    conn.commit(); conn.close()
+
+
+# ======================== SERVICES POINTAGE PAR SESSION ========================
+
+def session_demarrer(company_user_id, planning_id=None, latitude=None, longitude=None, method='button'):
+    """Démarre une session de pointage. Si planning_id fourni, calcule l'écart vs heure prévue."""
+    from datetime import datetime as _dt
+    conn = get_db()
+    now = _dt.now()
+    today = now.strftime('%Y-%m-%d')
+    time_str = now.strftime('%H:%M')
+    
+    # Vérifier que l'employé n'a pas déjà une session en cours
+    en_cours = conn.execute(
+        "SELECT id FROM pointage_sessions WHERE company_user_id=? AND date=? AND statut='en_cours'",
+        (company_user_id, today)).fetchone()
+    if en_cours:
+        conn.close()
+        return None, "Vous avez déjà une session en cours. Terminez-la avant d'en démarrer une autre."
+    
+    # Récupérer infos planning
+    company_id = None
+    ecart_debut = 0
+    if planning_id:
+        plan = conn.execute("SELECT * FROM pointage_planning_sessions WHERE id=?", (planning_id,)).fetchone()
+        if plan:
+            plan = dict(plan)
+            company_id = plan['company_id']
+            # Vérifier qu'il appartient à cet employé
+            if plan['company_user_id'] != company_user_id:
+                conn.close()
+                return None, "Cette session n'est pas planifiée pour vous"
+            # Vérifier qu'elle n'est pas déjà démarrée
+            existing = conn.execute("SELECT id FROM pointage_sessions WHERE planning_id=?", (planning_id,)).fetchone()
+            if existing:
+                conn.close()
+                return None, "Cette session a déjà été pointée"
+            # Calcul écart vs heure prévue
+            try:
+                eh, em = plan['heure_prevue'].split(':')[:2]
+                ah, am = time_str.split(':')[:2]
+                ecart_debut = (int(ah)*60 + int(am)) - (int(eh)*60 + int(em))
+            except: ecart_debut = 0
+    else:
+        # Sans planning : récupérer company_id depuis l'utilisateur
+        u = conn.execute("SELECT company_id FROM pointage_company_users WHERE id=?", (company_user_id,)).fetchone()
+        if u:
+            company_id = u['company_id']
+    
+    if not company_id:
+        conn.close()
+        return None, "Entreprise introuvable"
+    
+    # Statut
+    statut = 'en_cours'
+    
+    try:
+        conn.execute("""INSERT INTO pointage_sessions
+            (company_id, company_user_id, planning_id, date, heure_debut, datetime_debut,
+             ecart_debut_minutes, latitude_debut, longitude_debut, statut, method)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (company_id, company_user_id, planning_id, today, time_str, now.isoformat(),
+             ecart_debut, latitude, longitude, statut, method))
+        sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        # Marquer le planning comme démarré
+        if planning_id:
+            conn.execute("UPDATE pointage_planning_sessions SET statut='en_cours' WHERE id=?", (planning_id,))
+        conn.commit()
+        conn.close()
+        return sid, None
+    except Exception as e:
+        conn.close()
+        return None, f"Erreur: {e}"
+
+
+def session_terminer(session_id, latitude=None, longitude=None):
+    """Termine une session en cours, calcule la durée et applique pénalité éventuelle."""
+    from datetime import datetime as _dt
+    conn = get_db()
+    s = conn.execute("SELECT * FROM pointage_sessions WHERE id=?", (session_id,)).fetchone()
+    if not s:
+        conn.close(); return False, "Session introuvable"
+    s = dict(s)
+    if s['statut'] != 'en_cours':
+        conn.close(); return False, f"Session déjà terminée (statut: {s['statut']})"
+    
+    now = _dt.now()
+    time_str = now.strftime('%H:%M')
+    
+    # Calcul durée réelle
+    duree_min = 0
+    try:
+        debut = _dt.fromisoformat(s['datetime_debut'])
+        duree_min = int((now - debut).total_seconds() / 60)
+    except: pass
+    
+    # Calcul écart vs heure de fin prévue (si planning)
+    ecart_fin = 0
+    penalty = 0
+    statut_final = 'termine'
+    if s.get('planning_id'):
+        plan = conn.execute("SELECT * FROM pointage_planning_sessions WHERE id=?", (s['planning_id'],)).fetchone()
+        if plan:
+            plan = dict(plan)
+            # Heure de fin prévue = heure_prevue + duree_minutes
+            try:
+                eh, em = plan['heure_prevue'].split(':')[:2]
+                start_min = int(eh)*60 + int(em)
+                end_prev_min = start_min + (plan.get('duree_minutes') or 60)
+                ah, am = time_str.split(':')[:2]
+                actual_end_min = int(ah)*60 + int(am)
+                ecart_fin = actual_end_min - end_prev_min
+            except: pass
+            # Si fin avant la fin prévue (départ anticipé) : retard considéré
+            tol = plan.get('tolerance_minutes') or 15
+            if abs(ecart_fin) <= tol and abs(s.get('ecart_debut_minutes', 0) or 0) <= tol:
+                statut_final = 'ok'
+            elif ecart_fin > tol or (s.get('ecart_debut_minutes') or 0) > tol:
+                statut_final = 'retard'
+                # Pénalité (si retard au démarrage)
+                ppm = float(plan.get('penalty_per_minute') or 0)
+                if ppm > 0 and (s.get('ecart_debut_minutes') or 0) > tol:
+                    penalty = ppm * (s.get('ecart_debut_minutes', 0) - tol)
+    else:
+        statut_final = 'termine'
+    
+    try:
+        conn.execute("""UPDATE pointage_sessions SET heure_fin=?, datetime_fin=?,
+            duree_reelle_minutes=?, statut=?, ecart_fin_minutes=?, penalty_amount=?,
+            latitude_fin=?, longitude_fin=? WHERE id=?""",
+            (time_str, now.isoformat(), duree_min, statut_final, ecart_fin, penalty,
+             latitude, longitude, session_id))
+        # Marquer le planning comme terminé
+        if s.get('planning_id'):
+            new_plan_status = 'ok' if statut_final == 'ok' else ('retard' if statut_final == 'retard' else 'termine')
+            conn.execute("UPDATE pointage_planning_sessions SET statut=? WHERE id=?",
+                        (new_plan_status, s['planning_id']))
+        conn.commit()
+        conn.close()
+        return True, {'duree': duree_min, 'statut': statut_final, 'penalty': penalty, 'ecart_fin': ecart_fin}
+    except Exception as e:
+        conn.close()
+        return False, f"Erreur: {e}"
+
+
+def session_marquer_absente(planning_id, user_id):
+    """Marque une session planifiée comme absente (par admin)."""
+    conn = get_db()
+    try:
+        conn.execute("UPDATE pointage_planning_sessions SET statut='absente' WHERE id=?", (planning_id,))
+        conn.commit()
+        conn.close()
+        return True, "Session marquée absente"
+    except Exception as e:
+        conn.close()
+        return False, str(e)
+
+
 # ======================== SERVICES COMPTABLES ========================
 
 def compta_periode_est_ouverte(annee, mois):

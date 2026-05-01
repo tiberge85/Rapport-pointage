@@ -357,6 +357,8 @@ from models import migrate_v60
 migrate_v60()
 from models import migrate_v61
 migrate_v61()
+from models import migrate_v62
+migrate_v62()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -4182,13 +4184,49 @@ def devis_edit(did):
     return render_template('devis_edit.html', page='devis', devis=devis, items=items, clients=clients,
                            stock_items=stock_items, default_commercial=default_commercial)
 
-@app.route('/devis/delete/<int:did>')
-@permission_required('proforma_edit')
+@app.route('/devis/delete/<int:did>', methods=['GET', 'POST'])
+@permission_required_any('proforma_edit', 'admin')
 def devis_delete(did):
     conn = _gdb()
+    # Récupérer le doc pour message
+    doc = conn.execute("SELECT reference, doc_type, client_name FROM devis WHERE id=?", (did,)).fetchone()
+    if not doc:
+        flash("Document introuvable", "error")
+        conn.close(); return redirect(url_for('devis_page'))
+    doc = dict(doc)
+    type_label = "Proforma" if doc.get('doc_type') == 'proforma' else "Devis"
+    
+    # Vérifier si des factures sont liées
+    nb_factures = 0
+    try:
+        nb_factures = conn.execute("SELECT COUNT(*) FROM invoices WHERE devis_id=?", (did,)).fetchone()[0]
+    except: pass
+    
+    if nb_factures > 0:
+        # Délier au lieu de bloquer (soft delete)
+        try: conn.execute("UPDATE invoices SET devis_id=NULL WHERE devis_id=?", (did,))
+        except: pass
+    
+    # Supprimer les fichiers/pdf liés
+    try: conn.execute("DELETE FROM devis_files WHERE devis_id=?", (did,))
+    except: pass
+    try: conn.execute("DELETE FROM devis_versions WHERE devis_id=?", (did,))
+    except: pass
+    
     conn.execute("DELETE FROM devis WHERE id=?", (did,))
     conn.commit(); conn.close()
-    flash("Devis supprimé", "success"); return redirect(url_for('devis_page'))
+    
+    msg = f"✅ {type_label} '{doc.get('reference','#'+str(did))}' ({doc.get('client_name','')}) supprimé"
+    if nb_factures > 0:
+        msg += f" — {nb_factures} facture(s) liée(s) ont été déliées (mais conservées)"
+    flash(msg, "success")
+    
+    log_activity(session['user_id'], 'delete_devis', f"{type_label} {doc.get('reference','#'+str(did))} supprimé")
+    
+    # Redirection selon type
+    if doc.get('doc_type') == 'proforma':
+        return redirect('/devis?type=proforma')
+    return redirect(url_for('devis_page'))
 
 @app.route('/devis/duplicate/<int:did>')
 @permission_required('proforma_edit')
@@ -10976,6 +11014,9 @@ def admin_pointage_company_add():
     color = (request.form.get('primary_color', '#1a7a6d') or '#1a7a6d').strip()
     ppm = float(request.form.get('penalty_per_minute', '0') or 0)
     grace = int(request.form.get('grace_minutes', '10') or 10)
+    type_pointage = (request.form.get('type_pointage', 'continu') or 'continu').strip()
+    if type_pointage not in ('continu', 'session'):
+        type_pointage = 'continu'
     
     if not name or not slug:
         flash("Nom et identifiant requis.", "error")
@@ -10984,12 +11025,13 @@ def admin_pointage_company_add():
     conn = _gdb()
     try:
         conn.execute("""INSERT INTO pointage_companies
-            (name, slug, welcome_message, primary_color, penalty_per_minute, grace_minutes, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (name, slug, welcome, color, ppm, grace, session.get('user_id')))
+            (name, slug, welcome_message, primary_color, penalty_per_minute, grace_minutes, type_pointage, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (name, slug, welcome, color, ppm, grace, type_pointage, session.get('user_id')))
         cid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         conn.commit()
-        flash(f"✅ Entreprise '{name}' créée. URL pointage : /pt/{slug}", "success")
+        type_label = "Pointage par session (interventions)" if type_pointage == 'session' else "Présence continue (arrivée/pause/départ)"
+        flash(f"✅ Entreprise '{name}' créée — Mode : {type_label} — URL : /pt/{slug}", "success")
         conn.close()
         return redirect(url_for('admin_pointage_company_detail', cid=cid))
     except Exception as e:
@@ -11014,14 +11056,16 @@ def admin_pointage_company_detail(cid):
         # Update company info
         if request.form.get('action') == 'update_company':
             try:
+                tp = (request.form.get('type_pointage', 'continu') or 'continu').strip()
+                if tp not in ('continu','session'): tp = 'continu'
                 conn.execute("""UPDATE pointage_companies SET
                     name=?, welcome_message=?, primary_color=?,
-                    penalty_per_minute=?, grace_minutes=?
+                    penalty_per_minute=?, grace_minutes=?, type_pointage=?
                     WHERE id=?""",
                     (request.form.get('name'), request.form.get('welcome_message'),
                      request.form.get('primary_color', '#1a7a6d'),
                      float(request.form.get('penalty_per_minute', '0') or 0),
-                     int(request.form.get('grace_minutes', '10') or 10), cid))
+                     int(request.form.get('grace_minutes', '10') or 10), tp, cid))
                 conn.commit()
                 flash("✅ Entreprise mise à jour", "success")
             except Exception as e:
@@ -11301,8 +11345,11 @@ def pointage_company_login(slug):
                 # Si retour vers scan
                 next_action = request.args.get('next','')
                 pt_type = request.args.get('type','')
+                planning_id = request.args.get('planning_id','')
                 if next_action == 'scan' and pt_type:
                     return redirect(url_for('pointage_company_scan', slug=slug) + f'?type={pt_type}')
+                if next_action == 'session_start' and planning_id:
+                    return redirect(url_for('pointage_company_session_start', slug=slug, planning_id=int(planning_id)))
                 return redirect(url_for('pointage_company_dashboard', slug=slug))
         conn.close()
         flash("❌ Identifiants incorrects", "error")
@@ -11414,9 +11461,36 @@ def pointage_company_dashboard(slug):
             if t == 'depart' and 'pause' in types_done and 'retour' not in types_done: can = False
         state[t] = {'done': done, 'can': can}
     
+    # === Mode session : récupérer planning + sessions du jour ===
+    plannings_today = []
+    sessions_today = []
+    session_en_cours = None
+    if company.get('type_pointage') == 'session':
+        conn2 = _gdb()
+        plannings_today = [dict(r) for r in conn2.execute("""
+            SELECT * FROM pointage_planning_sessions
+            WHERE company_user_id=? AND date=? AND COALESCE(is_active,1)=1
+            ORDER BY heure_prevue""", (user['id'], today)).fetchall()]
+        sessions_today = [dict(r) for r in conn2.execute("""
+            SELECT * FROM pointage_sessions
+            WHERE company_user_id=? AND date=?
+            ORDER BY heure_debut""", (user['id'], today)).fetchall()]
+        en_cours = conn2.execute(
+            "SELECT * FROM pointage_sessions WHERE company_user_id=? AND date=? AND statut='en_cours' LIMIT 1",
+            (user['id'], today)).fetchone()
+        session_en_cours = dict(en_cours) if en_cours else None
+        # Mapper plannings -> sessions exécutées
+        sessions_by_planning = {s.get('planning_id'): s for s in sessions_today if s.get('planning_id')}
+        for p in plannings_today:
+            p['session_done'] = sessions_by_planning.get(p['id'])
+        conn2.close()
+    
     return render_template('extra_pages.html', page='pt_dashboard',
                           company=company, user=user, pointages=pointages,
-                          state=state, today=today)
+                          state=state, today=today,
+                          plannings_today=plannings_today,
+                          sessions_today=sessions_today,
+                          session_en_cours=session_en_cours)
 
 
 @app.route('/pt/<slug>/password', methods=['GET', 'POST'])
@@ -11648,6 +11722,161 @@ def admin_pointage_company_qr(cid):
     
     return render_template('extra_pages.html', page='pt_company_qr',
                           company=company, qrs=qrs, base_url=base_url)
+
+
+# ============================================================
+# 📅 POINTAGE PAR SESSION — Planning + Démarrer/Terminer
+# ============================================================
+
+@app.route('/admin/pointage/companies/<int:cid>/planning', methods=['GET', 'POST'])
+@permission_required_any('admin', 'pointage_edit')
+def admin_pointage_company_planning(cid):
+    """CRUD du planning de sessions pour une entreprise en mode 'session'."""
+    conn = _gdb()
+    company = conn.execute("SELECT * FROM pointage_companies WHERE id=?", (cid,)).fetchone()
+    if not company:
+        conn.close()
+        flash("Entreprise introuvable", "error")
+        return redirect(url_for('admin_pointage_companies_list'))
+    company = dict(company)
+    
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+        if action == 'add':
+            try:
+                user_id = int(request.form.get('company_user_id', 0))
+                date = request.form.get('date', '').strip()
+                heure = request.form.get('heure_prevue', '').strip()
+                duree = int(request.form.get('duree_minutes', 60) or 60)
+                libelle = (request.form.get('libelle', '') or '').strip()
+                lieu = (request.form.get('lieu', '') or '').strip()
+                client_nom = (request.form.get('client_nom', '') or '').strip()
+                tol = int(request.form.get('tolerance_minutes', 15) or 15)
+                ppm = float(request.form.get('penalty_per_minute', 0) or 0)
+                
+                if not date or not heure or not user_id:
+                    flash("❌ Date, heure et employé requis", "error")
+                else:
+                    conn.execute("""INSERT INTO pointage_planning_sessions
+                        (company_id, company_user_id, date, heure_prevue, duree_minutes,
+                         libelle, lieu, client_nom, tolerance_minutes, penalty_per_minute,
+                         statut, created_by)
+                        VALUES (?,?,?,?,?,?,?,?,?,?, 'prevue', ?)""",
+                        (cid, user_id, date, heure, duree, libelle, lieu, client_nom,
+                         tol, ppm, session.get('user_id')))
+                    conn.commit()
+                    flash(f"✅ Session planifiée le {date} à {heure}", "success")
+            except Exception as e:
+                flash(f"❌ Erreur : {e}", "error")
+        elif action == 'delete':
+            try:
+                pid = int(request.form.get('planning_id', 0))
+                conn.execute("DELETE FROM pointage_planning_sessions WHERE id=? AND company_id=?", (pid, cid))
+                conn.commit()
+                flash("✅ Session planifiée supprimée", "success")
+            except: pass
+        elif action == 'mark_absent':
+            try:
+                pid = int(request.form.get('planning_id', 0))
+                conn.execute("UPDATE pointage_planning_sessions SET statut='absente' WHERE id=? AND company_id=?", (pid, cid))
+                conn.commit()
+                flash("⚠️ Session marquée absente", "warning")
+            except: pass
+        conn.close()
+        return redirect(url_for('admin_pointage_company_planning', cid=cid))
+    
+    # GET : afficher planning du jour ou semaine
+    date_filter = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
+    
+    users = [dict(r) for r in conn.execute(
+        "SELECT * FROM pointage_company_users WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY full_name",
+        (cid,)).fetchall()]
+    
+    plannings = [dict(r) for r in conn.execute("""
+        SELECT pps.*, pcu.full_name as user_name
+        FROM pointage_planning_sessions pps
+        LEFT JOIN pointage_company_users pcu ON pps.company_user_id = pcu.id
+        WHERE pps.company_id=? AND pps.date=? AND COALESCE(pps.is_active,1)=1
+        ORDER BY pps.heure_prevue""", (cid, date_filter)).fetchall()]
+    
+    # Sessions réalisées (pour stats du jour)
+    sessions_real = [dict(r) for r in conn.execute("""
+        SELECT * FROM pointage_sessions WHERE company_id=? AND date=?""",
+        (cid, date_filter)).fetchall()]
+    
+    conn.close()
+    return render_template('extra_pages.html', page='pt_company_planning',
+                          company=company, users=users, plannings=plannings,
+                          sessions_real=sessions_real, date_filter=date_filter)
+
+
+@app.route('/pt/<slug>/session/start/<int:planning_id>', methods=['GET', 'POST'])
+def pointage_company_session_start(slug, planning_id):
+    """Démarre une session planifiée. Si pas connecté → redirige login."""
+    if session.get('pt_company_slug') != slug or not session.get('pt_user_id'):
+        # Stocker dans session pour redirection après login
+        return redirect(url_for('pointage_company_login', slug=slug)
+                       + f'?next=session_start&planning_id={planning_id}')
+    
+    from models import session_demarrer
+    user_id = session['pt_user_id']
+    
+    lat = request.form.get('latitude') if request.method == 'POST' else request.args.get('lat')
+    lng = request.form.get('longitude') if request.method == 'POST' else request.args.get('lng')
+    try: lat = float(lat) if lat else None
+    except: lat = None
+    try: lng = float(lng) if lng else None
+    except: lng = None
+    
+    sid, err = session_demarrer(user_id, planning_id=planning_id, latitude=lat, longitude=lng,
+                                method='qr' if request.args.get('via') == 'qr' else 'button')
+    if err:
+        flash(f"❌ {err}", "error")
+    else:
+        flash(f"✅ Session #{sid} démarrée à {datetime.now().strftime('%H:%M')}", "success")
+    return redirect(url_for('pointage_company_dashboard', slug=slug))
+
+
+@app.route('/pt/<slug>/session/finish/<int:session_id>', methods=['GET', 'POST'])
+def pointage_company_session_finish(slug, session_id):
+    """Termine une session en cours."""
+    if session.get('pt_company_slug') != slug or not session.get('pt_user_id'):
+        return redirect(url_for('pointage_company_login', slug=slug))
+    
+    from models import session_terminer
+    
+    # Vérifier que c'est bien la session de cet employé
+    conn = _gdb()
+    s = conn.execute("SELECT * FROM pointage_sessions WHERE id=? AND company_user_id=?",
+                    (session_id, session['pt_user_id'])).fetchone()
+    if not s:
+        conn.close()
+        flash("Session introuvable", "error")
+        return redirect(url_for('pointage_company_dashboard', slug=slug))
+    conn.close()
+    
+    lat = request.form.get('latitude') if request.method == 'POST' else None
+    lng = request.form.get('longitude') if request.method == 'POST' else None
+    try: lat = float(lat) if lat else None
+    except: lat = None
+    try: lng = float(lng) if lng else None
+    except: lng = None
+    
+    ok, info = session_terminer(session_id, latitude=lat, longitude=lng)
+    if not ok:
+        flash(f"❌ {info}", "error")
+    else:
+        h = info['duree'] // 60
+        m = info['duree'] % 60
+        msg = f"✅ Session terminée — Durée : {h}h{m:02d}"
+        if info.get('statut') == 'retard':
+            msg += " — ⏰ Retard"
+            if info.get('penalty'):
+                msg += f" — Pénalité {info['penalty']:.0f} F"
+        elif info.get('statut') == 'ok':
+            msg += " — ✅ OK"
+        flash(msg, 'warning' if info.get('statut') == 'retard' else 'success')
+    return redirect(url_for('pointage_company_dashboard', slug=slug))
 
 
 DEPARTMENTS = ['Administration', 'Direction Générale', 'Ressources Humaines',
