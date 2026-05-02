@@ -4172,7 +4172,116 @@ def migrate_v63():
     conn.commit(); conn.close()
 
 
-# ======================== SERVICES EMPLOI DU TEMPS + GROUPES ========================
+def migrate_v64():
+    """v64 : Jours de repos personnalisés (fériés, congés exceptionnels).
+    Permet de définir :
+    - Jours fériés/repos pour TOUTE l'entreprise (scope='entreprise')
+    - Jours de repos pour UN employé spécifique (scope='employe', company_user_id renseigné)
+    - Jours de repos pour UN groupe (scope='groupe', groupe_id renseigné)"""
+    conn = get_db()
+    
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pointage_jours_repos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            date_fin TEXT,
+            libelle TEXT NOT NULL,
+            type TEXT DEFAULT 'ferie',
+            scope TEXT DEFAULT 'entreprise',
+            company_user_id INTEGER,
+            groupe_id INTEGER,
+            recurrent_annuel INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_jr_company_date ON pointage_jours_repos(company_id, date)")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_jr_user ON pointage_jours_repos(company_user_id)")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_jr_groupe ON pointage_jours_repos(groupe_id)")
+    except: pass
+    
+    conn.commit(); conn.close()
+
+
+# ======================== SERVICES JOURS DE REPOS ========================
+
+def is_jour_repos(company_id, date_iso, company_user_id=None):
+    """Vérifie si une date est un jour de repos pour un employé donné (ou pour l'entreprise).
+    Retourne (True/False, libelle).
+    
+    Hiérarchie de vérification :
+    1. Repos individuel pour cet employé
+    2. Repos de groupe (si employé dans un groupe ayant un repos)
+    3. Repos entreprise (toute l'entreprise)
+    4. Repos récurrent annuel (date sans année)
+    """
+    from datetime import datetime as _dt
+    conn = get_db()
+    # Format MM-DD pour récurrents
+    try:
+        d = _dt.strptime(date_iso, '%Y-%m-%d')
+        mmdd = d.strftime('%m-%d')
+    except: mmdd = ''
+    
+    # 1. Repos individuel
+    if company_user_id:
+        r = conn.execute("""SELECT libelle FROM pointage_jours_repos
+            WHERE company_id=? AND scope='employe' AND company_user_id=?
+              AND COALESCE(is_active,1)=1
+              AND ((date=?) OR (date_fin IS NOT NULL AND ? BETWEEN date AND date_fin)
+                   OR (recurrent_annuel=1 AND substr(date,6,5)=?))""",
+            (company_id, company_user_id, date_iso, date_iso, mmdd)).fetchone()
+        if r: conn.close(); return True, r[0]
+    
+    # 2. Repos de groupe
+    if company_user_id:
+        r = conn.execute("""SELECT jr.libelle FROM pointage_jours_repos jr
+            JOIN pointage_groupe_membres pgm ON pgm.groupe_id = jr.groupe_id
+            WHERE jr.company_id=? AND jr.scope='groupe'
+              AND pgm.company_user_id=? AND COALESCE(jr.is_active,1)=1
+              AND ((jr.date=?) OR (jr.date_fin IS NOT NULL AND ? BETWEEN jr.date AND jr.date_fin)
+                   OR (jr.recurrent_annuel=1 AND substr(jr.date,6,5)=?))""",
+            (company_id, company_user_id, date_iso, date_iso, mmdd)).fetchone()
+        if r: conn.close(); return True, r[0]
+    
+    # 3. Repos entreprise
+    r = conn.execute("""SELECT libelle FROM pointage_jours_repos
+        WHERE company_id=? AND scope='entreprise' AND COALESCE(is_active,1)=1
+          AND ((date=?) OR (date_fin IS NOT NULL AND ? BETWEEN date AND date_fin)
+               OR (recurrent_annuel=1 AND substr(date,6,5)=?))""",
+        (company_id, date_iso, date_iso, mmdd)).fetchone()
+    if r: conn.close(); return True, r[0]
+    
+    conn.close()
+    return False, None
+
+
+def jours_repos_list(company_id, date_from=None, date_to=None):
+    """Liste tous les jours de repos d'une entreprise sur une plage."""
+    conn = get_db()
+    where = ["company_id=?", "COALESCE(is_active,1)=1"]
+    params = [company_id]
+    if date_from:
+        where.append("(date >= ? OR (date_fin IS NOT NULL AND date_fin >= ?) OR recurrent_annuel=1)")
+        params.extend([date_from, date_from])
+    if date_to:
+        where.append("(date <= ? OR recurrent_annuel=1)")
+        params.append(date_to)
+    
+    rows = [dict(r) for r in conn.execute(f"""
+        SELECT jr.*, pcu.full_name as user_name, pg.nom as groupe_nom, pg.color as groupe_color
+        FROM pointage_jours_repos jr
+        LEFT JOIN pointage_company_users pcu ON jr.company_user_id = pcu.id
+        LEFT JOIN pointage_groupes pg ON jr.groupe_id = pg.id
+        WHERE {' AND '.join(where)}
+        ORDER BY jr.date""", tuple(params)).fetchall()]
+    conn.close()
+    return rows
+
 
 def edt_get_for_user(company_user_id, date_iso=None):
     """Retourne l'emploi du temps applicable à un employé pour une date donnée.

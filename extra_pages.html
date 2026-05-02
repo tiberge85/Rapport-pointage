@@ -2386,6 +2386,7 @@ function getMyPos(){
         <a href="/admin/pointage/companies/{{ company.id }}/edt" class="btn btn-sm" style="background:#1976d2;color:#fff">🕒 Emplois du temps</a>
         <a href="/admin/pointage/companies/{{ company.id }}/groupes" class="btn btn-sm" style="background:#1A7A6D;color:#fff">👥 Groupes</a>
         {% endif %}
+        <a href="/admin/pointage/companies/{{ company.id }}/jours-repos" class="btn btn-sm" style="background:#f29f2f;color:#fff">🌴 Jours de repos</a>
         <a href="/pt/{{ company.slug }}" target="_blank" class="btn btn-outline btn-sm">🚪 Voir login employé</a>
         <a href="/admin/pointage/companies" class="btn btn-outline btn-sm">← Liste</a>
         <form method="post" action="/admin/pointage/companies/{{ company.id }}/delete" style="display:inline" onsubmit="return confirm('⚠️ ATTENTION ⚠️\n\nSupprimer DÉFINITIVEMENT l\'entreprise « {{ company.name }} » va effacer :\n• L\'entreprise elle-même\n• TOUS ses employés\n• TOUS leurs pointages\n• Toutes les alertes associées\n\nCette action est IRRÉVERSIBLE.\n\nÊtes-vous absolument sûr ?')">
@@ -3326,8 +3327,27 @@ function getMyPos(){
             <input type="number" name="tolerance_minutes" value="10" min="0" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
         <div><label style="font-size:11px;color:#888">Pénalité F/min</label>
             <input type="number" name="penalty_per_minute" value="0" min="0" step="50" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
-        <div style="grid-column:span 2"><label style="font-size:11px;color:#888">Jours actifs (1=Lun, 2=Mar... 7=Dim)</label>
-            <input name="jours_actifs" value="1,2,3,4,5" placeholder="1,2,3,4,5" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px;font-family:monospace"></div>
+        <div style="grid-column:1/-1">
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:4px">Jours travaillés</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+                <button type="button" onclick="setJours('1,2,3,4,5')" class="btn btn-sm btn-outline" style="font-size:10px;padding:4px 8px">Lun-Ven</button>
+                <button type="button" onclick="setJours('1,2,3,4,5,6')" class="btn btn-sm btn-outline" style="font-size:10px;padding:4px 8px">Lun-Sam</button>
+                <button type="button" onclick="setJours('1,2,3,4,5,6,7')" class="btn btn-sm btn-outline" style="font-size:10px;padding:4px 8px">Tous les jours</button>
+                <button type="button" onclick="setJours('6,7')" class="btn btn-sm btn-outline" style="font-size:10px;padding:4px 8px">Week-end seul.</button>
+                <button type="button" onclick="setJours('')" class="btn btn-sm btn-outline" style="font-size:10px;padding:4px 8px;color:#c53030">Tout décocher</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">
+                {% set jours_labels = [('1','Lundi','L'),('2','Mardi','M'),('3','Mercredi','M'),('4','Jeudi','J'),('5','Vendredi','V'),('6','Samedi','S'),('7','Dimanche','D')] %}
+                {% for j_num, j_full, j_short in jours_labels %}
+                <label class="jour-cb-label" data-jour="{{ j_num }}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 4px;border:1.5px solid #ddd;border-radius:8px;cursor:pointer;background:#fff;transition:all 0.15s">
+                    <input type="checkbox" name="jours_cb" value="{{ j_num }}" {% if j_num in ['1','2','3','4','5'] %}checked{% endif %} style="margin-bottom:4px" onchange="updateJoursActifs()">
+                    <span style="font-size:14px;font-weight:800">{{ j_short }}</span>
+                    <span style="font-size:9px;color:#888">{{ j_full[:3] }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <input type="hidden" name="jours_actifs" id="jours_actifs_hidden" value="1,2,3,4,5">
+        </div>
         <div><label style="font-size:11px;color:#888">Cible</label>
             <select name="cible" id="edtCible" onchange="document.getElementById('edtCibleId').innerHTML=this.value=='groupe'?document.getElementById('groupesOpts').innerHTML:document.getElementById('usersOpts').innerHTML" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
                 <option value="individuel">👤 Employé individuel</option>
@@ -3340,6 +3360,35 @@ function getMyPos(){
             </select></div>
         <button type="submit" class="btn btn-primary btn-sm">+ Créer</button>
     </form>
+    <style>
+    .jour-cb-label.checked{background:#e3f2fd;border-color:#1976d2;color:#1976d2}
+    .jour-cb-label:hover{background:#f5f9fc}
+    .jour-cb-label input{display:none}
+    </style>
+    <script>
+    function updateJoursActifs(){
+        var cbs = document.querySelectorAll('input[name="jours_cb"]:checked');
+        var vals = Array.from(cbs).map(c=>c.value).sort();
+        document.getElementById('jours_actifs_hidden').value = vals.join(',');
+        // Update visual states
+        document.querySelectorAll('.jour-cb-label').forEach(function(lbl){
+            var cb = lbl.querySelector('input[type="checkbox"]');
+            if(cb.checked) lbl.classList.add('checked');
+            else lbl.classList.remove('checked');
+        });
+    }
+    function setJours(csv){
+        var vals = csv ? csv.split(',') : [];
+        document.querySelectorAll('input[name="jours_cb"]').forEach(function(cb){
+            cb.checked = vals.indexOf(cb.value) !== -1;
+        });
+        updateJoursActifs();
+    }
+    // Init visual on load
+    document.addEventListener('DOMContentLoaded', updateJoursActifs);
+    // Also init now in case DOMContentLoaded already fired
+    setTimeout(updateJoursActifs, 50);
+    </script>
     <select id="usersOpts" style="display:none">
         <option value="">-- Choisir un employé --</option>
         {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>{% endfor %}
@@ -3390,6 +3439,144 @@ function getMyPos(){
 {% else %}
 <div style="text-align:center;padding:30px;color:#888;background:#fff;border-radius:10px">Aucun emploi du temps. Créez-en un avec le formulaire ci-dessus.</div>
 {% endfor %}
+
+{% elif page == 'pt_company_jours_repos' %}
+<style>
+.jr-card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:10px;border-left:4px solid #f29f2f}
+.jr-row{display:grid;grid-template-columns:90px 1fr 110px 100px 60px;gap:10px;padding:8px;border-bottom:1px solid #f0f0f0;align-items:center;font-size:12px}
+.jr-date{font-family:monospace;font-size:13px;font-weight:700;color:#1a3a5c}
+.jr-scope-entreprise{background:#e3f2fd;color:#1976d2;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700}
+.jr-scope-groupe{background:#f3e5f5;color:#7b1fa2;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700}
+.jr-scope-employe{background:#e0f5f1;color:#1A7A6D;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700}
+.jr-type-ferie{background:#fde8e8;color:#c53030;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700}
+.jr-type-conge{background:#fff3e0;color:#b8561f;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700}
+.jr-type-repos{background:#e0f5f1;color:#1A7A6D;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700}
+</style>
+<div class="page-header">
+    <h1>🌴 Jours de repos — {{ company.name }}</h1>
+    <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Fiche entreprise</a>
+</div>
+
+<div class="jr-card" style="background:#fff8e0;border-color:#f29f2f">
+    <strong style="color:#b8561f">💡 À quoi servent les jours de repos ?</strong>
+    <p style="font-size:12px;margin:6px 0 0;color:#555">
+    Définissez les jours fériés, congés exceptionnels et jours de repos personnalisés. Le système ne comptabilisera <strong>ni retard ni absence</strong> ces jours-là.<br>
+    <strong>3 portées possibles :</strong>
+    <span class="jr-scope-entreprise" style="margin:0 3px">🏢 Entreprise</span> tous les employés
+    · <span class="jr-scope-groupe" style="margin:0 3px">👥 Groupe</span> seulement un groupe
+    · <span class="jr-scope-employe" style="margin:0 3px">👤 Employé</span> un seul employé.<br>
+    <strong>Récurrent annuel</strong> : la date se répète automatiquement chaque année (idéal pour les fêtes nationales).
+    </p>
+</div>
+
+<div class="card" style="margin-bottom:14px"><div class="card-body">
+    <h3 style="margin-top:0">+ Nouveau jour de repos</h3>
+    <form method="post" id="jrForm">
+        <input type="hidden" name="action" value="add">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;align-items:end">
+            <div style="grid-column:span 2"><label style="font-size:11px;color:#888">Libellé *</label>
+                <input name="libelle" required placeholder="Ex: Fête du Travail, Pont du 1er mai, Congé maladie..." style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+            <div><label style="font-size:11px;color:#888">Date *</label>
+                <input type="date" name="date" required value="{{ today }}" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+            <div><label style="font-size:11px;color:#888">Date fin (optionnel, pour plage)</label>
+                <input type="date" name="date_fin" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+            <div><label style="font-size:11px;color:#888">Type</label>
+                <select name="type" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                    <option value="ferie">🇨🇮 Jour férié</option>
+                    <option value="conge">🏖️ Congé</option>
+                    <option value="repos">😴 Repos</option>
+                </select></div>
+            <div><label style="font-size:11px;color:#888">Portée</label>
+                <select name="scope" id="jrScope" onchange="onScopeChange()" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                    <option value="entreprise">🏢 Toute l'entreprise</option>
+                    <option value="groupe">👥 Groupe entier</option>
+                    <option value="employe">👤 Employé spécifique</option>
+                </select></div>
+        </div>
+        <div id="jrEmpDiv" style="display:none;margin-top:8px">
+            <label style="font-size:11px;color:#888">Employé *</label>
+            <select name="company_user_id" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                <option value="">-- Choisir --</option>
+                {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>{% endfor %}
+            </select>
+        </div>
+        <div id="jrGroupeDiv" style="display:none;margin-top:8px">
+            <label style="font-size:11px;color:#888">Groupe *</label>
+            <select name="groupe_id" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                <option value="">-- Choisir --</option>
+                {% for g in groupes %}<option value="{{ g.id }}">{{ g.nom }}</option>{% endfor %}
+            </select>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+                <input type="checkbox" name="recurrent_annuel" value="1">
+                <span>🔁 <strong>Récurrent annuel</strong> (se répète chaque année à la même date)</span>
+            </label>
+            <button type="submit" class="btn btn-primary btn-sm">+ Ajouter</button>
+        </div>
+    </form>
+    <script>
+    function onScopeChange(){
+        var v = document.getElementById('jrScope').value;
+        document.getElementById('jrEmpDiv').style.display = v=='employe' ? 'block' : 'none';
+        document.getElementById('jrGroupeDiv').style.display = v=='groupe' ? 'block' : 'none';
+    }
+    </script>
+</div></div>
+
+<div class="card" style="margin-bottom:14px"><div class="card-body">
+    <h3 style="margin:0 0 8px">⚡ Importer les jours fériés de Côte d'Ivoire</h3>
+    <p style="font-size:11px;color:#666;margin:0 0 10px">Ajoute automatiquement les 6 jours fériés CI principaux en récurrent annuel : Jour de l'An, Fête du Travail, Indépendance (8 août), Paix (15 nov), Noël, Veille du Nouvel An.</p>
+    <form method="post" style="display:inline">
+        <input type="hidden" name="action" value="add_feries_ci">
+        <button type="submit" class="btn btn-sm" style="background:#f29f2f;color:#fff">🇨🇮 Importer jours fériés CI</button>
+    </form>
+</div></div>
+
+<h3 style="font-size:13px;color:#1a3a5c;margin:14px 0 8px">📋 Jours de repos enregistrés ({{ jours_repos|length }})</h3>
+
+<div class="jr-card" style="padding:0;border-left:none">
+{% if jours_repos %}
+<table style="width:100%;font-size:12px;border-collapse:collapse">
+<thead><tr style="background:#1a3a5c;color:#fff">
+    <th style="padding:8px;text-align:left">Date</th>
+    <th style="padding:8px;text-align:left">Libellé</th>
+    <th style="padding:8px;text-align:left">Type</th>
+    <th style="padding:8px;text-align:left">Portée</th>
+    <th style="padding:8px;text-align:center">🔁</th>
+    <th style="padding:8px;text-align:right">Actions</th>
+</tr></thead>
+<tbody>
+{% for j in jours_repos %}
+<tr style="border-bottom:1px solid #f0f0f0">
+    <td style="padding:6px 8px"><span class="jr-date">{{ j.date }}</span>{% if j.date_fin %}<br><span style="font-size:10px;color:#666;font-family:monospace">→ {{ j.date_fin }}</span>{% endif %}</td>
+    <td style="padding:6px 8px"><strong>{{ j.libelle }}</strong></td>
+    <td style="padding:6px 8px"><span class="jr-type-{{ j.type }}">{{ j.type|upper }}</span></td>
+    <td style="padding:6px 8px">
+        {% if j.scope == 'entreprise' %}<span class="jr-scope-entreprise">🏢 Entreprise</span>
+        {% elif j.scope == 'groupe' %}<span class="jr-scope-groupe">👥 {{ j.groupe_nom or 'Groupe' }}</span>
+        {% elif j.scope == 'employe' %}<span class="jr-scope-employe">👤 {{ j.user_name or 'Employé' }}</span>
+        {% endif %}
+    </td>
+    <td style="padding:6px 8px;text-align:center;font-size:14px">{% if j.recurrent_annuel %}✅{% else %}—{% endif %}</td>
+    <td style="padding:6px 8px;text-align:right">
+        <form method="post" style="display:inline" onsubmit="return confirm('Supprimer « {{ j.libelle }} » du {{ j.date }} ?')">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="jour_id" value="{{ j.id }}">
+            <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px">🗑️</button>
+        </form>
+    </td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}
+<div style="text-align:center;padding:30px;color:#888">
+    Aucun jour de repos enregistré.<br>
+    <span style="font-size:11px">Commencez par importer les jours fériés CI ou ajoutez-en manuellement.</span>
+</div>
+{% endif %}
+</div>
 
 {% elif page == 'pt_company_externes' %}
 <style>

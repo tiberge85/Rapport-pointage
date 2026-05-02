@@ -361,6 +361,8 @@ from models import migrate_v62
 migrate_v62()
 from models import migrate_v63
 migrate_v63()
+from models import migrate_v64
+migrate_v64()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -12063,6 +12065,120 @@ def admin_pointage_company_edt(cid):
     conn.close()
     return render_template('extra_pages.html', page='pt_company_edt',
                           company=company, edts=edts, users=users, groupes=groupes)
+
+
+@app.route('/admin/pointage/companies/<int:cid>/jours-repos', methods=['GET', 'POST'])
+@permission_required_any('admin', 'pointage_edit')
+def admin_pointage_company_jours_repos(cid):
+    """Gestion des jours de repos / fériés (entreprise / groupe / employé)."""
+    conn = _gdb()
+    company = conn.execute("SELECT * FROM pointage_companies WHERE id=?", (cid,)).fetchone()
+    if not company:
+        conn.close()
+        flash("Entreprise introuvable", "error")
+        return redirect(url_for('admin_pointage_companies_list'))
+    company = dict(company)
+    
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+        if action == 'add':
+            try:
+                libelle = (request.form.get('libelle','') or '').strip()
+                date = (request.form.get('date','') or '').strip()
+                date_fin = (request.form.get('date_fin','') or '').strip() or None
+                type_jour = (request.form.get('type','ferie') or 'ferie').strip()
+                scope = (request.form.get('scope','entreprise') or 'entreprise').strip()
+                recurrent = 1 if request.form.get('recurrent_annuel') == '1' else 0
+                user_id = None
+                groupe_id = None
+                if scope == 'employe':
+                    try: user_id = int(request.form.get('company_user_id', 0))
+                    except: pass
+                    if not user_id:
+                        flash("Sélectionnez un employé", "error")
+                        return redirect(url_for('admin_pointage_company_jours_repos', cid=cid))
+                elif scope == 'groupe':
+                    try: groupe_id = int(request.form.get('groupe_id', 0))
+                    except: pass
+                    if not groupe_id:
+                        flash("Sélectionnez un groupe", "error")
+                        return redirect(url_for('admin_pointage_company_jours_repos', cid=cid))
+                
+                if not libelle or not date:
+                    flash("Libellé et date requis", "error")
+                else:
+                    conn.execute("""INSERT INTO pointage_jours_repos
+                        (company_id, date, date_fin, libelle, type, scope,
+                         company_user_id, groupe_id, recurrent_annuel, created_by)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                        (cid, date, date_fin, libelle, type_jour, scope,
+                         user_id, groupe_id, recurrent, session.get('user_id')))
+                    conn.commit()
+                    flash(f"✅ Jour de repos '{libelle}' ajouté", "success")
+            except Exception as e:
+                flash(f"❌ {e}", "error")
+        elif action == 'delete':
+            try:
+                jid = int(request.form.get('jour_id', 0))
+                conn.execute("DELETE FROM pointage_jours_repos WHERE id=? AND company_id=?", (jid, cid))
+                conn.commit()
+                flash("✅ Jour de repos supprimé", "success")
+            except: pass
+        elif action == 'add_feries_ci':
+            # Ajouter automatiquement les jours fériés de Côte d'Ivoire (récurrents)
+            feries_ci = [
+                ('01-01', "Jour de l'An"),
+                ('05-01', "Fête du Travail"),
+                ('08-07', "Fête de l'Indépendance"),
+                ('11-15', "Journée Nationale de la Paix"),
+                ('12-25', "Noël"),
+                ('12-31', "Veille du Nouvel An"),
+            ]
+            year = datetime.now().year
+            count = 0
+            for mmdd, libelle in feries_ci:
+                date = f"{year}-{mmdd}"
+                # Vérifier si déjà existant
+                existing = conn.execute("""SELECT id FROM pointage_jours_repos
+                    WHERE company_id=? AND libelle=? AND scope='entreprise'""",
+                    (cid, libelle)).fetchone()
+                if not existing:
+                    conn.execute("""INSERT INTO pointage_jours_repos
+                        (company_id, date, libelle, type, scope, recurrent_annuel, created_by)
+                        VALUES (?, ?, ?, 'ferie', 'entreprise', 1, ?)""",
+                        (cid, date, libelle, session.get('user_id')))
+                    count += 1
+            conn.commit()
+            flash(f"✅ {count} jour(s) férié(s) CI ajoutés (récurrents annuels)", "success")
+        conn.close()
+        return redirect(url_for('admin_pointage_company_jours_repos', cid=cid))
+    
+    # GET
+    from datetime import date as _date, timedelta as _td
+    today = datetime.now()
+    year = today.year
+    date_from = f"{year}-01-01"
+    date_to = f"{year}-12-31"
+    
+    jours_repos = [dict(r) for r in conn.execute("""
+        SELECT jr.*, pcu.full_name as user_name, pg.nom as groupe_nom, pg.color as groupe_color
+        FROM pointage_jours_repos jr
+        LEFT JOIN pointage_company_users pcu ON jr.company_user_id = pcu.id
+        LEFT JOIN pointage_groupes pg ON jr.groupe_id = pg.id
+        WHERE jr.company_id=? AND COALESCE(jr.is_active,1)=1
+        ORDER BY jr.date""", (cid,)).fetchall()]
+    
+    users = [dict(r) for r in conn.execute(
+        "SELECT * FROM pointage_company_users WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY full_name",
+        (cid,)).fetchall()]
+    groupes = [dict(r) for r in conn.execute(
+        "SELECT * FROM pointage_groupes WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY nom",
+        (cid,)).fetchall()]
+    
+    conn.close()
+    return render_template('extra_pages.html', page='pt_company_jours_repos',
+                          company=company, jours_repos=jours_repos,
+                          users=users, groupes=groupes, today=today.strftime('%Y-%m-%d'))
 
 
 @app.route('/admin/pointage/companies/<int:cid>/entreprises-externes', methods=['GET', 'POST'])

@@ -24,8 +24,28 @@ from reportlab.lib.colors import HexColor, white, black
 from reportlab.lib import colors
 from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak,
-    KeepTogether
+    KeepTogether, CondPageBreak
 )
+from reportlab.platypus.flowables import Flowable
+
+class SmartPageBreak(Flowable):
+    """PageBreak conditionnel : ne saute QUE si la frame courante a du contenu déjà rempli.
+    Évite les pages vierges. Utilise availHeight pour détecter si on est en haut de page."""
+    def __init__(self):
+        Flowable.__init__(self)
+        self.width = 0
+        self.height = 0
+    
+    def wrap(self, availWidth, availHeight):
+        # Si on a presque toute la hauteur disponible, on est en haut de page → pas de break nécessaire
+        # Frame typique ≈ 760pt. Tolérance de 50pt.
+        if availHeight >= 700:
+            return (0, 0)  # Ne prend pas de place et ne déclenche pas de saut
+        # Sinon, force un saut de page : on retourne (0, availHeight+1) pour forcer overflow
+        return (0, availHeight + 1)
+    
+    def draw(self):
+        pass
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.graphics.shapes import Drawing, Wedge, String, Circle, Rect
@@ -357,7 +377,7 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
     total_emps = len(emps)
     
     for idx, emp in enumerate(emps):
-        if idx > 0: story.append(PageBreak())
+        if idx > 0: story.append(SmartPageBreak())
         
         enriched, stats = all_stats[idx]
         emp_num = idx + 1
@@ -502,7 +522,7 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
 # ======================== PAGE : RAPPORT DE PRÉSENCE ========================
 
 def gen_rapport_presence(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now):
-    story.append(PageBreak())
+    story.append(SmartPageBreak())
     story.append(make_header(S, provider_name, provider_info, client_name, client_info))
     story.append(Spacer(1, 6*mm))
     story.append(Paragraph("RAPPORT DE PRÉSENCE", S['big_ti']))
@@ -549,7 +569,7 @@ def gen_rapport_presence(story, emps, all_stats, S, provider_name, provider_info
 # ======================== PAGE : CLASSEMENT RETARDS & ABSENCES ========================
 
 def gen_classement(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now):
-    story.append(PageBreak())
+    story.append(SmartPageBreak())
     story.append(make_header(S, provider_name, provider_info, client_name, client_info))
     story.append(Spacer(1, 6*mm))
     story.append(Paragraph("CLASSEMENT PAR DEGRÉ DE RETARDS ET D'ABSENCES", S['big_ti']))
@@ -637,18 +657,21 @@ def _prepare_logo(logo_path, work_dir=None):
 
 def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=None,
                           total_presence_min=0, total_absence_min=0):
-    """Génère un graphique style donut moderne avec léger volume.
+    """Génère un graphique style donut moderne avec léger volume — HAUTE DÉFINITION (3x).
     Logo au centre, labels de % flottants au-dessus de chaque secteur, légende en bas.
-    Total minutes optionnels pour afficher 'XXXh' dans la légende."""
+    Total minutes optionnels pour afficher 'XXXh' dans la légende.
+    Image générée en 2400x2100 pixels (3x) pour rendu net dans le PDF (300dpi)."""
     try:
         from PIL import Image, ImageDraw, ImageFont, ImageFilter
         import math
         
-        W, H = 800, 700
-        cx, cy = 400, 280
-        outer_r = 200      # rayon extérieur du donut
-        inner_r = 95       # rayon trou central (pour logo)
-        depth = 8          # léger volume 3D (subtil, pas exagéré)
+        # === FACTEUR D'ÉCHELLE pour rendu HD (3x) ===
+        SCALE = 3
+        W, H = 800 * SCALE, 700 * SCALE
+        cx, cy = 400 * SCALE, 280 * SCALE
+        outer_r = 200 * SCALE     # rayon extérieur du donut
+        inner_r = 95 * SCALE      # rayon trou central (pour logo)
+        depth = 8 * SCALE         # léger volume 3D (subtil, pas exagéré)
         
         # Image RGB blanche
         base = Image.new('RGB', (W, H), (255, 255, 255))
@@ -664,16 +687,16 @@ def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=No
         # === 1. OMBRE PORTÉE LÉGÈRE (subtile) ===
         shadow = Image.new('RGBA', (W, H), (0, 0, 0, 0))
         sdraw = ImageDraw.Draw(shadow)
-        sdraw.ellipse([cx - outer_r + 4, cy - outer_r + 8 + depth,
-                       cx + outer_r + 4, cy + outer_r + 8 + depth],
+        sdraw.ellipse([cx - outer_r + 4*SCALE, cy - outer_r + 8*SCALE + depth,
+                       cx + outer_r + 4*SCALE, cy + outer_r + 8*SCALE + depth],
                       fill=(0, 0, 0, 50))
-        try: shadow = shadow.filter(ImageFilter.GaussianBlur(radius=10))
+        try: shadow = shadow.filter(ImageFilter.GaussianBlur(radius=10*SCALE))
         except: pass
         base.paste(shadow, (0, 0), shadow)
         
         draw = ImageDraw.Draw(base)
         
-        # === 2. TRANCHE 3D LÉGÈRE (8px de volume) ===
+        # === 2. TRANCHE 3D LÉGÈRE ===
         bbox_top = [cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r]
         if pct_absence <= 0:
             for d in range(depth, 0, -1):
@@ -700,9 +723,8 @@ def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=No
         
         # === 4. TROU CENTRAL (donut) - blanc ===
         draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], fill=(255, 255, 255))
-        # Cercle interne avec subtil ombrage pour le donut
         draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r],
-                    outline=(220, 220, 220), width=1)
+                    outline=(220, 220, 220), width=1*SCALE)
         
         # === 5. LOGO RAMYA AU CENTRE (dans le trou) ===
         if logo_path and os.path.exists(logo_path):
@@ -718,29 +740,25 @@ def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=No
                 print(f"  Logo: {e}")
         
         # Petit cercle blanc autour du logo (effet badge)
-        badge_r = inner_r - 8
-        # Bordure circulaire teal autour du logo
+        badge_r = inner_r - 8*SCALE
         draw.ellipse([cx - badge_r, cy - badge_r, cx + badge_r, cy + badge_r],
-                    outline=teal, width=2)
+                    outline=teal, width=2*SCALE)
         
         # === 6. LABELS DE % FLOTTANTS (sur chaque secteur) ===
         try:
-            font_pct = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
-            font_pct_red = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 26)
-            font_legend = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
-            font_legend_b = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
-            font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 22)
+            font_pct = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32*SCALE)
+            font_pct_red = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 26*SCALE)
+            font_legend = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14*SCALE)
+            font_legend_b = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14*SCALE)
+            font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 22*SCALE)
         except:
             font_pct = font_pct_red = font_legend = font_legend_b = font_title = ImageFont.load_default()
         
-        # Calculer position du label dans chaque secteur
-        # Le label est positionné au milieu de l'arc, à 70% du rayon
         if pct_presence > 0 and pct_absence > 0:
             angle_p = 360 * pct_presence / 100
-            # Centre du secteur présence
             mid_p = -90 + angle_p / 2
             mid_p_rad = math.radians(mid_p)
-            label_r = (outer_r + inner_r) / 2 + 15
+            label_r = (outer_r + inner_r) / 2 + 15*SCALE
             lpx = cx + int(label_r * math.cos(mid_p_rad))
             lpy = cy + int(label_r * math.sin(mid_p_rad))
             text_p = f"{pct_presence:.1f}%"
@@ -748,7 +766,6 @@ def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=No
             tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
             draw.text((lpx - tw // 2, lpy - th // 2), text_p, fill=(255, 255, 255), font=font_pct)
             
-            # Centre du secteur absence
             mid_a = -90 + angle_p + (360 - angle_p) / 2
             mid_a_rad = math.radians(mid_a)
             lax = cx + int(label_r * math.cos(mid_a_rad))
@@ -761,61 +778,59 @@ def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=No
             text_p = f"{pct_presence:.1f}%"
             bbox = draw.textbbox((0, 0), text_p, font=font_pct)
             tw = bbox[2] - bbox[0]
-            draw.text((cx - tw // 2, cy - outer_r - 35), text_p, fill=teal, font=font_pct)
+            draw.text((cx - tw // 2, cy - outer_r - 35*SCALE), text_p, fill=teal, font=font_pct)
         else:
             text_a = f"{pct_absence:.1f}%"
             bbox = draw.textbbox((0, 0), text_a, font=font_pct)
             tw = bbox[2] - bbox[0]
-            draw.text((cx - tw // 2, cy - outer_r - 35), text_a, fill=red, font=font_pct)
+            draw.text((cx - tw // 2, cy - outer_r - 35*SCALE), text_a, fill=red, font=font_pct)
         
         # === 7. LABELS SOUS LE GRAPHIQUE ===
-        # "Présence (XXXX.0h - XX%)" à gauche
-        # "Absence (XXX.0h - XX%)" à droite
         h_p = total_presence_min / 60.0 if total_presence_min else 0
         h_a = total_absence_min / 60.0 if total_absence_min else 0
         
-        label_y = cy + outer_r + 40
+        label_y = cy + outer_r + 40*SCALE
         text_left = f"Présence ({h_p:.1f}h - {pct_presence:.0f}%)" if total_presence_min else f"Présence : {pct_presence:.1f}%"
         text_right = f"Absence ({h_a:.1f}h - {pct_absence:.0f}%)" if total_absence_min else f"Absence : {pct_absence:.1f}%"
         
         bbox = draw.textbbox((0, 0), text_left, font=font_legend_b)
         tw_l = bbox[2] - bbox[0]
-        draw.text((cx - outer_r - 40, label_y), text_left, fill=text_dark, font=font_legend_b)
+        draw.text((cx - outer_r - 40*SCALE, label_y), text_left, fill=text_dark, font=font_legend_b)
         
         bbox = draw.textbbox((0, 0), text_right, font=font_legend_b)
         tw_r = bbox[2] - bbox[0]
-        draw.text((cx + outer_r - tw_r + 40, label_y), text_right, fill=text_dark, font=font_legend_b)
+        draw.text((cx + outer_r - tw_r + 40*SCALE, label_y), text_right, fill=text_dark, font=font_legend_b)
         
         # === 8. LÉGENDE EN BAS (cartouches verts/rouges) ===
-        legend_y = cy + outer_r + 90
-        # Cartouche vert : Total heure de présence
-        leg_w = 280
-        leg_h = 36
+        legend_y = cy + outer_r + 90*SCALE
+        leg_w = 280*SCALE
+        leg_h = 36*SCALE
         # Vert
-        leg_x_g = cx - leg_w - 15
+        leg_x_g = cx - leg_w - 15*SCALE
         draw.rectangle([leg_x_g, legend_y, leg_x_g + leg_w, legend_y + leg_h], fill=teal)
         h_p_int = int(total_presence_min // 60) if total_presence_min else 0
         m_p_int = int(total_presence_min % 60) if total_presence_min else 0
         text_g = f"Total heure de présence : {h_p_int:02d}:{m_p_int:02d}"
         bbox = draw.textbbox((0, 0), text_g, font=font_legend_b)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        draw.text((leg_x_g + (leg_w - tw) // 2, legend_y + (leg_h - th) // 2 - 2),
+        draw.text((leg_x_g + (leg_w - tw) // 2, legend_y + (leg_h - th) // 2 - 2*SCALE),
                  text_g, fill=(255, 255, 255), font=font_legend_b)
         
         # Rouge
-        leg_x_r = cx + 15
+        leg_x_r = cx + 15*SCALE
         draw.rectangle([leg_x_r, legend_y, leg_x_r + leg_w, legend_y + leg_h], fill=red)
         h_a_int = int(total_absence_min // 60) if total_absence_min else 0
         m_a_int = int(total_absence_min % 60) if total_absence_min else 0
         text_r = f"Total heure d'absence : {h_a_int:02d}:{m_a_int:02d}"
         bbox = draw.textbbox((0, 0), text_r, font=font_legend_b)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        draw.text((leg_x_r + (leg_w - tw) // 2, legend_y + (leg_h - th) // 2 - 2),
+        draw.text((leg_x_r + (leg_w - tw) // 2, legend_y + (leg_h - th) // 2 - 2*SCALE),
                  text_r, fill=(255, 255, 255), font=font_legend_b)
         
         out_dir = work_dir or (os.path.dirname(os.path.abspath(logo_path)) if logo_path else '/tmp')
         chart_path = os.path.join(out_dir, '_chart_donut.png')
-        base.save(chart_path, 'PNG', quality=95)
+        # Sauvegarde avec qualité maximum + DPI métadonnée
+        base.save(chart_path, 'PNG', quality=100, optimize=False, dpi=(300, 300))
         return chart_path
         
     except Exception as e:
@@ -825,7 +840,7 @@ def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=No
 
 
 def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now, logo_path=None, work_dir=None):
-    story.append(PageBreak())
+    story.append(SmartPageBreak())
     story.append(make_header(S, provider_name, provider_info, client_name, client_info))
     story.append(Spacer(1, 6*mm))
     story.append(Paragraph("GRAPHIQUE D'ASSIDUITÉ DU MOIS", S['big_ti']))
@@ -850,10 +865,10 @@ def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, clien
     
     if chart_path:
         from reportlab.platypus import Image as PLImage
-        img = PLImage(chart_path, width=170*mm, height=148*mm)
+        img = PLImage(chart_path, width=160*mm, height=140*mm)
         story.append(img)
     
-    story.append(Spacer(1, 4*mm))
+    story.append(Spacer(1, 2*mm))
     
     # Légendes texte
     story.append(Paragraph(
@@ -861,9 +876,9 @@ def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, clien
         ParagraphStyle('la', fontSize=10, alignment=TA_RIGHT, spaceAfter=2)))
     story.append(Paragraph(
         f"<font color='#1A7A6D'><b>Présence ({m2h(total_presence)} - {pct_presence:.0f}%)</b></font>",
-        ParagraphStyle('lp', fontSize=10, alignment=TA_LEFT, spaceAfter=6)))
+        ParagraphStyle('lp', fontSize=10, alignment=TA_LEFT, spaceAfter=4)))
     
-    story.append(Spacer(1, 4*mm))
+    story.append(Spacer(1, 2*mm))
     
     # Légende en bas
     leg = Table([[
@@ -876,7 +891,7 @@ def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, clien
         ('INNERGRID',(0,0),(-1,-1),0.5,colors.grey),
         ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),
         ('LEFTPADDING',(0,0),(-1,-1),6)]))
-    story.extend([leg, Spacer(1,4*mm), Paragraph(f"Généré le {now} | {safe(client_name)} - Graphique d'Assiduité", S['ft'])])
+    story.extend([leg, Paragraph(f"Généré le {now} | {safe(client_name)} - Graphique d'Assiduité", S['ft'])])
 
 # ======================== FICHE DE PRÉSENCE SIMPLE ========================
 
@@ -884,7 +899,7 @@ def gen_simple_pages(story, emps, all_stats, S, provider_name, provider_info, cl
     """Génère une fiche de présence simple : uniquement N°, Date, Planning, Arrivée, Départ — sans retards, absences, totaux."""
     
     for idx, emp in enumerate(emps):
-        if idx > 0: story.append(PageBreak())
+        if idx > 0: story.append(SmartPageBreak())
         
         enriched, stats = all_stats[idx]
         
@@ -960,7 +975,7 @@ def gen_simple_pages(story, emps, all_stats, S, provider_name, provider_info, cl
     """Génère une fiche simple : N°, Date, Planning, Arrivée, Départ — sans retard/absence/totaux."""
     
     for idx, emp in enumerate(emps):
-        if idx > 0: story.append(PageBreak())
+        if idx > 0: story.append(SmartPageBreak())
         
         enriched, stats = all_stats[idx]
         
