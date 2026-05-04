@@ -102,6 +102,11 @@
                     {% for d in ['Administration','Direction Générale','Ressources Humaines','Comptabilité / Finance','Commercial','Technique','Informatique','Moyens Généraux','Conciergerie','Marketing','Logistique','Autre'] %}<option value="{{ d }}" {% if edit_user.department == d %}selected{% endif %}>{{ d }}</option>{% endfor %}
                 </select>
             </div>
+            <div class="form-group">
+                <label>📅 Jours obligatoires/mois</label>
+                <input type="number" name="days_required_override" value="{{ edit_user.days_required_override or '' }}" placeholder="(défaut système)" min="0" max="31">
+                <p style="font-size:11px;color:#888;margin:4px 0 0">Vide = utilise le défaut système RAMYA</p>
+            </div>
             <div class="form-group"><label>Nouveau mot de passe (laisser vide pour ne pas changer)</label><input type="password" name="password" minlength="6"></div>
             <div style="display:flex;gap:10px"><a href="/admin" class="btn btn-outline">Annuler</a><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div>
         </form>

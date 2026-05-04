@@ -365,6 +365,8 @@ from models import migrate_v64
 migrate_v64()
 from models import migrate_v65
 migrate_v65()
+from models import migrate_v66
+migrate_v66()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -2028,11 +2030,48 @@ def admin_page():
     smtp = get_smtp_settings(session['user_id'])
     # Activity logs
     admin_logs = get_activity_logs(limit=100)
+    # Défaut RAMYA jours obligatoires
+    ramya_days_default = ''
+    try:
+        r = conn.execute("SELECT value FROM app_settings WHERE key='ramya_days_required_default'").fetchone()
+        if r and r[0]: ramya_days_default = r[0]
+    except: pass
     conn.close()
     section = request.args.get('section', 'users')
     return render_template('admin.html', page='admin', users=users, stats=stats,
                           all_permissions=ALL_PERMISSIONS, role_perms=role_perms, perm_categories=PERM_CATEGORIES,
-                          tenders=tenders, tab='tenders', smtp=smtp, admin_logs=admin_logs, section=section)
+                          tenders=tenders, tab='tenders', smtp=smtp, admin_logs=admin_logs, section=section,
+                          ramya_days_default=ramya_days_default)
+
+
+@app.route('/admin/ramya-days-required', methods=['POST'])
+@permission_required('admin')
+def admin_set_ramya_days_required():
+    """Configure le nombre de jours obligatoires par défaut pour la gestion du temps RAMYA."""
+    raw = (request.form.get('ramya_days_required_default','') or '').strip()
+    if raw and not raw.isdigit():
+        flash("⚠️ Saisissez un nombre entier ou laissez vide", "error")
+        return redirect(url_for('admin_page', section='settings'))
+    val = ''
+    if raw and raw.isdigit():
+        n = int(raw)
+        if n < 0 or n > 31:
+            flash("⚠️ Valeur invalide (entre 0 et 31)", "error")
+            return redirect(url_for('admin_page', section='settings'))
+        val = str(n) if n > 0 else ''
+    conn = _gdb()
+    try:
+        conn.execute("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                    ('ramya_days_required_default', val))
+        conn.commit()
+        if val:
+            flash(f"✅ Défaut RAMYA défini à {val} jours obligatoires/mois", "success")
+        else:
+            flash("✅ Défaut RAMYA réinitialisé (calcul automatique)", "success")
+    except Exception as e:
+        flash(f"❌ Erreur : {e}", "error")
+    conn.close()
+    return redirect(url_for('admin_page', section='settings'))
 
 @app.route('/admin/add', methods=['POST'])
 @permission_required('admin')
@@ -2109,10 +2148,14 @@ def admin_edit_user(uid):
             updates['password'] = pwd
         # Champ department (optionnel)
         dept = request.form.get('department', '').strip()
+        # Jours obligatoires (override individuel)
+        dro_raw = (request.form.get('days_required_override','') or '').strip()
+        dro = int(dro_raw) if dro_raw.isdigit() and int(dro_raw) > 0 else None
         # On le met à jour même si vide (pour permettre de réinitialiser)
         try:
             conn = _gdb()
-            conn.execute("UPDATE users SET department=? WHERE id=?", (dept or None, uid))
+            conn.execute("UPDATE users SET department=?, days_required_override=? WHERE id=?",
+                        (dept or None, dro, uid))
             conn.commit()
             conn.close()
         except: pass
@@ -10917,10 +10960,11 @@ def admin_pointage_rapport_entreprise(month):
         from reportlab.lib.units import mm
         import io
         
-        # Récupérer les jours obligatoires (override entreprise / par employé)
+        # Récupérer les jours obligatoires (override entreprise / par employé / défaut RAMYA)
         from models import get_days_required
         conn2 = _gdb()
-        company_default = None
+        company_default = None  # défaut entreprise pointage
+        ramya_default = None    # défaut système RAMYA
         employee_overrides = {}  # name -> int
         if company_id and company_id.isdigit():
             cid_int = int(company_id)
@@ -10932,19 +10976,29 @@ def admin_pointage_rapport_entreprise(month):
                 if u['days_required_override'] is not None and u['days_required_override'] > 0:
                     employee_overrides[u['full_name']] = int(u['days_required_override'])
         else:
-            # Mode RAMYA : récupérer overrides depuis users
+            # Mode RAMYA : récupérer overrides depuis users + défaut système RAMYA
             for u in conn2.execute("SELECT id, full_name, days_required_override FROM users WHERE COALESCE(is_active,1)=1").fetchall():
                 if u['days_required_override'] is not None and u['days_required_override'] > 0:
                     employee_overrides[u['full_name']] = int(u['days_required_override'])
+            # Défaut système RAMYA
+            try:
+                rr = conn2.execute("SELECT value FROM app_settings WHERE key='ramya_days_required_default'").fetchone()
+                if rr and rr[0] and str(rr[0]).strip().isdigit():
+                    v = int(rr[0])
+                    if v > 0:
+                        ramya_default = v
+            except: pass
         conn2.close()
         
         # Calculer stats pour tous les employés (avec override jours obligatoires)
         all_stats = []
         for emp in emps:
-            # Priorité : override individuel > défaut entreprise > calcul auto (None)
+            # Priorité : override individuel > défaut entreprise/RAMYA > calcul auto (None)
             override = employee_overrides.get(emp['name'])
             if override is None and company_default:
                 override = company_default
+            if override is None and ramya_default:
+                override = ramya_default
             enriched, stats = rapport_core.calc_employee_stats(emp, hp=8, hp_weekend=0,
                                                               hourly_cost=0, rest_days=[5, 6],
                                                               days_required_override=override)

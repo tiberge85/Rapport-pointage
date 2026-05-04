@@ -10,6 +10,7 @@
     <a href="/admin?section=historique" class="btn {% if section=='historique' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">📋 Historique</a>
     <a href="/admin?section=tenders" class="btn {% if section=='tenders' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">📡 Appels d'offres</a>
     <a href="/admin?section=smtp" class="btn {% if section=='smtp' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">📧 SMTP</a>
+    <a href="/admin?section=settings" class="btn {% if section=='settings' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">⚙️ Paramètres système</a>
 </div>
 
 {% if not section or section == 'users' %}
@@ -258,4 +259,47 @@
 </div></div>
 
 {% endif %}
+
+{% if section == 'settings' %}
+<!-- Settings system -->
+<div class="card" style="margin-top:16px">
+<div class="card-header"><h3>⚙️ Paramètres système</h3></div>
+<div class="card-body">
+
+<div style="background:#fff8e0;border-left:4px solid #f29f2f;padding:12px;border-radius:6px;margin-bottom:18px">
+    <strong style="color:#b8561f">📅 Jours obligatoires pour la gestion du temps RAMYA</strong>
+    <p style="font-size:12px;margin:6px 0 0;color:#555">
+    Définissez le nombre de jours obligatoires à effectuer chaque mois <strong>par défaut</strong> pour les rapports d'assiduité (gestion du temps interne).<br>
+    <strong>Hiérarchie appliquée pour chaque employé :</strong><br>
+    1. ⭐ Override individuel (sur la fiche employé) — priorité maximum<br>
+    2. 🏢 Défaut RAMYA (cette valeur ci-dessous) — appliqué à tous les employés sans override<br>
+    3. 🤖 Calcul automatique (jours du calendrier - jours de repos) — si aucune valeur n'est saisie<br><br>
+    <em>Astuce : 22 jours = semaine 5j × ~4.4 semaines (config standard CI).</em>
+    </p>
+</div>
+
+<form method="post" action="/admin/ramya-days-required" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+    <div class="form-group" style="flex:1;min-width:200px;margin-bottom:0">
+        <label>Jours obligatoires/mois (défaut RAMYA)</label>
+        <input type="number" name="ramya_days_required_default" value="{{ ramya_days_default or '' }}" placeholder="(vide = calcul auto)" min="0" max="31" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+        <p style="font-size:11px;color:#888;margin:4px 0 0">Vide = calcul auto. Valeur typique : 22</p>
+    </div>
+    <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
+</form>
+
+{% if ramya_days_default %}
+<div style="background:#e8f5e9;border-left:4px solid #2e7d32;padding:10px;border-radius:6px;margin-top:14px">
+    <strong style="color:#2e7d32">✅ Défaut actuel : {{ ramya_days_default }} jours/mois</strong>
+    <p style="font-size:11px;color:#555;margin:4px 0 0">Cette valeur s'applique à tous les utilisateurs RAMYA n'ayant pas d'override individuel.</p>
+</div>
+{% else %}
+<div style="background:#e3f2fd;border-left:4px solid #1976d2;padding:10px;border-radius:6px;margin-top:14px">
+    <strong style="color:#1976d2">ℹ️ Aucun défaut configuré</strong>
+    <p style="font-size:11px;color:#555;margin:4px 0 0">Les rapports utilisent le calcul automatique (jours du calendrier - jours de repos).</p>
+</div>
+{% endif %}
+
+</div></div>
+{% endif %}
+
 {% endblock %}

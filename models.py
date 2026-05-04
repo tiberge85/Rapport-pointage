@@ -4233,6 +4233,22 @@ def migrate_v65():
     conn.commit(); conn.close()
 
 
+def migrate_v66():
+    """v66 : Paramètre système défaut RAMYA pour les jours obligatoires.
+    Permet à l'admin de définir un nombre de jours obligatoires par défaut pour TOUTE
+    l'entreprise RAMYA (gestion du temps interne).
+    
+    Hiérarchie complète RAMYA :
+    1. Override individuel (users.days_required_override)
+    2. Défaut système RAMYA (app_settings 'ramya_days_required_default')
+    3. Calcul auto (jours du mois - jours de repos)"""
+    conn = get_db()
+    # Insère la clé sans valeur (admin la configure ensuite)
+    try: conn.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('ramya_days_required_default', '')")
+    except: pass
+    conn.commit(); conn.close()
+
+
 # ======================== SERVICES JOURS DE REPOS ========================
 
 def is_jour_repos(company_id, date_iso, company_user_id=None):
@@ -4291,11 +4307,14 @@ def get_days_required(company_id=None, company_user_id=None, user_id=None,
     """Détermine le nombre de jours obligatoires à effectuer.
     
     Ordre de priorité :
-    1. Override individuel (employé pointage ou user interne RAMYA) si défini
-    2. Défaut entreprise (pour pointage_companies) si défini
+    1. Override individuel (employé pointage ou user interne RAMYA)
+    2. Défaut entreprise pointage (pointage_companies.days_required_default)
+       OU défaut système RAMYA (app_settings 'ramya_days_required_default')
+       selon le contexte
     3. Calcul auto fourni en paramètre (= jours du mois - jours de repos)
     
-    Retourne (nb_jours, source) où source ∈ {'override_employe', 'defaut_entreprise', 'auto'}
+    Retourne (nb_jours, source) où source ∈ 
+      {'override_employe', 'defaut_entreprise', 'defaut_ramya', 'auto'}
     """
     conn = get_db()
     
@@ -4319,7 +4338,7 @@ def get_days_required(company_id=None, company_user_id=None, user_id=None,
                 return int(r[0]), 'override_employe'
         except: pass
     
-    # 2. Défaut entreprise
+    # 2a. Défaut entreprise pointage (si on est dans le contexte d'une entreprise)
     if company_id:
         try:
             r = conn.execute("SELECT days_required_default FROM pointage_companies WHERE id=?",
@@ -4327,6 +4346,17 @@ def get_days_required(company_id=None, company_user_id=None, user_id=None,
             if r and r[0] is not None and r[0] > 0:
                 conn.close()
                 return int(r[0]), 'defaut_entreprise'
+        except: pass
+    
+    # 2b. Défaut système RAMYA (si pas de company_id, donc contexte interne)
+    if not company_id:
+        try:
+            r = conn.execute("SELECT value FROM app_settings WHERE key='ramya_days_required_default'").fetchone()
+            if r and r[0] and str(r[0]).strip().isdigit():
+                v = int(r[0])
+                if v > 0:
+                    conn.close()
+                    return v, 'defaut_ramya'
         except: pass
     
     conn.close()
