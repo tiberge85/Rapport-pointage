@@ -2436,10 +2436,10 @@ function getMyPos(){
         <a href="/admin/pointage/companies/{{ company.id }}/planning" class="btn btn-sm" style="background:#1976d2;color:#fff">📅 Planning sessions</a>
         <a href="/admin/pointage/companies/{{ company.id }}/entreprises-externes" class="btn btn-sm" style="background:#1A7A6D;color:#fff">🏢 Entreprises externes</a>
         {% else %}
-        <a href="/admin/pointage/companies/{{ company.id }}/edt" class="btn btn-sm" style="background:#1976d2;color:#fff">🕒 Emplois du temps</a>
-        <a href="/admin/pointage/companies/{{ company.id }}/groupes" class="btn btn-sm" style="background:#1A7A6D;color:#fff">👥 Groupes</a>
+        <a href="/admin/pointage/companies/{{ company.id }}/edt" class="btn btn-sm" style="background:#1976d2;color:#fff">🕒 Emplois du temps{% if counts and counts.edts %} <span style="background:rgba(255,255,255,0.3);padding:1px 6px;border-radius:8px;font-size:10px">{{ counts.edts }}</span>{% endif %}</a>
+        <a href="/admin/pointage/companies/{{ company.id }}/groupes" class="btn btn-sm" style="background:#1A7A6D;color:#fff">👥 Groupes{% if counts and counts.groupes %} <span style="background:rgba(255,255,255,0.3);padding:1px 6px;border-radius:8px;font-size:10px">{{ counts.groupes }}</span>{% endif %}</a>
         {% endif %}
-        <a href="/admin/pointage/companies/{{ company.id }}/jours-repos" class="btn btn-sm" style="background:#f29f2f;color:#fff">🌴 Jours de repos</a>
+        <a href="/admin/pointage/companies/{{ company.id }}/jours-repos" class="btn btn-sm" style="background:#f29f2f;color:#fff">🌴 Jours de repos{% if counts and counts.jours_repos %} <span style="background:rgba(255,255,255,0.3);padding:1px 6px;border-radius:8px;font-size:10px">{{ counts.jours_repos }}</span>{% endif %}</a>
         <a href="/pt/{{ company.slug }}" target="_blank" class="btn btn-outline btn-sm">🚪 Voir login employé</a>
         <a href="/admin/pointage/companies" class="btn btn-outline btn-sm">← Liste</a>
         <form method="post" action="/admin/pointage/companies/{{ company.id }}/delete" style="display:inline" onsubmit="return confirm('⚠️ ATTENTION ⚠️\n\nSupprimer DÉFINITIVEMENT l\'entreprise « {{ company.name }} » va effacer :\n• L\'entreprise elle-même\n• TOUS ses employés\n• TOUS leurs pointages\n• Toutes les alertes associées\n\nCette action est IRRÉVERSIBLE.\n\nÊtes-vous absolument sûr ?')">
@@ -3285,7 +3285,11 @@ function getMyPos(){
 </style>
 <div class="page-header">
     <h1>👥 Groupes — {{ company.name }}</h1>
-    <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Fiche entreprise</a>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a href="/admin/pointage/companies/{{ company.id }}/edt" class="btn btn-sm" style="background:#1976d2;color:#fff">🕒 Emplois du temps</a>
+        <a href="/admin/pointage/companies/{{ company.id }}/jours-repos" class="btn btn-sm" style="background:#f29f2f;color:#fff">🌴 Jours de repos</a>
+        <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Fiche entreprise</a>
+    </div>
 </div>
 
 <div class="gr-card" style="background:#e0f5f1;border-color:#1A7A6D">
@@ -3315,11 +3319,15 @@ function getMyPos(){
             <h3 style="margin:0;color:{{ g.color or '#1A7A6D' }}">👥 {{ g.nom }}</h3>
             {% if g.description %}<p style="font-size:11px;color:#666;margin:2px 0 6px">{{ g.description }}</p>{% endif %}
         </div>
-        <form method="post" style="display:inline" onsubmit="return confirm('Supprimer le groupe « {{ g.nom }} » ?')">
-            <input type="hidden" name="action" value="delete">
-            <input type="hidden" name="groupe_id" value="{{ g.id }}">
-            <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px">🗑️</button>
-        </form>
+        <div style="display:flex;gap:4px;align-items:center">
+            <a href="/admin/pointage/companies/{{ company.id }}/edt?groupe_id={{ g.id }}" class="btn btn-sm" style="background:#1976d2;color:#fff;font-size:10px" title="Créer un EDT pour ce groupe">+ EDT</a>
+            <a href="/admin/pointage/companies/{{ company.id }}/jours-repos?scope=groupe&groupe_id={{ g.id }}" class="btn btn-sm" style="background:#f29f2f;color:#fff;font-size:10px" title="Ajouter un jour de repos pour ce groupe">+ Repos</a>
+            <form method="post" style="display:inline" onsubmit="return confirm('Supprimer le groupe « {{ g.nom }} » ?')">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="groupe_id" value="{{ g.id }}">
+                <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px">🗑️</button>
+            </form>
+        </div>
     </div>
     
     <div style="margin:8px 0">
@@ -3339,15 +3347,40 @@ function getMyPos(){
         {% endfor %}
     </div>
     
+    {% if g.edts %}
+    <div style="margin:8px 0;padding:8px;background:#e3f2fd;border-radius:6px;border-left:3px solid #1976d2">
+        <strong style="font-size:11px;color:#1976d2">🕒 Emploi(s) du temps assigné(s) :</strong>
+        <div style="margin-top:4px">
+            {% for edt in g.edts %}
+            <span style="display:inline-block;background:#fff;padding:3px 8px;border-radius:4px;font-size:11px;margin:2px;border:1px solid #1976d2">
+                <strong>{{ edt.nom }}</strong> · {{ edt.heure_debut }}-{{ edt.heure_fin }} · jours {{ edt.jours_actifs }}
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if g.jours_repos %}
+    <div style="margin:8px 0;padding:8px;background:#fff8e0;border-radius:6px;border-left:3px solid #f29f2f">
+        <strong style="font-size:11px;color:#b8561f">🌴 Jour(s) de repos du groupe :</strong>
+        <div style="margin-top:4px">
+            {% for jr in g.jours_repos %}
+            <span style="display:inline-block;background:#fff;padding:3px 8px;border-radius:4px;font-size:11px;margin:2px;border:1px solid #f29f2f">
+                <strong>{{ jr.libelle }}</strong> · {{ jr.date }}{% if jr.date_fin %} → {{ jr.date_fin }}{% endif %}{% if jr.recurrent_annuel %} 🔁{% endif %}
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
     <form method="post" style="display:flex;gap:6px;align-items:end">
         <input type="hidden" name="action" value="add_member">
         <input type="hidden" name="groupe_id" value="{{ g.id }}">
         <select name="user_id" required style="padding:6px;border:1.5px solid #ddd;border-radius:6px;font-size:12px">
             <option value="">Ajouter un membre...</option>
+            {% set member_ids = g.membres|map(attribute='id')|list %}
             {% for u in users %}
-            {% set in_group = false %}
-            {% for m in g.membres %}{% if m.id == u.id %}{% set in_group = true %}{% endif %}{% endfor %}
-            {% if not in_group %}<option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>{% endif %}
+            {% if u.id not in member_ids %}<option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>{% endif %}
             {% endfor %}
         </select>
         <button type="submit" class="btn btn-sm" style="background:{{ g.color or '#1A7A6D' }};color:#fff;font-size:11px">+ Ajouter</button>
@@ -3367,7 +3400,11 @@ function getMyPos(){
 </style>
 <div class="page-header">
     <h1>🕒 Emplois du temps — {{ company.name }}</h1>
-    <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Fiche entreprise</a>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a href="/admin/pointage/companies/{{ company.id }}/groupes" class="btn btn-sm" style="background:#1A7A6D;color:#fff">👥 Groupes</a>
+        <a href="/admin/pointage/companies/{{ company.id }}/jours-repos" class="btn btn-sm" style="background:#f29f2f;color:#fff">🌴 Jours de repos</a>
+        <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Fiche entreprise</a>
+    </div>
 </div>
 
 <div class="edt-card" style="background:#e3f2fd;border-color:#1976d2">
@@ -3416,13 +3453,17 @@ function getMyPos(){
         </div>
         <div><label style="font-size:11px;color:#888">Cible</label>
             <select name="cible" id="edtCible" onchange="document.getElementById('edtCibleId').innerHTML=this.value=='groupe'?document.getElementById('groupesOpts').innerHTML:document.getElementById('usersOpts').innerHTML" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
-                <option value="individuel">👤 Employé individuel</option>
-                <option value="groupe">👥 Groupe entier</option>
+                <option value="individuel" {% if not preselect_groupe_id %}selected{% endif %}>👤 Employé individuel</option>
+                <option value="groupe" {% if preselect_groupe_id %}selected{% endif %}>👥 Groupe entier</option>
             </select></div>
         <div style="grid-column:span 2"><label style="font-size:11px;color:#888">Cible (employé/groupe) *</label>
             <select name="cible_id" id="edtCibleId" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
                 <option value="">-- Choisir --</option>
+                {% if preselect_groupe_id %}
+                {% for g in groupes %}<option value="{{ g.id }}" {% if g.id|string == preselect_groupe_id %}selected{% endif %}>👥 {{ g.nom }}</option>{% endfor %}
+                {% else %}
                 {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>{% endfor %}
+                {% endif %}
             </select></div>
         <button type="submit" class="btn btn-primary btn-sm">+ Créer</button>
     </form>
@@ -3520,7 +3561,11 @@ function getMyPos(){
 </style>
 <div class="page-header">
     <h1>🌴 Jours de repos — {{ company.name }}</h1>
-    <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Fiche entreprise</a>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a href="/admin/pointage/companies/{{ company.id }}/groupes" class="btn btn-sm" style="background:#1A7A6D;color:#fff">👥 Groupes</a>
+        <a href="/admin/pointage/companies/{{ company.id }}/edt" class="btn btn-sm" style="background:#1976d2;color:#fff">🕒 Emplois du temps</a>
+        <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">← Fiche entreprise</a>
+    </div>
 </div>
 
 <div class="jr-card" style="background:#fff8e0;border-color:#f29f2f">
@@ -3554,23 +3599,23 @@ function getMyPos(){
                 </select></div>
             <div><label style="font-size:11px;color:#888">Portée</label>
                 <select name="scope" id="jrScope" onchange="onScopeChange()" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
-                    <option value="entreprise">🏢 Toute l'entreprise</option>
-                    <option value="groupe">👥 Groupe entier</option>
-                    <option value="employe">👤 Employé spécifique</option>
+                    <option value="entreprise" {% if preselect_scope == 'entreprise' %}selected{% endif %}>🏢 Toute l'entreprise</option>
+                    <option value="groupe" {% if preselect_scope == 'groupe' %}selected{% endif %}>👥 Groupe entier</option>
+                    <option value="employe" {% if preselect_scope == 'employe' %}selected{% endif %}>👤 Employé spécifique</option>
                 </select></div>
         </div>
-        <div id="jrEmpDiv" style="display:none;margin-top:8px">
+        <div id="jrEmpDiv" style="display:{% if preselect_scope == 'employe' %}block{% else %}none{% endif %};margin-top:8px">
             <label style="font-size:11px;color:#888">Employé *</label>
             <select name="company_user_id" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
                 <option value="">-- Choisir --</option>
-                {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>{% endfor %}
+                {% for u in users %}<option value="{{ u.id }}" {% if u.id|string == preselect_user_id %}selected{% endif %}>{{ u.full_name }} ({{ u.username }})</option>{% endfor %}
             </select>
         </div>
-        <div id="jrGroupeDiv" style="display:none;margin-top:8px">
+        <div id="jrGroupeDiv" style="display:{% if preselect_scope == 'groupe' %}block{% else %}none{% endif %};margin-top:8px">
             <label style="font-size:11px;color:#888">Groupe *</label>
             <select name="groupe_id" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
                 <option value="">-- Choisir --</option>
-                {% for g in groupes %}<option value="{{ g.id }}">{{ g.nom }}</option>{% endfor %}
+                {% for g in groupes %}<option value="{{ g.id }}" {% if g.id|string == preselect_groupe_id %}selected{% endif %}>{{ g.nom }}</option>{% endfor %}
             </select>
         </div>
         <div style="margin-top:10px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">

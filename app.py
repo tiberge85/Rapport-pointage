@@ -11391,9 +11391,21 @@ def admin_pointage_company_detail(cid):
             LEFT JOIN pointage_company_users pcu ON pcr.company_user_id=pcu.id
             WHERE pcr.company_id=? ORDER BY pcr.datetime_full DESC LIMIT 30""", (cid,)).fetchall()]
     except: pass
+    
+    # Compteurs : groupes, EDT, jours de repos
+    counts = {'groupes':0, 'edts':0, 'jours_repos':0}
+    try:
+        counts['groupes'] = conn.execute(
+            "SELECT COUNT(*) FROM pointage_groupes WHERE company_id=? AND COALESCE(is_active,1)=1", (cid,)).fetchone()[0]
+        counts['edts'] = conn.execute(
+            "SELECT COUNT(*) FROM pointage_emploi_du_temps WHERE company_id=? AND COALESCE(is_active,1)=1", (cid,)).fetchone()[0]
+        counts['jours_repos'] = conn.execute(
+            "SELECT COUNT(*) FROM pointage_jours_repos WHERE company_id=? AND COALESCE(is_active,1)=1", (cid,)).fetchone()[0]
+    except: pass
+    
     conn.close()
     return render_template('extra_pages.html', page='pointage_company_detail',
-                          company=company, users=users, recent=recent)
+                          company=company, users=users, recent=recent, counts=counts)
 
 
 @app.route('/admin/pointage/companies/<int:cid>/user/<int:uid>/reset', methods=['POST'])
@@ -12095,6 +12107,18 @@ def admin_pointage_company_groupes(cid):
             SELECT pcu.id, pcu.full_name, pcu.username FROM pointage_groupe_membres pgm
             JOIN pointage_company_users pcu ON pgm.company_user_id = pcu.id
             WHERE pgm.groupe_id=? ORDER BY pcu.full_name""", (g['id'],)).fetchall()]
+        # Emplois du temps assignés au groupe
+        g['edts'] = [dict(r) for r in conn.execute("""
+            SELECT id, nom, heure_debut, heure_fin, jours_actifs
+            FROM pointage_emploi_du_temps
+            WHERE company_id=? AND groupe_id=? AND COALESCE(is_active,1)=1
+            ORDER BY nom""", (cid, g['id'])).fetchall()]
+        # Jours de repos assignés au groupe
+        g['jours_repos'] = [dict(r) for r in conn.execute("""
+            SELECT id, date, date_fin, libelle, type, recurrent_annuel
+            FROM pointage_jours_repos
+            WHERE company_id=? AND scope='groupe' AND groupe_id=? AND COALESCE(is_active,1)=1
+            ORDER BY date""", (cid, g['id'])).fetchall()]
     
     users = [dict(r) for r in conn.execute(
         "SELECT * FROM pointage_company_users WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY full_name",
@@ -12177,9 +12201,13 @@ def admin_pointage_company_edt(cid):
         "SELECT * FROM pointage_groupes WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY nom",
         (cid,)).fetchall()]
     
+    # Préselection groupe depuis URL ?groupe_id=X
+    preselect_groupe_id = request.args.get('groupe_id', '').strip()
+    
     conn.close()
     return render_template('extra_pages.html', page='pt_company_edt',
-                          company=company, edts=edts, users=users, groupes=groupes)
+                          company=company, edts=edts, users=users, groupes=groupes,
+                          preselect_groupe_id=preselect_groupe_id)
 
 
 @app.route('/admin/pointage/companies/<int:cid>/jours-repos', methods=['GET', 'POST'])
@@ -12290,10 +12318,20 @@ def admin_pointage_company_jours_repos(cid):
         "SELECT * FROM pointage_groupes WHERE company_id=? AND COALESCE(is_active,1)=1 ORDER BY nom",
         (cid,)).fetchall()]
     
+    # Préselection depuis URL : ?scope=groupe&groupe_id=X ou ?scope=employe&user_id=X
+    preselect_scope = request.args.get('scope', 'entreprise')
+    if preselect_scope not in ('entreprise', 'groupe', 'employe'):
+        preselect_scope = 'entreprise'
+    preselect_groupe_id = request.args.get('groupe_id', '').strip()
+    preselect_user_id = request.args.get('user_id', '').strip()
+    
     conn.close()
     return render_template('extra_pages.html', page='pt_company_jours_repos',
                           company=company, jours_repos=jours_repos,
-                          users=users, groupes=groupes, today=today.strftime('%Y-%m-%d'))
+                          users=users, groupes=groupes, today=today.strftime('%Y-%m-%d'),
+                          preselect_scope=preselect_scope,
+                          preselect_groupe_id=preselect_groupe_id,
+                          preselect_user_id=preselect_user_id)
 
 
 @app.route('/admin/pointage/companies/<int:cid>/entreprises-externes', methods=['GET', 'POST'])
