@@ -2544,6 +2544,13 @@ function getMyPos(){
         <div><label style="font-size:11px;color:#888;display:block">📅 Jours obligatoires</label>
             <input type="number" name="days_required_override" placeholder="(défaut)" min="0" max="31" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
             <p style="font-size:9px;color:#888;margin:2px 0 0">Vide = défaut entreprise</p></div>
+        <div><label style="font-size:11px;color:#888;display:block">⚙️ Mode de pointage</label>
+            <select name="type_pointage" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                <option value="">(défaut entreprise)</option>
+                <option value="continu">🔄 Continu (arrivée/pause/départ)</option>
+                <option value="session">📋 Session (mission par mission)</option>
+            </select>
+            <p style="font-size:9px;color:#888;margin:2px 0 0">Override individuel si l'employé ne suit pas le mode global</p></div>
         <button type="submit" class="btn btn-primary btn-sm">+ Ajouter</button>
     </form>
 </div></div>
@@ -3277,6 +3284,15 @@ function getMyPos(){
         <input type="number" name="days_required_override" value="{{ user.days_required_override or '' }}" placeholder="(défaut entreprise)" min="0" max="31" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
         <p style="font-size:9px;color:#888;margin:2px 0 0">Vide = utilise le défaut de l'entreprise</p>
     </div>
+    <div>
+        <label style="font-size:11px;color:#888;display:block">⚙️ Mode de pointage individuel</label>
+        <select name="type_pointage" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+            <option value="" {% if not user.type_pointage %}selected{% endif %}>(défaut entreprise : {{ company.type_pointage or 'continu' }})</option>
+            <option value="continu" {% if user.type_pointage == 'continu' %}selected{% endif %}>🔄 Continu (arrivée/pause/départ)</option>
+            <option value="session" {% if user.type_pointage == 'session' %}selected{% endif %}>📋 Session (mission par mission)</option>
+        </select>
+        <p style="font-size:9px;color:#888;margin:2px 0 0">Override individuel si différent du mode entreprise</p>
+    </div>
     <div style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-end;margin-top:10px">
         <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">Annuler</a>
         <button type="submit" class="btn btn-primary btn-sm">💾 Enregistrer les modifications</button>
@@ -3877,6 +3893,7 @@ function getMyPos(){
             <option value="jour" {% if view=='jour' %}selected{% endif %}>📆 Jour</option>
             <option value="semaine" {% if view=='semaine' %}selected{% endif %}>📅 Semaine</option>
             <option value="mois" {% if view=='mois' %}selected{% endif %}>🗓️ Mois</option>
+            <option value="calendrier" {% if view=='calendrier' %}selected{% endif %}>📅 Calendrier visuel</option>
         </select></div>
     <div style="flex:1"></div>
     <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('newPlanModal').style.display='flex'">+ Planifier une session</button>
@@ -3888,10 +3905,109 @@ function getMyPos(){
 <h3 style="font-size:14px;color:#1a3a5c;margin:14px 0 8px">📋 Sessions du {{ range_start }} au {{ range_end }} ({{ plannings|length }})</h3>
 {% endif %}
 
+{# === Vue calendrier visuel === #}
+{% if view == 'calendrier' %}
+<style>
+.cal-month{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;background:#fff;padding:14px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.cal-dow{text-align:center;font-size:10px;font-weight:700;color:#888;padding:6px 2px;text-transform:uppercase}
+.cal-cell{min-height:90px;background:#f8faf9;border-radius:6px;padding:4px;font-size:11px;cursor:pointer;border:1.5px solid transparent;transition:all 0.15s}
+.cal-cell.empty{background:transparent;cursor:default}
+.cal-cell.has-sessions{border-color:#7b1fa2;background:#f3e5f5}
+.cal-cell.is-today{border-color:#1a7a6d;background:#e0f5f1;font-weight:700}
+.cal-cell:hover:not(.empty){transform:scale(1.02);box-shadow:0 2px 6px rgba(0,0,0,0.1)}
+.cal-day-num{font-weight:700;font-size:13px;color:#1a3a5c;display:flex;justify-content:space-between;align-items:center}
+.cal-session-pill{display:block;background:#7b1fa2;color:#fff;padding:1px 4px;border-radius:3px;margin-top:2px;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.cal-session-pill.absente{background:#444;text-decoration:line-through}
+.cal-session-pill.ok{background:#2e7d32}
+.cal-session-pill.retard{background:#c53030}
+.cal-session-pill.en_cours{background:#b8561f}
+.cal-session-pill.termine{background:#1A7A6D}
+</style>
+<div class="cal-month">
+    {% for dow in ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'] %}
+    <div class="cal-dow">{{ dow }}</div>
+    {% endfor %}
+    
+    {# Calculer la grille du mois #}
+    {% set first_day = range_start %}
+    {% set last_day = range_end %}
+    {% set parts = first_day.split('-') %}
+    {% set year = parts[0]|int %}
+    {% set month = parts[1]|int %}
+    
+    {# Compute first weekday (using namespace for mutable) #}
+    {% set ns = namespace(plannings_by_date={}) %}
+    {% for p in plannings %}
+        {% if p.date not in ns.plannings_by_date %}{% set _ = ns.plannings_by_date.update({p.date: []}) %}{% endif %}
+        {% set _ = ns.plannings_by_date[p.date].append(p) %}
+    {% endfor %}
+    
+    {# Empty cells before day 1 (Mon=0..Sun=6) - we use Python to compute via input attribute trick is too complex
+       Use simpler: render based on dates in plannings_by_date keys + iterate days of month #}
+    {% set today = date_filter %}
+    {% set days_in_month = (last_day.split('-')[2])|int %}
+    {% set first_dow_pad = ((year, month, 1)|first_dow) if false else 0 %}
+    
+    {# Use template for first day padding via JS-friendly approach #}
+    {# Actually simpler: pad with empty cells based on Python-computed value passed by route #}
+    {% set first_dt = first_day %}
+    
+    {# Iterate days 1..days_in_month #}
+    {% for day_num in range(1, days_in_month + 1) %}
+    {% set day_str = "%04d-%02d-%02d"|format(year, month, day_num) %}
+    {% set day_plannings = ns.plannings_by_date.get(day_str, []) %}
+    {% if day_num == 1 %}
+        {# Use loop.first to add padding via JS once - inject empty cells via padding loop #}
+        {% set ds_parts = day_str.split('-') %}
+        {% set _y = ds_parts[0]|int %}
+        {% set _m = ds_parts[1]|int %}
+        {% set first_weekday_iso = ((_y * 365 + _m * 30 + 1) % 7) %}
+    {% endif %}
+    <div class="cal-cell {% if day_plannings %}has-sessions{% endif %} {% if day_str == today %}is-today{% endif %}" onclick="openDayPlannings('{{ day_str }}')">
+        <div class="cal-day-num">
+            <span>{{ day_num }}</span>
+            {% if day_plannings %}<span style="background:#7b1fa2;color:#fff;font-size:9px;padding:1px 5px;border-radius:8px">{{ day_plannings|length }}</span>{% endif %}
+        </div>
+        {% for pl in day_plannings[:3] %}
+        <span class="cal-session-pill {{ pl.statut }}" title="{{ pl.heure_prevue }} {{ pl.user_name }} {{ pl.libelle }}">{{ pl.heure_prevue }} {{ pl.user_name|truncate(10, true, '') }}</span>
+        {% endfor %}
+        {% if day_plannings|length > 3 %}
+        <span style="font-size:9px;color:#888;font-style:italic">+ {{ day_plannings|length - 3 }} autres...</span>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+function openDayPlannings(dayStr){
+    // Recharge la page en vue jour avec cette date
+    window.location.href = '/admin/pointage/companies/{{ company.id }}/planning?view=jour&date=' + dayStr;
+}
+</script>
+
+{% else %}
+{# === Vue tableau (jour/semaine/mois) === #}
 <div class="pl-card" style="padding:0">
 {% if plannings %}
+<form method="post" id="bulkForm">
+    <input type="hidden" name="action" value="delete_bulk">
+    <input type="hidden" name="planning_ids" id="bulkIds" value="">
+    
+    <div style="padding:10px 12px;background:#f8faf9;border-radius:8px 8px 0 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid #e0e0e0">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+            <input type="checkbox" id="bulkAll" onchange="toggleAllBulk()">
+            <strong>Tout sélectionner</strong>
+        </label>
+        <span id="bulkCount" style="font-size:11px;color:#666">0 sélectionnée(s)</span>
+        <div style="flex:1"></div>
+        <button type="button" id="bulkDeleteBtn" disabled onclick="bulkDelete()" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:11px">🗑️ Supprimer la sélection</button>
+        <button type="button" onclick="document.getElementById('bulkFilterModal').style.display='flex'" class="btn btn-outline btn-sm" style="font-size:11px">🔍 Filtre avancé</button>
+    </div>
+</form>
+
 <table style="width:100%;font-size:12px;border-collapse:collapse">
 <thead><tr style="background:#1a3a5c;color:#fff">
+    <th style="padding:8px;text-align:center;width:30px"></th>
     {% if view != 'jour' %}<th style="padding:8px;text-align:left">Date</th>{% endif %}
     <th style="padding:8px;text-align:left">Heure</th>
     <th style="padding:8px;text-align:left">Durée</th>
@@ -3904,6 +4020,11 @@ function getMyPos(){
 <tbody>
 {% for p in plannings %}
 <tr style="border-bottom:1px solid #f0f0f0">
+    <td style="padding:6px 8px;text-align:center">
+        {% if p.statut in ['prevue','absente'] %}
+        <input type="checkbox" class="bulk-cb" data-id="{{ p.id }}" onchange="updateBulkSelection()">
+        {% endif %}
+    </td>
     {% if view != 'jour' %}<td style="padding:6px 8px;font-family:monospace;font-size:11px">{{ p.date }}</td>{% endif %}
     <td style="padding:6px 8px"><span class="pl-time">{{ p.heure_prevue }}</span></td>
     <td style="padding:6px 8px;font-size:11px">{{ p.duree_minutes }}min</td>
@@ -3912,6 +4033,10 @@ function getMyPos(){
     <td style="padding:6px 8px;font-size:11px">{% if p.externe_nom %}🏢 {{ p.externe_nom }}<br>{% elif p.client_nom %}👤 {{ p.client_nom }}<br>{% endif %}{% if p.lieu %}📍 {{ p.lieu }}{% endif %}</td>
     <td style="padding:6px 8px"><span class="pl-st-{{ p.statut }}">{{ p.statut }}</span></td>
     <td style="padding:6px 8px;text-align:right;white-space:nowrap">
+        {% if p.statut in ['prevue','absente'] %}
+        <button type="button" class="btn btn-sm" style="background:#1976d2;color:#fff;font-size:10px"
+                onclick='openEditPlan({{ {"id":p.id,"company_user_id":p.company_user_id,"date":p.date,"heure_prevue":p.heure_prevue,"duree_minutes":p.duree_minutes,"libelle":p.libelle or "","lieu":p.lieu or "","client_nom":p.client_nom or "","tolerance_minutes":p.tolerance_minutes,"penalty_per_minute":p.penalty_per_minute,"entreprise_externe_id":p.entreprise_externe_id or ""}|tojson }})'>✏️</button>
+        {% endif %}
         {% if p.statut == 'prevue' %}
         <form method="post" style="display:inline" onsubmit="return confirm('Marquer cette session comme absente ?')">
             <input type="hidden" name="action" value="mark_absent">
@@ -3933,6 +4058,130 @@ function getMyPos(){
 <div style="text-align:center;padding:30px;color:#888">Aucune session planifiée pour cette date.</div>
 {% endif %}
 </div>
+
+<!-- Modal filtre avancé suppression -->
+<div id="bulkFilterModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:10px;padding:20px;max-width:480px;width:92%">
+    <h3 style="margin:0 0 12px;color:#c53030">🔍 Suppression par filtre</h3>
+    <p style="font-size:11px;color:#666;margin-bottom:12px">⚠️ Supprime toutes les sessions correspondant aux filtres (sauf celles déjà démarrées/terminées).</p>
+    <form method="post" onsubmit="return confirm('Confirmer la suppression des sessions correspondant aux filtres ? Cette action est irréversible.')">
+        <input type="hidden" name="action" value="delete_bulk">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div><label style="font-size:11px;color:#888">Du</label>
+                <input type="date" name="bulk_date_start" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+            <div><label style="font-size:11px;color:#888">Au</label>
+                <input type="date" name="bulk_date_end" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        </div>
+        <div style="margin-bottom:10px">
+            <label style="font-size:11px;color:#888">Employé (optionnel)</label>
+            <select name="bulk_user_id" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                <option value="">-- Tous les employés --</option>
+                {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+            </select>
+        </div>
+        <div style="margin-bottom:14px">
+            <label style="font-size:11px;color:#888">Statut (optionnel)</label>
+            <select name="bulk_statut" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                <option value="">-- Tous les statuts modifiables --</option>
+                <option value="prevue">📅 Prévues seulement</option>
+                <option value="absente">❌ Absentes seulement</option>
+            </select>
+        </div>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('bulkFilterModal').style.display='none'">Annuler</button>
+            <button type="submit" class="btn btn-sm" style="background:#c53030;color:#fff">🗑️ Supprimer selon filtres</button>
+        </div>
+    </form>
+</div></div>
+
+<!-- Modal modification session -->
+<div id="editPlanModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:10px;padding:20px;max-width:560px;width:92%;max-height:92vh;overflow:auto">
+    <h3 style="margin:0 0 12px;color:#1976d2">✏️ Modifier la session</h3>
+    <form method="post" id="editPlanForm">
+        <input type="hidden" name="action" value="edit">
+        <input type="hidden" name="planning_id" id="editPlanId">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div><label style="font-size:11px;color:#888">Employé</label>
+                <select name="company_user_id" id="editPlanUser" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                    {% for u in users %}<option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>{% endfor %}
+                </select></div>
+            <div><label style="font-size:11px;color:#888">Date *</label>
+                <input type="date" name="date" id="editPlanDate" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div><label style="font-size:11px;color:#888">Heure prévue *</label>
+                <input type="time" name="heure_prevue" id="editPlanHeure" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+            <div><label style="font-size:11px;color:#888">Durée (min)</label>
+                <input type="number" name="duree_minutes" id="editPlanDuree" min="5" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        </div>
+        <div style="margin-bottom:10px">
+            <label style="font-size:11px;color:#888">Libellé / Mission</label>
+            <input name="libelle" id="editPlanLibelle" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+        </div>
+        {% if externes %}
+        <div style="margin-bottom:10px">
+            <label style="font-size:11px;color:#888">🏢 Entreprise externe (optionnel)</label>
+            <select name="entreprise_externe_id" id="editPlanExt" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+                <option value="">-- Aucune --</option>
+                {% for e in externes %}<option value="{{ e.id }}">{{ e.nom }}</option>{% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div><label style="font-size:11px;color:#888">Client</label>
+                <input name="client_nom" id="editPlanClient" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+            <div><label style="font-size:11px;color:#888">Lieu</label>
+                <input name="lieu" id="editPlanLieu" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+            <div><label style="font-size:11px;color:#888">Tolérance (min)</label>
+                <input type="number" name="tolerance_minutes" id="editPlanTol" min="0" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+            <div><label style="font-size:11px;color:#888">Pénalité F/min</label>
+                <input type="number" name="penalty_per_minute" id="editPlanPpm" min="0" step="50" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        </div>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('editPlanModal').style.display='none'">Annuler</button>
+            <button type="submit" class="btn btn-sm" style="background:#1976d2;color:#fff">💾 Enregistrer</button>
+        </div>
+    </form>
+</div></div>
+
+<script>
+function toggleAllBulk(){
+    var on = document.getElementById('bulkAll').checked;
+    document.querySelectorAll('.bulk-cb').forEach(function(cb){ cb.checked = on; });
+    updateBulkSelection();
+}
+function updateBulkSelection(){
+    var ids = Array.from(document.querySelectorAll('.bulk-cb:checked')).map(cb => cb.dataset.id);
+    document.getElementById('bulkIds').value = ids.join(',');
+    document.getElementById('bulkCount').textContent = ids.length + ' sélectionnée(s)';
+    document.getElementById('bulkDeleteBtn').disabled = ids.length === 0;
+}
+function bulkDelete(){
+    var ids = document.getElementById('bulkIds').value;
+    if (!ids) return;
+    if (!confirm('Supprimer les ' + ids.split(',').length + ' session(s) sélectionnée(s) ?')) return;
+    document.getElementById('bulkForm').submit();
+}
+function openEditPlan(p){
+    document.getElementById('editPlanId').value = p.id;
+    if(document.getElementById('editPlanUser')) document.getElementById('editPlanUser').value = p.company_user_id || '';
+    document.getElementById('editPlanDate').value = p.date || '';
+    document.getElementById('editPlanHeure').value = p.heure_prevue || '';
+    document.getElementById('editPlanDuree').value = p.duree_minutes || 60;
+    document.getElementById('editPlanLibelle').value = p.libelle || '';
+    document.getElementById('editPlanLieu').value = p.lieu || '';
+    document.getElementById('editPlanClient').value = p.client_nom || '';
+    document.getElementById('editPlanTol').value = p.tolerance_minutes || 15;
+    document.getElementById('editPlanPpm').value = p.penalty_per_minute || 0;
+    var extEl = document.getElementById('editPlanExt');
+    if (extEl) extEl.value = p.entreprise_externe_id || '';
+    document.getElementById('editPlanModal').style.display = 'flex';
+}
+</script>
+{% endif %}
 
 <!-- Modal nouvelle session -->
 <div id="newPlanModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">

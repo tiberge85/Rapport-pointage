@@ -4249,7 +4249,45 @@ def migrate_v66():
     conn.commit(); conn.close()
 
 
+def migrate_v67():
+    """v67 : type_pointage par employé (override individuel).
+    Permet à un employé d'avoir un mode de pointage différent de son entreprise.
+    Cas d'usage : entreprise en mode 'session' globalement, mais certains employés
+    administratifs travaillent en pointage 'continu' (arrivée/pause/départ).
+    
+    Si NULL → utilise le type_pointage de l'entreprise (comportement v46).
+    Si renseigné → 'continu' ou 'session' override individuel."""
+    conn = get_db()
+    try: conn.execute("ALTER TABLE pointage_company_users ADD COLUMN type_pointage TEXT")
+    except: pass
+    conn.commit(); conn.close()
+
+
 # ======================== SERVICES JOURS DE REPOS ========================
+
+def get_user_pointage_mode(company_user_id):
+    """Retourne le mode de pointage d'un employé : son override individuel
+    s'il existe, sinon le type_pointage de l'entreprise.
+    Retourne ('continu' | 'session', source ∈ {'individuel', 'entreprise'})."""
+    conn = get_db()
+    try:
+        r = conn.execute("""
+            SELECT pcu.type_pointage as user_tp, pc.type_pointage as company_tp
+            FROM pointage_company_users pcu
+            JOIN pointage_companies pc ON pcu.company_id = pc.id
+            WHERE pcu.id=?""", (company_user_id,)).fetchone()
+        if r:
+            user_tp = r['user_tp']
+            if user_tp in ('continu', 'session'):
+                conn.close()
+                return user_tp, 'individuel'
+            company_tp = r['company_tp'] or 'continu'
+            conn.close()
+            return company_tp, 'entreprise'
+    except: pass
+    conn.close()
+    return 'continu', 'entreprise'
+
 
 def is_jour_repos(company_id, date_iso, company_user_id=None):
     """Vérifie si une date est un jour de repos pour un employé donné (ou pour l'entreprise).

@@ -367,6 +367,8 @@ from models import migrate_v65
 migrate_v65()
 from models import migrate_v66
 migrate_v66()
+from models import migrate_v67
+migrate_v67()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -11360,6 +11362,8 @@ def admin_pointage_company_detail(cid):
             pwd = (request.form.get('password') or '').strip() or _s.token_hex(4)
             dro_raw = (request.form.get('days_required_override','') or '').strip()
             dro = int(dro_raw) if dro_raw.isdigit() and int(dro_raw) > 0 else None
+            tp_user = (request.form.get('type_pointage','') or '').strip()
+            tp_user = tp_user if tp_user in ('continu','session') else None
             if not uname or not full:
                 flash("Identifiant et nom requis", "error")
             else:
@@ -11369,8 +11373,8 @@ def admin_pointage_company_detail(cid):
                     conn.execute("""INSERT INTO pointage_company_users
                         (company_id, username, password_hash, salt, full_name, email, phone, poste,
                          heure_arrivee, heure_pause, heure_retour, heure_depart, tolerance_retard_minutes,
-                         days_required_override)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         days_required_override, type_pointage)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (cid, uname, ph, salt, full,
                          request.form.get('email','').strip(),
                          request.form.get('phone','').strip(),
@@ -11380,7 +11384,7 @@ def admin_pointage_company_detail(cid):
                          request.form.get('heure_retour','13:00'),
                          request.form.get('heure_depart','17:00'),
                          int(request.form.get('tolerance','10') or 10),
-                         dro))
+                         dro, tp_user))
                     conn.commit()
                     flash(f"✅ Employé '{full}' ajouté. Identifiants : {uname} / {pwd}", "success")
                 except Exception as e:
@@ -11577,10 +11581,13 @@ def admin_pointage_company_user_edit(cid, uid):
                 dro_raw = (request.form.get('days_required_override','') or '').strip()
                 dro = int(dro_raw) if dro_raw.isdigit() and int(dro_raw) > 0 else None
                 
+                tp_user = (request.form.get('type_pointage','') or '').strip()
+                tp_user = tp_user if tp_user in ('continu','session') else None
+                
                 conn.execute("""UPDATE pointage_company_users SET
                     username=?, full_name=?, email=?, phone=?, poste=?,
                     heure_arrivee=?, heure_pause=?, heure_retour=?, heure_depart=?,
-                    tolerance_retard_minutes=?, days_required_override=?
+                    tolerance_retard_minutes=?, days_required_override=?, type_pointage=?
                     WHERE id=? AND company_id=?""",
                     (new_username,
                      (request.form.get('full_name','') or '').strip(),
@@ -11592,7 +11599,7 @@ def admin_pointage_company_user_edit(cid, uid):
                      request.form.get('heure_retour','13:00') or '13:00',
                      request.form.get('heure_depart','17:00') or '17:00',
                      int(request.form.get('tolerance','10') or 10),
-                     dro, uid, cid))
+                     dro, tp_user, uid, cid))
                 conn.commit()
                 flash("✅ Employé modifié", "success")
                 conn.close()
@@ -12614,6 +12621,108 @@ def admin_pointage_company_planning(cid):
                 conn.commit()
                 flash("⚠️ Session marquée absente", "warning")
             except: pass
+        elif action == 'edit':
+            # Modification d'une session existante (uniquement si statut='prevue' ou 'absente')
+            try:
+                pid = int(request.form.get('planning_id', 0))
+                # Vérifier que la session n'est pas déjà en cours/terminée
+                row = conn.execute("SELECT statut FROM pointage_planning_sessions WHERE id=? AND company_id=?",
+                                  (pid, cid)).fetchone()
+                if not row:
+                    flash("❌ Session introuvable", "error")
+                elif row['statut'] in ('en_cours', 'ok', 'retard', 'termine'):
+                    flash(f"❌ Impossible de modifier une session déjà démarrée ou terminée (statut: {row['statut']})", "error")
+                else:
+                    new_date = (request.form.get('date','') or '').strip()
+                    new_heure = (request.form.get('heure_prevue','') or '').strip()
+                    new_duree = int(request.form.get('duree_minutes', 60) or 60)
+                    new_libelle = (request.form.get('libelle', '') or '').strip()
+                    new_lieu = (request.form.get('lieu', '') or '').strip()
+                    new_client = (request.form.get('client_nom', '') or '').strip()
+                    new_tol = int(request.form.get('tolerance_minutes', 15) or 15)
+                    new_ppm = float(request.form.get('penalty_per_minute', 0) or 0)
+                    new_ext_id = request.form.get('entreprise_externe_id', '').strip()
+                    new_ext_id = int(new_ext_id) if new_ext_id and new_ext_id.isdigit() else None
+                    new_user_id = request.form.get('company_user_id', '').strip()
+                    
+                    # Si entreprise externe sélectionnée, prend son nom comme client_nom si vide
+                    if new_ext_id and not new_client:
+                        ext = conn.execute("SELECT nom, adresse FROM pointage_entreprises_externes WHERE id=?", (new_ext_id,)).fetchone()
+                        if ext:
+                            new_client = ext['nom']
+                            if not new_lieu and ext['adresse']:
+                                new_lieu = ext['adresse']
+                    
+                    if not new_date or not new_heure:
+                        flash("❌ Date et heure requises", "error")
+                    else:
+                        if new_user_id and new_user_id.isdigit():
+                            conn.execute("""UPDATE pointage_planning_sessions SET
+                                company_user_id=?, date=?, heure_prevue=?, duree_minutes=?,
+                                libelle=?, lieu=?, client_nom=?, tolerance_minutes=?,
+                                penalty_per_minute=?, entreprise_externe_id=?
+                                WHERE id=? AND company_id=?""",
+                                (int(new_user_id), new_date, new_heure, new_duree,
+                                 new_libelle, new_lieu, new_client, new_tol,
+                                 new_ppm, new_ext_id, pid, cid))
+                        else:
+                            conn.execute("""UPDATE pointage_planning_sessions SET
+                                date=?, heure_prevue=?, duree_minutes=?,
+                                libelle=?, lieu=?, client_nom=?, tolerance_minutes=?,
+                                penalty_per_minute=?, entreprise_externe_id=?
+                                WHERE id=? AND company_id=?""",
+                                (new_date, new_heure, new_duree,
+                                 new_libelle, new_lieu, new_client, new_tol,
+                                 new_ppm, new_ext_id, pid, cid))
+                        conn.commit()
+                        flash(f"✅ Session modifiée le {new_date} à {new_heure}", "success")
+            except Exception as e:
+                flash(f"❌ Erreur modification : {e}", "error")
+        elif action == 'delete_bulk':
+            # Suppression multiple : par IDs OU par filtre (date range, employé, statut)
+            try:
+                ids_csv = (request.form.get('planning_ids', '') or '').strip()
+                if ids_csv:
+                    # Suppression par IDs sélectionnés
+                    ids = [int(i) for i in ids_csv.split(',') if i.strip().isdigit()]
+                    if ids:
+                        placeholders = ','.join('?' * len(ids))
+                        # Sécurité : pas de suppression de sessions en_cours/ok/retard/termine
+                        cur = conn.execute(f"""DELETE FROM pointage_planning_sessions
+                            WHERE id IN ({placeholders}) AND company_id=?
+                            AND statut IN ('prevue','absente')""", (*ids, cid))
+                        conn.commit()
+                        flash(f"✅ {cur.rowcount} session(s) supprimée(s)", "success")
+                else:
+                    # Suppression par filtre
+                    bulk_date_start = (request.form.get('bulk_date_start','') or '').strip()
+                    bulk_date_end = (request.form.get('bulk_date_end','') or '').strip()
+                    bulk_user_id = (request.form.get('bulk_user_id','') or '').strip()
+                    bulk_statut = (request.form.get('bulk_statut','') or '').strip()
+                    
+                    where = ["company_id=?", "statut IN ('prevue','absente')"]
+                    params = [cid]
+                    if bulk_date_start:
+                        where.append("date >= ?"); params.append(bulk_date_start)
+                    if bulk_date_end:
+                        where.append("date <= ?"); params.append(bulk_date_end)
+                    if bulk_user_id and bulk_user_id.isdigit():
+                        where.append("company_user_id = ?"); params.append(int(bulk_user_id))
+                    if bulk_statut in ('prevue','absente'):
+                        where.clear(); where.append("company_id=?"); where.append("statut=?")
+                        params = [cid, bulk_statut]
+                        if bulk_date_start:
+                            where.append("date >= ?"); params.append(bulk_date_start)
+                        if bulk_date_end:
+                            where.append("date <= ?"); params.append(bulk_date_end)
+                        if bulk_user_id and bulk_user_id.isdigit():
+                            where.append("company_user_id = ?"); params.append(int(bulk_user_id))
+                    
+                    cur = conn.execute(f"DELETE FROM pointage_planning_sessions WHERE {' AND '.join(where)}", tuple(params))
+                    conn.commit()
+                    flash(f"✅ {cur.rowcount} session(s) supprimée(s) selon les filtres", "success")
+            except Exception as e:
+                flash(f"❌ Erreur suppression multiple : {e}", "error")
         conn.close()
         return redirect(url_for('admin_pointage_company_planning', cid=cid))
     
@@ -12650,7 +12759,7 @@ def admin_pointage_company_planning(cid):
     if view == 'semaine':
         start = d - _td(days=d.weekday())
         end = start + _td(days=6)
-    elif view == 'mois':
+    elif view == 'mois' or view == 'calendrier':
         start = d.replace(day=1)
         if d.month == 12: end = _date(d.year + 1, 1, 1) - _td(days=1)
         else: end = _date(d.year, d.month + 1, 1) - _td(days=1)
