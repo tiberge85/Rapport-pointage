@@ -4207,6 +4207,32 @@ def migrate_v64():
     conn.commit(); conn.close()
 
 
+def migrate_v65():
+    """v65 : Permettre de spécifier manuellement le nombre de jours obligatoires.
+    - Niveau ENTREPRISE : pointage_companies.days_required_default
+    - Niveau EMPLOYÉ (override individuel) : pointage_company_users.days_required_override
+    
+    Logique de fallback (ordre de priorité) :
+    1. Override individuel employé (si défini)
+    2. Défaut entreprise (si défini)  
+    3. Calcul auto = jours du mois - jours de repos (comportement v40)"""
+    conn = get_db()
+    
+    # Niveau entreprise
+    try: conn.execute("ALTER TABLE pointage_companies ADD COLUMN days_required_default INTEGER")
+    except: pass
+    
+    # Niveau employé (override individuel)
+    try: conn.execute("ALTER TABLE pointage_company_users ADD COLUMN days_required_override INTEGER")
+    except: pass
+    
+    # Aussi pour les utilisateurs internes RAMYA (table users)
+    try: conn.execute("ALTER TABLE users ADD COLUMN days_required_override INTEGER")
+    except: pass
+    
+    conn.commit(); conn.close()
+
+
 # ======================== SERVICES JOURS DE REPOS ========================
 
 def is_jour_repos(company_id, date_iso, company_user_id=None):
@@ -4258,6 +4284,58 @@ def is_jour_repos(company_id, date_iso, company_user_id=None):
     
     conn.close()
     return False, None
+
+
+def get_days_required(company_id=None, company_user_id=None, user_id=None,
+                       calc_auto=None):
+    """Détermine le nombre de jours obligatoires à effectuer.
+    
+    Ordre de priorité :
+    1. Override individuel (employé pointage ou user interne RAMYA) si défini
+    2. Défaut entreprise (pour pointage_companies) si défini
+    3. Calcul auto fourni en paramètre (= jours du mois - jours de repos)
+    
+    Retourne (nb_jours, source) où source ∈ {'override_employe', 'defaut_entreprise', 'auto'}
+    """
+    conn = get_db()
+    
+    # 1. Override individuel - employé pointage externe
+    if company_user_id:
+        try:
+            r = conn.execute("SELECT days_required_override FROM pointage_company_users WHERE id=?",
+                           (company_user_id,)).fetchone()
+            if r and r[0] is not None and r[0] > 0:
+                conn.close()
+                return int(r[0]), 'override_employe'
+        except: pass
+    
+    # 1bis. Override individuel - user interne RAMYA
+    if user_id and not company_user_id:
+        try:
+            r = conn.execute("SELECT days_required_override FROM users WHERE id=?",
+                           (user_id,)).fetchone()
+            if r and r[0] is not None and r[0] > 0:
+                conn.close()
+                return int(r[0]), 'override_employe'
+        except: pass
+    
+    # 2. Défaut entreprise
+    if company_id:
+        try:
+            r = conn.execute("SELECT days_required_default FROM pointage_companies WHERE id=?",
+                           (company_id,)).fetchone()
+            if r and r[0] is not None and r[0] > 0:
+                conn.close()
+                return int(r[0]), 'defaut_entreprise'
+        except: pass
+    
+    conn.close()
+    
+    # 3. Calcul auto fourni
+    if calc_auto is not None:
+        return int(calc_auto), 'auto'
+    
+    return 0, 'auto'
 
 
 def jours_repos_list(company_id, date_from=None, date_to=None):

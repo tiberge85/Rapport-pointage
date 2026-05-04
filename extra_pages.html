@@ -2319,6 +2319,11 @@ function getMyPos(){
             <label style="font-size:11px;color:#888;display:block">Tolérance (min)</label>
             <input type="number" name="grace_minutes" value="10" min="0" max="60" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
         </div>
+        <div>
+            <label style="font-size:11px;color:#888;display:block">📅 Jours obligatoires/mois</label>
+            <input type="number" name="days_required_default" placeholder="(auto)" min="0" max="31" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+            <p style="font-size:9px;color:#888;margin:2px 0 0">Vide = calcul auto</p>
+        </div>
         <div style="grid-column:1/-1">
             <label style="font-size:11px;color:#888;display:block;margin-bottom:4px">⚙️ Mode de pointage *</label>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -2416,6 +2421,11 @@ function getMyPos(){
             <label style="font-size:11px;color:#888;display:block">Tolérance (min)</label>
             <input type="number" name="grace_minutes" value="{{ company.grace_minutes or 10 }}" min="0" max="60" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
         </div>
+        <div>
+            <label style="font-size:11px;color:#888;display:block">📅 Jours obligatoires/mois</label>
+            <input type="number" name="days_required_default" value="{{ company.days_required_default or '' }}" placeholder="(auto)" min="0" max="31" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+            <p style="font-size:9px;color:#888;margin:2px 0 0">Vide = calcul auto (jours du mois - jours de repos)</p>
+        </div>
         <div style="grid-column:1/-1">
             <label style="font-size:11px;color:#888;display:block;margin-bottom:4px">⚙️ Mode de pointage</label>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -2471,6 +2481,9 @@ function getMyPos(){
             <input type="time" name="heure_depart" value="17:00" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
         <div><label style="font-size:11px;color:#888;display:block">Tolérance</label>
             <input type="number" name="tolerance" value="10" min="0" max="60" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
+        <div><label style="font-size:11px;color:#888;display:block">📅 Jours obligatoires</label>
+            <input type="number" name="days_required_override" placeholder="(défaut)" min="0" max="31" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+            <p style="font-size:9px;color:#888;margin:2px 0 0">Vide = défaut entreprise</p></div>
         <button type="submit" class="btn btn-primary btn-sm">+ Ajouter</button>
     </form>
 </div></div>
@@ -3198,6 +3211,11 @@ function getMyPos(){
     <div>
         <label style="font-size:11px;color:#888;display:block">Tolérance (min)</label>
         <input type="number" name="tolerance" value="{{ user.tolerance_retard_minutes or 10 }}" min="0" max="60" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+    </div>
+    <div>
+        <label style="font-size:11px;color:#888;display:block">📅 Jours obligatoires/mois</label>
+        <input type="number" name="days_required_override" value="{{ user.days_required_override or '' }}" placeholder="(défaut entreprise)" min="0" max="31" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px">
+        <p style="font-size:9px;color:#888;margin:2px 0 0">Vide = utilise le défaut de l'entreprise</p>
     </div>
     <div style="grid-column:1/-1;display:flex;gap:6px;justify-content:flex-end;margin-top:10px">
         <a href="/admin/pointage/companies/{{ company.id }}" class="btn btn-outline btn-sm">Annuler</a>

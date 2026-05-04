@@ -363,6 +363,8 @@ from models import migrate_v63
 migrate_v63()
 from models import migrate_v64
 migrate_v64()
+from models import migrate_v65
+migrate_v65()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -10915,11 +10917,37 @@ def admin_pointage_rapport_entreprise(month):
         from reportlab.lib.units import mm
         import io
         
-        # Calculer stats pour tous les employés
+        # Récupérer les jours obligatoires (override entreprise / par employé)
+        from models import get_days_required
+        conn2 = _gdb()
+        company_default = None
+        employee_overrides = {}  # name -> int
+        if company_id and company_id.isdigit():
+            cid_int = int(company_id)
+            row = conn2.execute("SELECT days_required_default FROM pointage_companies WHERE id=?", (cid_int,)).fetchone()
+            if row and row[0] is not None and row[0] > 0:
+                company_default = int(row[0])
+            # Overrides par employé
+            for u in conn2.execute("SELECT id, full_name, days_required_override FROM pointage_company_users WHERE company_id=?", (cid_int,)).fetchall():
+                if u['days_required_override'] is not None and u['days_required_override'] > 0:
+                    employee_overrides[u['full_name']] = int(u['days_required_override'])
+        else:
+            # Mode RAMYA : récupérer overrides depuis users
+            for u in conn2.execute("SELECT id, full_name, days_required_override FROM users WHERE COALESCE(is_active,1)=1").fetchall():
+                if u['days_required_override'] is not None and u['days_required_override'] > 0:
+                    employee_overrides[u['full_name']] = int(u['days_required_override'])
+        conn2.close()
+        
+        # Calculer stats pour tous les employés (avec override jours obligatoires)
         all_stats = []
         for emp in emps:
+            # Priorité : override individuel > défaut entreprise > calcul auto (None)
+            override = employee_overrides.get(emp['name'])
+            if override is None and company_default:
+                override = company_default
             enriched, stats = rapport_core.calc_employee_stats(emp, hp=8, hp_weekend=0,
-                                                              hourly_cost=0, rest_days=[5, 6])
+                                                              hourly_cost=0, rest_days=[5, 6],
+                                                              days_required_override=override)
             all_stats.append((enriched, stats))
         
         S = rapport_core.make_styles()
@@ -11152,6 +11180,9 @@ def admin_pointage_company_add():
     if type_pointage not in ('continu', 'session'):
         type_pointage = 'continu'
     
+    drd_raw = (request.form.get('days_required_default', '') or '').strip()
+    days_required_default = int(drd_raw) if drd_raw.isdigit() and int(drd_raw) > 0 else None
+    
     if not name or not slug:
         flash("Nom et identifiant requis.", "error")
         return redirect(url_for('admin_pointage_companies_list'))
@@ -11159,9 +11190,11 @@ def admin_pointage_company_add():
     conn = _gdb()
     try:
         conn.execute("""INSERT INTO pointage_companies
-            (name, slug, welcome_message, primary_color, penalty_per_minute, grace_minutes, type_pointage, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (name, slug, welcome, color, ppm, grace, type_pointage, session.get('user_id')))
+            (name, slug, welcome_message, primary_color, penalty_per_minute, grace_minutes,
+             type_pointage, days_required_default, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (name, slug, welcome, color, ppm, grace, type_pointage,
+             days_required_default, session.get('user_id')))
         cid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         conn.commit()
         type_label = "Pointage par session (interventions)" if type_pointage == 'session' else "Présence continue (arrivée/pause/départ)"
@@ -11192,14 +11225,17 @@ def admin_pointage_company_detail(cid):
             try:
                 tp = (request.form.get('type_pointage', 'continu') or 'continu').strip()
                 if tp not in ('continu','session'): tp = 'continu'
+                drd_raw = (request.form.get('days_required_default', '') or '').strip()
+                drd = int(drd_raw) if drd_raw.isdigit() and int(drd_raw) > 0 else None
                 conn.execute("""UPDATE pointage_companies SET
                     name=?, welcome_message=?, primary_color=?,
-                    penalty_per_minute=?, grace_minutes=?, type_pointage=?
+                    penalty_per_minute=?, grace_minutes=?, type_pointage=?,
+                    days_required_default=?
                     WHERE id=?""",
                     (request.form.get('name'), request.form.get('welcome_message'),
                      request.form.get('primary_color', '#1a7a6d'),
                      float(request.form.get('penalty_per_minute', '0') or 0),
-                     int(request.form.get('grace_minutes', '10') or 10), tp, cid))
+                     int(request.form.get('grace_minutes', '10') or 10), tp, drd, cid))
                 conn.commit()
                 flash("✅ Entreprise mise à jour", "success")
             except Exception as e:
@@ -11209,6 +11245,8 @@ def admin_pointage_company_detail(cid):
             uname = (request.form.get('username') or '').strip().lower()
             full = (request.form.get('full_name') or '').strip()
             pwd = (request.form.get('password') or '').strip() or _s.token_hex(4)
+            dro_raw = (request.form.get('days_required_override','') or '').strip()
+            dro = int(dro_raw) if dro_raw.isdigit() and int(dro_raw) > 0 else None
             if not uname or not full:
                 flash("Identifiant et nom requis", "error")
             else:
@@ -11217,8 +11255,9 @@ def admin_pointage_company_detail(cid):
                 try:
                     conn.execute("""INSERT INTO pointage_company_users
                         (company_id, username, password_hash, salt, full_name, email, phone, poste,
-                         heure_arrivee, heure_pause, heure_retour, heure_depart, tolerance_retard_minutes)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         heure_arrivee, heure_pause, heure_retour, heure_depart, tolerance_retard_minutes,
+                         days_required_override)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (cid, uname, ph, salt, full,
                          request.form.get('email','').strip(),
                          request.form.get('phone','').strip(),
@@ -11227,7 +11266,8 @@ def admin_pointage_company_detail(cid):
                          request.form.get('heure_pause','12:00'),
                          request.form.get('heure_retour','13:00'),
                          request.form.get('heure_depart','17:00'),
-                         int(request.form.get('tolerance','10') or 10)))
+                         int(request.form.get('tolerance','10') or 10),
+                         dro))
                     conn.commit()
                     flash(f"✅ Employé '{full}' ajouté. Identifiants : {uname} / {pwd}", "success")
                 except Exception as e:
@@ -11409,10 +11449,13 @@ def admin_pointage_company_user_edit(cid, uid):
                         conn.close()
                         return redirect(url_for('admin_pointage_company_user_edit', cid=cid, uid=uid))
                 
+                dro_raw = (request.form.get('days_required_override','') or '').strip()
+                dro = int(dro_raw) if dro_raw.isdigit() and int(dro_raw) > 0 else None
+                
                 conn.execute("""UPDATE pointage_company_users SET
                     username=?, full_name=?, email=?, phone=?, poste=?,
                     heure_arrivee=?, heure_pause=?, heure_retour=?, heure_depart=?,
-                    tolerance_retard_minutes=?
+                    tolerance_retard_minutes=?, days_required_override=?
                     WHERE id=? AND company_id=?""",
                     (new_username,
                      (request.form.get('full_name','') or '').strip(),
@@ -11424,7 +11467,7 @@ def admin_pointage_company_user_edit(cid, uid):
                      request.form.get('heure_retour','13:00') or '13:00',
                      request.form.get('heure_depart','17:00') or '17:00',
                      int(request.form.get('tolerance','10') or 10),
-                     uid, cid))
+                     dro, uid, cid))
                 conn.commit()
                 flash("✅ Employé modifié", "success")
                 conn.close()

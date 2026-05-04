@@ -167,8 +167,11 @@ def extract_from_excel(xlsx_path):
 
 # ======================== CALCULS ========================
 
-def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0, rest_days=None):
-    """Calcule les statistiques complètes d'un employé. rest_days=liste des jours de repos (0=lundi..6=dimanche)."""
+def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0, rest_days=None,
+                         days_required_override=None):
+    """Calcule les statistiques complètes d'un employé. 
+    rest_days=liste des jours de repos (0=lundi..6=dimanche).
+    days_required_override : si fourni, force le nombre de jours obligatoires (sinon calcul auto)."""
     if rest_days is None: rest_days = []
     records = emp['records']
     total_required = 0
@@ -295,7 +298,20 @@ def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0, rest_days=None):
         })
     
     # === ASSIDUITÉ (basée sur le taux de présence) ===
-    presence_rate = (days_present / len(records) * 100) if len(records) > 0 else 0
+    # Détermination des jours obligatoires : override prioritaire, sinon calcul auto
+    if days_required_override is not None and days_required_override > 0:
+        days_required = int(days_required_override)
+        days_required_source = 'manuel'
+    else:
+        days_required = len(records) - days_rest
+        days_required_source = 'auto'
+    
+    # Recalcul absences en fonction de days_required (si override > calcul auto, on a plus d'absences)
+    # Si override < calcul auto (ex: 22 j obligatoires sur 30 jours, le delta = jours non comptés)
+    # Pour ne pas changer la logique de calcul historique, on garde days_absent tel quel
+    # (calculé jour par jour depuis records). days_required sert juste de référence pour le taux.
+    
+    presence_rate = (days_present / days_required * 100) if days_required > 0 else 0
     if presence_rate >= 95:
         observation = "Assidu"
     elif presence_rate >= 80:
@@ -304,7 +320,8 @@ def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0, rest_days=None):
         observation = "Non assidu"
     
     stats = {
-        'days_required': len(records) - days_rest,
+        'days_required': days_required,
+        'days_required_source': days_required_source,
         'days_present': days_present,
         'days_late': days_late,
         'days_punctual': days_punctual,
@@ -388,6 +405,35 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
         story.append(Paragraph(period, S['st']))
         story.append(Paragraph(f"Employé: {emp['name']}  |  Réf: {emp['ref']}  |  Fiche {emp_num}/{total_emps}", S['ei']))
         story.append(Spacer(1, 2*mm))
+        
+        # Bandeau bien visible : nombre de jours obligatoires + source
+        source_label = {
+            'manuel': 'Configuration manuelle',
+            'auto': 'Calcul automatique (calendrier - repos)'
+        }.get(stats.get('days_required_source','auto'), 'Calcul automatique')
+        oblig_data = [[
+            Paragraph(f"<b>NOMBRE DE JOURS OBLIGATOIRES À EFFECTUER</b>", 
+                      ParagraphStyle('oblh', fontName='Helvetica-Bold', fontSize=9,
+                                    textColor=colors.white, alignment=TA_CENTER)),
+            Paragraph(f"<b>{stats['days_required']} jours</b>",
+                      ParagraphStyle('oblv', fontName='Helvetica-Bold', fontSize=14,
+                                    textColor=DARK_TEAL, alignment=TA_CENTER)),
+            Paragraph(f"<i>{source_label}</i>",
+                      ParagraphStyle('obls', fontName='Helvetica-Oblique', fontSize=7,
+                                    textColor=colors.grey, alignment=TA_CENTER)),
+        ]]
+        oblig_t = Table(oblig_data, colWidths=[80*mm, 40*mm, 70*mm])
+        oblig_t.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(0,0),DARK_TEAL),
+            ('BACKGROUND',(1,0),(1,0),HexColor('#fff3e0')),
+            ('BACKGROUND',(2,0),(2,0),HexColor('#f8faf9')),
+            ('BOX',(0,0),(-1,-1),0.8,DARK_TEAL),
+            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
+            ('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6),
+        ]))
+        story.append(oblig_t)
+        story.append(Spacer(1, 3*mm))
         
         # Résumé compact
         sum_hdrs = ["Jours<br/>prévus","Présent","Retard","Absent","Err.<br/>badge",
@@ -1082,10 +1128,11 @@ def gen_simple_pages(story, emps, all_stats, S, provider_name, provider_info, cl
 
 # ======================== GENERATION PDF COMPLETE ========================
 
-def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0, hourly_cost=0, employee_costs=None, rest_days=None, employee_rest_days=None):
+def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0, hourly_cost=0, employee_costs=None, rest_days=None, employee_rest_days=None, days_required_default=None, employee_days_required=None):
     if not employee_costs: employee_costs = {}
     if rest_days is None: rest_days = []
     if employee_rest_days is None: employee_rest_days = {}
+    if employee_days_required is None: employee_days_required = {}
     if not work_dir:
         work_dir = os.path.dirname(os.path.abspath(output_path))
     doc = SimpleDocTemplate(output_path, pagesize=A4,
@@ -1094,12 +1141,17 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
     story = []
     now = datetime.now().strftime("%d/%m/%Y à %H:%M")
     
-    # Pré-calculer toutes les stats avec coût par employé et jours de repos
+    # Pré-calculer toutes les stats avec coût par employé, jours de repos et jours obligatoires
     all_stats = []
     for emp in emps:
         emp_cost = employee_costs.get(emp['name'], hourly_cost)
         emp_rest = employee_rest_days.get(emp['name'], rest_days)
-        all_stats.append(calc_employee_stats(emp, hp, hp_weekend, emp_cost, rest_days=emp_rest))
+        # days_required : override individuel > défaut entreprise > calcul auto
+        emp_days_req = employee_days_required.get(emp['name'])
+        if emp_days_req is None and days_required_default is not None and days_required_default > 0:
+            emp_days_req = days_required_default
+        all_stats.append(calc_employee_stats(emp, hp, hp_weekend, emp_cost, rest_days=emp_rest,
+                                             days_required_override=emp_days_req))
     
     # 1. Rapports individuels
     gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now)
