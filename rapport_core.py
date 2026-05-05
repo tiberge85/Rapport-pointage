@@ -241,7 +241,18 @@ def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0, rest_days=None,
             overtime = worked
             late = 0
             respect = "REPOS"
+        elif (aa > 0 and ad == 0) or (aa == 0 and ad > 0):
+            # NOUVEAU v51 : Badge incomplet - 1 seul pointage (arrivée OU départ, pas les deux)
+            # = ERREUR DE BADGE (différent d'absence : l'employé est venu mais badge incomplet)
+            # IMPORTANT : ce test DOIT être avant la condition d'absence (qui teste dur==0)
+            state = "Erreur badge"
+            days_badge_error += 1
+            worked = 0
+            overtime = 0
+            late = 0
+            respect = "ERR"
         elif dur == 0 or (aa == 0 and ad == 0):
+            # Aucun pointage du tout = Absent
             state = "Absent(e)"
             days_absent += 1
             worked = 0
@@ -446,10 +457,10 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
         story.append(Spacer(1, 3*mm))
         
         # Résumé compact (nouvelle ligne avec Jours obligatoires + Jours effectués + autres)
-        # Calcul Jours effectués = Jours présents + Jours d'absence
-        # (= nombre de jours réellement traités/comptabilisés dans le mois, hors repos)
+        # Calcul Jours effectués = Jours présents + Jours d'absence + Jours d'erreur badge
+        # (= total des jours réellement comptabilisés sur la période, hors repos)
         days_obligatoires = stats['days_required']
-        days_effectues = stats['days_present'] + stats['days_absent']
+        days_effectues = stats['days_present'] + stats['days_absent'] + stats['days_badge_error']
         
         sum_hdrs = ["Jours<br/>obligat.","Jours<br/>effectués","Présent","Retard","Absent","Err.<br/>badge",
                     "","H. obligat.","H. travail.","H. retard","H. absent"]
