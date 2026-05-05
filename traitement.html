@@ -203,6 +203,17 @@
                     </div>
                     <input type="hidden" name="non_working_days" id="nonWorkingDaysInput" value="">
                 </div>
+                
+                <!-- NOUVEAU v50 : Override individuel par employé -->
+                <div style="margin-top:14px;padding:12px;background:#fff;border-radius:8px;border:1.5px dashed #f29f2f">
+                    <label style="font-size:12px;font-weight:600;color:#b8561f">👤 Personnalisation par employé (optionnel)</label>
+                    <p class="hint" style="margin:4px 0 8px">⭐ Saisissez ici un nombre de jours obligatoires <strong>spécifique</strong> pour certains employés (temps partiel, congés exceptionnels, etc.). Vide = utilise la valeur globale ci-dessus.<br>
+                    <strong>Priorité :</strong> Override individuel → Saisie manuelle globale → Auto-calcul calendrier</p>
+                    <div id="empDaysList" style="display:none;background:#f8faf9;padding:10px 14px;border-radius:6px;max-height:280px;overflow-y:auto">
+                        <div style="font-size:11px;color:#999;font-style:italic;text-align:center">📂 Importez d'abord un fichier Excel</div>
+                    </div>
+                    <input type="hidden" name="employee_days_required_json" id="empDaysJson" value="{}">
+                </div>
             </div>
             
             <!-- Step 8: Logo -->
@@ -304,6 +315,7 @@ function tryMerge() {
                 var empObjs = empNames.map(function(n) { return {name: n, ref: '', days: 0}; });
                 buildCostInputs(empObjs);
                 buildRestDayInputs(empObjs);
+                buildEmpDaysInputs(empObjs);
                 // Group by service for display
                 var grouped = {};
                 empNames.forEach(function(n) {
@@ -353,6 +365,7 @@ function handleFile(file) {
             previewBox.classList.add('visible');
             buildCostInputs(data.employees);
             buildRestDayInputs(data.employees);
+            buildEmpDaysInputs(data.employees);
             buildCalendar(data.all_dates || []);
         }).catch(()=>{});
 }
@@ -560,9 +573,35 @@ function collectRestDays() {
     document.getElementById('empRestJson').value = JSON.stringify(empRest);
 }
 
+// NOUVEAU v50 : Override jours obligatoires par employé
+function buildEmpDaysInputs(employees) {
+    var box = document.getElementById('empDaysList');
+    var html = '';
+    employees.forEach(function(e, i) {
+        html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">' +
+            '<span style="flex:1;font-size:11px;font-weight:600">' + e.name + '</span>' +
+            '<input type="number" id="emp_days_' + i + '" data-name="' + e.name + '" class="emp-days-input" min="0" max="31" placeholder="(défaut)" style="width:120px;padding:5px 8px;border:1.5px solid #ddd;border-radius:5px;font-size:11px;text-align:center">' +
+            '<span style="font-size:10px;color:#888;width:40px">jours</span>' +
+            '</div>';
+    });
+    box.innerHTML = html;
+    box.style.display = 'block';
+}
+
+function collectEmpDays() {
+    var days = {};
+    document.querySelectorAll('.emp-days-input').forEach(function(inp) {
+        var name = inp.dataset.name;
+        var val = parseInt(inp.value);
+        if (!isNaN(val) && val > 0 && val <= 31) days[name] = val;
+    });
+    document.getElementById('empDaysJson').value = JSON.stringify(days);
+}
+
 document.getElementById('reportForm').addEventListener('submit', () => {
     collectCosts();
     collectRestDays();
+    collectEmpDays();
     submitBtn.classList.add('loading');
     document.getElementById('spinner').classList.add('active');
     document.getElementById('btnText').textContent = 'Génération en cours...';

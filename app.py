@@ -1594,6 +1594,15 @@ def traitement_generate():
             if d and len(d) == 10:
                 non_working_days_set.add(d)
     
+    # NOUVEAU v50 : override par employé (dict name -> nb_jours)
+    try:
+        employee_days_required = json.loads(request.form.get('employee_days_required_json', '{}'))
+        # Validation : valeurs entières entre 1 et 31
+        employee_days_required = {k: int(v) for k, v in employee_days_required.items()
+                                   if isinstance(v, (int, float)) and 0 < int(v) <= 31}
+    except:
+        employee_days_required = {}
+    
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(app.config['UPLOAD_FOLDER'], job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -1662,7 +1671,8 @@ def traitement_generate():
                          work_dir=job_dir, hp_weekend=hp_weekend, hourly_cost=hourly_cost,
                          employee_costs=employee_costs, rest_days=rest_days,
                          employee_rest_days=employee_rest_days,
-                         days_required_default=days_required_default)
+                         days_required_default=days_required_default,
+                         employee_days_required=employee_days_required)
         
         if not os.path.exists(output_path):
             flash("Erreur génération PDF", "error")

@@ -446,9 +446,10 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
         story.append(Spacer(1, 3*mm))
         
         # Résumé compact (nouvelle ligne avec Jours obligatoires + Jours effectués + autres)
-        # Calcul Jours effectués = Jours obligatoires - Jours d'absence (les repos sont déjà exclus)
+        # Calcul Jours effectués = Jours présents + Jours d'absence
+        # (= nombre de jours réellement traités/comptabilisés dans le mois, hors repos)
         days_obligatoires = stats['days_required']
-        days_effectues = max(days_obligatoires - stats['days_absent'], 0)
+        days_effectues = stats['days_present'] + stats['days_absent']
         
         sum_hdrs = ["Jours<br/>obligat.","Jours<br/>effectués","Présent","Retard","Absent","Err.<br/>badge",
                     "","H. obligat.","H. travail.","H. retard","H. absent"]
