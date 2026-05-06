@@ -101,11 +101,12 @@ th{text-align:left;font-weight:600}
 <tr><td></tr>
 <tr><td>Prime de transport</td><td style="text-align:right">{{ fmt(g('prime_transport',0) or 0) }}</td></tr>
 <tr><td>Prime d'ancienneté</td><td style="text-align:right">{{ fmt(g('prime_anciennete',0) or 0) }}</td></tr>
-<tr><td>Prime de rendement / KPI</td><td style="text-align:right">{{ fmt(g('prime_rendement',0) or 0) }}</td></tr>
 <tr><td>Prime d'astreinte</td><td style="text-align:right">{{ fmt(g('prime_astreinte',0) or 0) }}</td></tr>
+<tr><td>Prime d'assiduité</td><td style="text-align:right">{{ fmt(g('prime_assiduite',0) or 0) }}</td></tr>
+<tr><td>Prime de rendement / KPI</td><td style="text-align:right">{{ fmt(g('prime_rendement',0) or 0) }}</td></tr>
 </table>
 
-{% set brut = (g('base_salary',0) or 0) + (g('prime_transport',0) or 0) + (g('prime_anciennete',0) or 0) + (g('prime_astreinte',0) or 0) + (g('prime_rendement',0) or 0) %}
+{% set brut = (g('base_salary',0) or 0) + (g('prime_transport',0) or 0) + (g('prime_anciennete',0) or 0) + (g('prime_astreinte',0) or 0) + (g('prime_assiduite',0) or 0) + (g('prime_rendement',0) or 0) %}
 <div class="brut-bar"><span>SALAIRE BRUT</span><span>{{ fmt(brut) }} FCFA</span></div>
 
 <!-- AUTRES PRIMES hors brut -->

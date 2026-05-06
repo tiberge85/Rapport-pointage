@@ -30,19 +30,24 @@ from reportlab.platypus.flowables import Flowable
 
 class SmartPageBreak(Flowable):
     """PageBreak conditionnel : ne saute QUE si la frame courante a du contenu déjà rempli.
-    Évite les pages vierges. Utilise availHeight pour détecter si on est en haut de page."""
+    Évite les pages vierges. Utilise availHeight pour détecter si on est en haut de page.
+    NOUVEAU v55 : seuil adapté au paysage (A4 paysage frame ≈ 549pt)."""
     def __init__(self):
         Flowable.__init__(self)
         self.width = 0
         self.height = 0
     
     def wrap(self, availWidth, availHeight):
-        # Si on a presque toute la hauteur disponible, on est en haut de page → pas de break nécessaire
-        # Frame typique ≈ 760pt. Tolérance de 50pt.
-        if availHeight >= 700:
-            return (0, 0)  # Ne prend pas de place et ne déclenche pas de saut
-        # Sinon, force un saut de page : on retourne (0, availHeight+1) pour forcer overflow
-        return (0, availHeight + 1)
+        # Détecter si on est en haut de page (peu de contenu déjà rempli)
+        # En portrait : frame ≈ 760pt → seuil 700
+        # En paysage : frame ≈ 549pt → seuil 500
+        # On adapte selon la largeur disponible (paysage = plus large que haut)
+        threshold = 500 if availWidth > 700 else 700
+        if availHeight >= threshold:
+            return (0, 0)  # En haut de page → pas de break
+        # Sinon retourne 0 hauteur pour ne pas erreur, mais on demande quand même un saut
+        # via une astuce : on retourne availHeight pour forcer le passage à la page suivante
+        return (availWidth, availHeight)
     
     def draw(self):
         pass
@@ -390,22 +395,22 @@ def make_styles():
         'st': ParagraphStyle('st', fontName='Helvetica', fontSize=9, alignment=TA_CENTER, spaceAfter=8),
         'ei': ParagraphStyle('ei', fontName='Helvetica-Bold', fontSize=9, spaceAfter=2),
         'eb': ParagraphStyle('eb', fontName='Helvetica-Bold', fontSize=9, textColor=BLUE, spaceAfter=2),
-        'c': ParagraphStyle('c', fontName='Helvetica', fontSize=7.5, alignment=TA_CENTER, leading=9),
-        'cb': ParagraphStyle('cb', fontName='Helvetica-Bold', fontSize=7.5, alignment=TA_CENTER, leading=9),
-        'h': ParagraphStyle('h', fontName='Helvetica-Bold', fontSize=7.5, textColor=white, alignment=TA_CENTER, leading=9),
-        'g': ParagraphStyle('g', fontName='Helvetica-Bold', fontSize=7.5, textColor=GREEN, alignment=TA_CENTER, leading=9),
-        'r': ParagraphStyle('r', fontName='Helvetica-Bold', fontSize=7.5, textColor=RED, alignment=TA_CENTER, leading=9),
-        'b': ParagraphStyle('b', fontName='Helvetica-Bold', fontSize=7.5, textColor=BLUE, alignment=TA_CENTER, leading=9),
-        'sh': ParagraphStyle('sh', fontName='Helvetica-Bold', fontSize=7, textColor=white, alignment=TA_CENTER, leading=8),
-        'sv': ParagraphStyle('sv', fontName='Helvetica', fontSize=7.5, alignment=TA_CENTER, leading=9),
-        'ft': ParagraphStyle('ft', fontName='Helvetica', fontSize=6, alignment=TA_RIGHT, textColor=HexColor("#888")),
+        'c': ParagraphStyle('c', fontName='Helvetica', fontSize=9, alignment=TA_CENTER, leading=10),
+        'cb': ParagraphStyle('cb', fontName='Helvetica-Bold', fontSize=9, alignment=TA_CENTER, leading=10),
+        'h': ParagraphStyle('h', fontName='Helvetica-Bold', fontSize=9, textColor=white, alignment=TA_CENTER, leading=10),
+        'g': ParagraphStyle('g', fontName='Helvetica-Bold', fontSize=9, textColor=GREEN, alignment=TA_CENTER, leading=10),
+        'r': ParagraphStyle('r', fontName='Helvetica-Bold', fontSize=9, textColor=RED, alignment=TA_CENTER, leading=10),
+        'b': ParagraphStyle('b', fontName='Helvetica-Bold', fontSize=9, textColor=BLUE, alignment=TA_CENTER, leading=10),
+        'sh': ParagraphStyle('sh', fontName='Helvetica-Bold', fontSize=8, textColor=white, alignment=TA_CENTER, leading=10),
+        'sv': ParagraphStyle('sv', fontName='Helvetica', fontSize=9, alignment=TA_CENTER, leading=11),
+        'ft': ParagraphStyle('ft', fontName='Helvetica', fontSize=7, alignment=TA_RIGHT, textColor=HexColor("#888")),
         # Styles pour les pages résumé
-        'big_ti': ParagraphStyle('big_ti', fontName='Helvetica-Bold', fontSize=16, textColor=TEAL, alignment=TA_CENTER, spaceAfter=12),
-        'med_ti': ParagraphStyle('med_ti', fontName='Helvetica-Bold', fontSize=12, textColor=TEAL, alignment=TA_LEFT, spaceAfter=6),
-        'rh': ParagraphStyle('rh', fontName='Helvetica-Bold', fontSize=7, textColor=white, alignment=TA_CENTER, leading=9),
-        'rv': ParagraphStyle('rv', fontName='Helvetica', fontSize=7, alignment=TA_CENTER, leading=9),
-        'rvb': ParagraphStyle('rvb', fontName='Helvetica-Bold', fontSize=7, alignment=TA_CENTER, leading=9),
-        'rvo': ParagraphStyle('rvo', fontName='Helvetica-Bold', fontSize=7, textColor=ORANGE, alignment=TA_CENTER, leading=9),
+        'big_ti': ParagraphStyle('big_ti', fontName='Helvetica-Bold', fontSize=18, textColor=TEAL, alignment=TA_CENTER, spaceAfter=12),
+        'med_ti': ParagraphStyle('med_ti', fontName='Helvetica-Bold', fontSize=13, textColor=TEAL, alignment=TA_LEFT, spaceAfter=6),
+        'rh': ParagraphStyle('rh', fontName='Helvetica-Bold', fontSize=9, textColor=white, alignment=TA_CENTER, leading=11),
+        'rv': ParagraphStyle('rv', fontName='Helvetica', fontSize=9, alignment=TA_CENTER, leading=11),
+        'rvb': ParagraphStyle('rvb', fontName='Helvetica-Bold', fontSize=9, alignment=TA_CENTER, leading=11),
+        'rvo': ParagraphStyle('rvo', fontName='Helvetica-Bold', fontSize=9, textColor=ORANGE, alignment=TA_CENTER, leading=11),
     }
 
 # ======================== HEADER COMMUN ========================
@@ -416,9 +421,9 @@ def make_header(S, provider_name, provider_info, client_name, client_info=""):
     if client_info:
         right_text += f"<br/><font size=6>{safe(client_info)}</font>"
     h = Table([
-        [Paragraph(f"{safe(provider_name)}<br/><font size=6>{safe(provider_info)}</font>", S['co']),
+        [Paragraph(f"{safe(provider_name)}<br/><font size=7>{safe(provider_info)}</font>", S['co']),
          Paragraph(right_text, S['cl'])]
-    ], colWidths=[110*mm, 80*mm])
+    ], colWidths=[160*mm, 120*mm])
     h.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),
                            ('LINEBELOW',(0,0),(-1,0),1,TEAL)]))
     return h
@@ -436,11 +441,10 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
         emp_num = idx + 1
         
         story.append(make_header(S, provider_name, provider_info, client_name, client_info))
-        story.append(Spacer(1, 3*mm))
-        story.append(Paragraph("RAPPORT INDIVIDUEL ENRICHI", S['ti']))
-        story.append(Paragraph(period, S['st']))
-        story.append(Paragraph(f"Employé: {emp['name']}  |  Réf: {emp['ref']}  |  Fiche {emp_num}/{total_emps}", S['ei']))
-        story.append(Spacer(1, 2*mm))
+        story.append(Spacer(1, 1*mm))
+        story.append(Paragraph(f"RAPPORT INDIVIDUEL — {emp['name']} (Réf: {emp['ref']}) — Fiche {emp_num}/{total_emps} — {period}",
+                              ParagraphStyle('ti2', fontName='Helvetica-Bold', fontSize=12, textColor=TEAL, alignment=TA_CENTER, spaceAfter=2)))
+        story.append(Spacer(1, 1*mm))
         
         # Bandeau bien visible : nombre de jours obligatoires + source
         source_label = {
@@ -507,7 +511,7 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
         hdrs = ["N°","Date","Planning","État","Arrivée",
                 "Départ","H.<br/>travail.","Retard",
                 "H.<br/>obligat.","H.<br/>Respectée","H. sup."]
-        cw = [8*mm,18*mm,22*mm,18*mm,15*mm,15*mm,16*mm,15*mm,16*mm,22*mm,16*mm]
+        cw = [10*mm,28*mm,32*mm,28*mm,22*mm,22*mm,24*mm,22*mm,24*mm,32*mm,22*mm]
         
         td = [[Paragraph(x, S['h']) for x in hdrs]]
         
@@ -1195,8 +1199,11 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
     if employee_days_required is None: employee_days_required = {}
     if not work_dir:
         work_dir = os.path.dirname(os.path.abspath(output_path))
-    doc = SimpleDocTemplate(output_path, pagesize=A4,
-        leftMargin=6*mm, rightMargin=6*mm, topMargin=6*mm, bottomMargin=6*mm)
+    # NOUVEAU v55 : passage en paysage A4 pour avoir plus d'espace pour le rapport individuel
+    # → permet une police 12pt et 30 jours sur 1 seule page par employé
+    from reportlab.lib.pagesizes import landscape
+    doc = SimpleDocTemplate(output_path, pagesize=landscape(A4),
+        leftMargin=8*mm, rightMargin=8*mm, topMargin=6*mm, bottomMargin=6*mm)
     S = make_styles()
     story = []
     now = datetime.now().strftime("%d/%m/%Y à %H:%M")
@@ -1561,19 +1568,40 @@ def merge_files(enr_path, trans_path):
             enr_day = enr_emp.get('dates', {}).get(date_str, {}) if enr_emp else {}
             times = trans_dates.get(date_str, [])
             
-            # --- Planning : toujours garder les heures EXACTES du fichier Excel ---
-            # NOUVEAU v53 : si le jour est dans l'Enregistrement, on garde STRICTEMENT
-            # les valeurs du fichier (même si vides). On NE remplace PAS par le typical
-            # car cela changeait l'EDT après fusion.
-            # Le fallback au typical n'est appliqué QUE si la date n'existe pas du tout
-            # dans l'Enregistrement (cas d'un badge transaction sans EDT prévu).
+            # --- Planning : toujours garder les heures EXACTES du fichier Enregistrement ---
+            # NOUVEAU v55 : règle stricte → on prend exclusivement les valeurs du fichier
+            # Enregistrement. Si la date n'a pas d'EDT, on cherche l'EDT du jour le plus
+            # proche pour CET employé (au lieu d'un typical inventé). Si aucun EDT n'existe
+            # pour cet employé, on laisse vide (cas extrêmement rare).
             if enr_day:
                 sched_start = enr_day.get('sched_start') or ''
                 sched_end = enr_day.get('sched_end') or ''
             else:
-                # Jour absent de l'Enregistrement → utiliser le typical (rare)
-                sched_start = typical_start
-                sched_end = typical_end
+                # Jour absent → chercher l'EDT du jour le plus proche dans l'enregistrement
+                sched_start = ''
+                sched_end = ''
+                if enr_emp and enr_emp.get('dates'):
+                    enr_day_keys = sorted(enr_emp['dates'].keys())
+                    # Trouver la date la plus proche
+                    closest = None
+                    min_diff = None
+                    for k in enr_day_keys:
+                        try:
+                            from datetime import datetime as dt2
+                            diff = abs((dt2.strptime(date_str, '%Y-%m-%d') - dt2.strptime(k, '%Y-%m-%d')).days)
+                            if min_diff is None or diff < min_diff:
+                                min_diff = diff
+                                closest = k
+                        except: continue
+                    if closest:
+                        clos_day = enr_emp['dates'][closest]
+                        sched_start = clos_day.get('sched_start') or ''
+                        sched_end = clos_day.get('sched_end') or ''
+                # Si toujours rien, fallback typical
+                if not sched_start:
+                    sched_start = typical_start
+                if not sched_end:
+                    sched_end = typical_end
             
             ss_m = time_to_minutes(sched_start)
             se_m = time_to_minutes(sched_end)

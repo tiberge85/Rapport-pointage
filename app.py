@@ -10871,7 +10871,9 @@ def admin_pointage_rapport_pdf(user_id, month):
         now = _dt.now()
         
         buf = io.BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=10*mm, rightMargin=10*mm,
+        # NOUVEAU v55 : paysage A4
+        from reportlab.lib.pagesizes import landscape
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=10*mm, rightMargin=10*mm,
                                 topMargin=10*mm, bottomMargin=10*mm)
         story = []
         
@@ -10946,47 +10948,109 @@ def admin_pointage_rapport_entreprise(month):
             conn.close()
             return redirect(url_for('admin_pointage_dashboard'))
         
-        # Construire emps depuis pointage_company_records
+        # Construire emps depuis pointage_company_records (continu) ET pointage_sessions (session)
         from datetime import datetime as _dt, date as _date, timedelta as _td
+        from models import get_user_pointage_mode
         emps = []
         for u in users:
             sched_start = u.get('heure_arrivee', '08:00')
             sched_end = u.get('heure_depart', '17:00')
             
-            pointages = [dict(r) for r in conn.execute(
-                "SELECT * FROM pointage_company_records WHERE company_user_id=? AND date LIKE ? ORDER BY date, time",
-                (u['id'], f'{month}%')).fetchall()]
-            
-            by_day = {}
-            for p in pointages:
-                d = p['date']
-                if d not in by_day:
-                    by_day[d] = {'arrivee':None,'pause':None,'retour':None,'depart':None}
-                by_day[d][p['type']] = p
+            # Détecter le mode de l'employé (individuel ou hérité de l'entreprise)
+            user_mode, _src = get_user_pointage_mode(u['id'])
             
             records = []
-            for d in sorted(by_day.keys()):
-                dd = by_day[d]
-                arrival = dd['arrivee']['time'] if dd['arrivee'] else ''
-                departure = dd['depart']['time'] if dd['depart'] else ''
-                dur = ''
-                try:
-                    if dd['arrivee'] and dd['depart']:
-                        af = _dt.fromisoformat(dd['arrivee']['datetime_full'])
-                        df = _dt.fromisoformat(dd['depart']['datetime_full'])
-                        total_min = int((df - af).total_seconds() / 60)
-                        pause_min = 0
-                        if dd['pause'] and dd['retour']:
-                            pf = _dt.fromisoformat(dd['pause']['datetime_full'])
-                            rf = _dt.fromisoformat(dd['retour']['datetime_full'])
-                            pause_min = int((rf - pf).total_seconds() / 60)
-                        worked = total_min - pause_min
-                        dur = f"{worked//60:02d}:{worked%60:02d}"
-                except: pass
-                records.append({
-                    'date': d, 'sched_start': sched_start, 'sched_end': sched_end,
-                    'arrival': arrival, 'departure': departure, 'duration': dur,
-                })
+            
+            if user_mode == 'continu':
+                # === Mode CONTINU : lire pointage_company_records ===
+                pointages = [dict(r) for r in conn.execute(
+                    "SELECT * FROM pointage_company_records WHERE company_user_id=? AND date LIKE ? ORDER BY date, time",
+                    (u['id'], f'{month}%')).fetchall()]
+                
+                by_day = {}
+                for p in pointages:
+                    d = p['date']
+                    if d not in by_day:
+                        by_day[d] = {'arrivee':None,'pause':None,'retour':None,'depart':None}
+                    by_day[d][p['type']] = p
+                
+                for d in sorted(by_day.keys()):
+                    dd = by_day[d]
+                    arrival = dd['arrivee']['time'] if dd['arrivee'] else ''
+                    departure = dd['depart']['time'] if dd['depart'] else ''
+                    dur = ''
+                    try:
+                        if dd['arrivee'] and dd['depart']:
+                            af = _dt.fromisoformat(dd['arrivee']['datetime_full'])
+                            df = _dt.fromisoformat(dd['depart']['datetime_full'])
+                            total_min = int((df - af).total_seconds() / 60)
+                            pause_min = 0
+                            if dd['pause'] and dd['retour']:
+                                pf = _dt.fromisoformat(dd['pause']['datetime_full'])
+                                rf = _dt.fromisoformat(dd['retour']['datetime_full'])
+                                pause_min = int((rf - pf).total_seconds() / 60)
+                            worked = total_min - pause_min
+                            dur = f"{worked//60:02d}:{worked%60:02d}"
+                    except: pass
+                    records.append({
+                        'date': d, 'sched_start': sched_start, 'sched_end': sched_end,
+                        'arrival': arrival, 'departure': departure, 'duration': dur,
+                    })
+            else:
+                # === NOUVEAU v55 : Mode SESSION : lire pointage_sessions ===
+                # On agrège toutes les sessions de la journée pour calculer 
+                # arrivée=1ère session debut, départ=dernière session fin, durée=somme
+                sessions = [dict(r) for r in conn.execute("""
+                    SELECT pps.date, pps.heure_prevue, pps.duree_minutes,
+                           ps.heure_debut, ps.heure_fin, ps.duree_reelle_minutes,
+                           ps.statut as session_statut
+                    FROM pointage_planning_sessions pps
+                    LEFT JOIN pointage_sessions ps ON ps.planning_id = pps.id
+                    WHERE pps.company_user_id=? AND pps.date LIKE ?
+                    ORDER BY pps.date, pps.heure_prevue
+                """, (u['id'], f'{month}%')).fetchall()]
+                
+                # Grouper par jour
+                by_day = {}
+                for s in sessions:
+                    d = s['date']
+                    if d not in by_day:
+                        by_day[d] = {'sessions':[], 'first_arr':None, 'last_dep':None,
+                                    'total_dur':0, 'planned_start':None, 'planned_end_min':0}
+                    by_day[d]['sessions'].append(s)
+                    if s['heure_debut']:
+                        if not by_day[d]['first_arr'] or s['heure_debut'] < by_day[d]['first_arr']:
+                            by_day[d]['first_arr'] = s['heure_debut']
+                    if s['heure_fin']:
+                        if not by_day[d]['last_dep'] or s['heure_fin'] > by_day[d]['last_dep']:
+                            by_day[d]['last_dep'] = s['heure_fin']
+                    if s['duree_reelle_minutes']:
+                        by_day[d]['total_dur'] += s['duree_reelle_minutes']
+                    # Première heure prévue de la journée
+                    if not by_day[d]['planned_start'] or s['heure_prevue'] < by_day[d]['planned_start']:
+                        by_day[d]['planned_start'] = s['heure_prevue']
+                    by_day[d]['planned_end_min'] += s['duree_minutes'] or 0
+                
+                for d in sorted(by_day.keys()):
+                    dd = by_day[d]
+                    arrival = dd['first_arr'] or ''
+                    departure = dd['last_dep'] or ''
+                    total_min = dd['total_dur']
+                    dur = f"{total_min//60:02d}:{total_min%60:02d}" if total_min > 0 else ''
+                    # sched_start/end basés sur la 1ère session prévue + cumul durée
+                    rec_sched_start = dd['planned_start'] or sched_start
+                    # Calcul fin prévue = début prévu + cumul durée
+                    rec_sched_end = sched_end
+                    try:
+                        if dd['planned_start'] and dd['planned_end_min']:
+                            ps_h, ps_m = map(int, dd['planned_start'].split(':'))
+                            tot_min = ps_h*60 + ps_m + dd['planned_end_min']
+                            rec_sched_end = f"{(tot_min//60)%24:02d}:{tot_min%60:02d}"
+                    except: pass
+                    records.append({
+                        'date': d, 'sched_start': rec_sched_start, 'sched_end': rec_sched_end,
+                        'arrival': arrival, 'departure': departure, 'duration': dur,
+                    })
             
             # Compléter avec jours sans pointage
             try:
@@ -11177,7 +11241,9 @@ def admin_pointage_rapport_entreprise(month):
         now = datetime.now()
         
         buf = io.BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=10*mm, rightMargin=10*mm,
+        # NOUVEAU v55 : paysage A4 pour faire tenir le rapport individuel sur 1 page par employé
+        from reportlab.lib.pagesizes import landscape
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=10*mm, rightMargin=10*mm,
                                 topMargin=10*mm, bottomMargin=10*mm)
         story = []
         
@@ -14890,6 +14956,57 @@ def achats_commande_status(cid, status):
     if status in ('en_cours', 'livree', 'annulee'):
         conn = _gdb(); conn.execute("UPDATE achats_commandes SET status=? WHERE id=?", (status, cid)); conn.commit(); conn.close()
     flash("Statut mis à jour", "success"); return redirect('/achats?tab=commandes')
+
+
+@app.route('/achats/commande/<int:cid>/edit', methods=['GET', 'POST'])
+@permission_required_any('achats_edit', 'comptabilite_edit')
+def achats_commande_edit(cid):
+    """Modifier un bon de commande (même après émission).
+    Le bon peut être modifié tant qu'il n'est pas marqué 'livree' ou 'annulee'."""
+    conn = _gdb()
+    bc = conn.execute("SELECT * FROM achats_commandes WHERE id=?", (cid,)).fetchone()
+    if not bc:
+        conn.close()
+        flash("Bon de commande introuvable", "error")
+        return redirect('/achats?tab=commandes')
+    bc = dict(bc)
+    
+    if request.method == 'POST':
+        # Vérifier si le bon est éditable
+        if bc['status'] in ('livree',):
+            conn.close()
+            flash("❌ Impossible de modifier un bon livré (les marchandises ont été reçues)", "error")
+            return redirect('/achats?tab=commandes')
+        
+        try:
+            new_fid = int(request.form.get('fournisseur_id', 0) or 0)
+            new_date = request.form.get('date', '').strip() or bc['date']
+            new_items = request.form.get('items_description', '').strip()
+            new_total = float(request.form.get('total', 0) or 0)
+            new_delivery = request.form.get('delivery_date', '').strip()
+            new_notes = request.form.get('notes', '').strip()
+            
+            conn.execute("""UPDATE achats_commandes SET
+                fournisseur_id=?, date=?, items_json=?, total=?, delivery_date=?, notes=?
+                WHERE id=?""",
+                (new_fid, new_date, new_items, new_total, new_delivery, new_notes, cid))
+            conn.commit()
+            conn.close()
+            flash(f"✅ Bon de commande {bc['reference']} modifié", "success")
+            return redirect('/achats?tab=commandes')
+        except Exception as e:
+            conn.close()
+            flash(f"❌ Erreur : {e}", "error")
+            return redirect(f'/achats/commande/{cid}/edit')
+    
+    # GET : afficher le formulaire d'édition
+    fournisseurs = [dict(r) for r in conn.execute(
+        "SELECT * FROM fournisseurs WHERE COALESCE(active,1)=1 ORDER BY name"
+    ).fetchall()]
+    conn.close()
+    
+    return render_template('achats.html', page_mode='commande_edit',
+                          bc=bc, fournisseurs=fournisseurs)
 
 @app.route('/achats/contrat/add', methods=['POST'])
 @permission_required_any('achats_edit', 'comptabilite_edit')
