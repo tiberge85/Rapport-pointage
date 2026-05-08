@@ -4,6 +4,25 @@
     <p style="color:#666;font-size:13px">Workflow : Demande → Validation → Devis → Commande → Réception → Paiement → Équipement</p>
 </div>
 
+<!-- NOUVEAU v57 : Bandeau workflow visible -->
+<div style="background:linear-gradient(135deg,#e3f2fd 0%,#fff 100%);padding:14px;border-radius:10px;border-left:5px solid #1976d2;margin-bottom:16px">
+    <strong style="color:#0d47a1">ℹ️ Comment fonctionne le workflow ?</strong>
+    <ol style="margin:8px 0 0 18px;font-size:13px;line-height:1.7">
+        <li><strong>L'employé crée la demande</strong> (matériel, fourniture, service) → <em>statut: en attente</em></li>
+        <li><strong>Le validateur (Admin / Directeur)</strong> ouvre la liste des demandes et clique ✅ Valider ou ❌ Refuser</li>
+        <li>Une fois validée, le gestionnaire crée la <strong>commande</strong> dans Achats</li>
+        <li>À la livraison, on enregistre la <strong>réception</strong> (totale, partielle, non conforme)</li>
+        <li>La <strong>comptabilité</strong> enregistre le ou les <strong>paiements</strong> (acompte / solde)</li>
+        <li>Si c'est un équipement, il est ajouté dans la fiche <strong>Équipements</strong></li>
+    </ol>
+    {% if nb_demandes_attente > 0 %}
+    <div style="margin-top:10px;padding:8px;background:#fff3e0;border-radius:6px;font-size:13px">
+        ⚠️ <strong>{{ nb_demandes_attente }} demande(s) en attente de validation</strong> —
+        <a href="/mg/demandes?statut=en_attente" style="color:#c53030;font-weight:700">Cliquez ici pour valider</a>
+    </div>
+    {% endif %}
+</div>
+
 <!-- Cards de navigation -->
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:20px">
     <a href="/mg/demandes" class="card" style="text-decoration:none;color:inherit;padding:14px;border-left:4px solid #f29f2f">

@@ -466,7 +466,12 @@
                     <a href="/moyens-generaux/vehicules" class="{% if page == 'vehicules' %}active{% endif %}">🚗 Parc véhicules</a>
                     <a href="/moyens-generaux" class="{% if page == 'moyens' %}active{% endif %}">📊 Tableau de bord</a>
                     {% if 'mg_view' in permissions or 'admin' in permissions %}
-                    <a href="/mg" class="{% if page in ('mg','mg_demandes','mg_receptions','mg_paiements','mg_equipements','mg_fournisseurs') %}active{% endif %}" style="font-weight:600;color:#1A7A6D">⭐ Moyens Généraux Pro</a>
+                    <a href="/mg" class="{% if page in ('mg','mg_demandes','mg_receptions','mg_paiements','mg_equipements','mg_fournisseurs') %}active{% endif %}" style="font-weight:600;color:#1A7A6D">
+                        ⭐ Moyens Généraux Pro
+                        {% if mg_pending_count and mg_pending_count > 0 %}
+                            <span style="background:#c53030;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px;margin-left:4px">{{ mg_pending_count }}</span>
+                        {% endif %}
+                    </a>
                     {% endif %}
                 </div>
             </div>

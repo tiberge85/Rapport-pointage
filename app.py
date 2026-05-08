@@ -611,6 +611,17 @@ def inject_globals():
                     ctx['pending_absences'] = _ca.execute("SELECT COUNT(*) FROM absences WHERE status='en_attente'").fetchone()[0]
                     _ca.close()
                 except: pass
+            # NOUVEAU v57 : compteur demandes MG en attente (pour les validateurs)
+            if 'mg_valider' in perms or 'admin' in perms:
+                try:
+                    from models import get_db as _mg_db
+                    _mg_c = _mg_db()
+                    ctx['mg_pending_count'] = _mg_c.execute(
+                        "SELECT COUNT(*) FROM achats_demandes WHERE status='en_attente'").fetchone()[0]
+                    _mg_c.close()
+                except: ctx['mg_pending_count'] = 0
+            else:
+                ctx['mg_pending_count'] = 0
             if user['role'] in ('admin', 'dg', 'directeur'):
                 try:
                     from models import get_db as _gdb
@@ -1605,6 +1616,14 @@ def traitement_generate():
     except:
         employee_days_required = {}
     
+    # NOUVEAU v57 : override heures par jour par employé (dict name -> nb_heures)
+    try:
+        employee_hours = json.loads(request.form.get('employee_hours_json', '{}'))
+        employee_hours = {k: float(v) for k, v in employee_hours.items()
+                          if isinstance(v, (int, float)) and 0 < float(v) <= 24}
+    except:
+        employee_hours = {}
+    
     # NOUVEAU v54 : override des emplois du temps (par personne, groupe, ou tous)
     # Format : {"all": {start, end, has_pause, pause_start, pause_end} ou null,
     #          "groups": [{name, members[], start, end, has_pause, pause_start, pause_end}],
@@ -1727,7 +1746,8 @@ def traitement_generate():
                          employee_costs=employee_costs, rest_days=rest_days,
                          employee_rest_days=employee_rest_days,
                          days_required_default=days_required_default,
-                         employee_days_required=employee_days_required)
+                         employee_days_required=employee_days_required,
+                         employee_hours=employee_hours)
         
         if not os.path.exists(output_path):
             flash("Erreur génération PDF", "error")
@@ -5236,22 +5256,39 @@ def _generate_bulletin_pdf(pid):
     fdfp_v = round(brut * 0.012)
     total_pat = cnps_ret_pat + cnps_pf + cnps_acc + tx_app + fdfp_v
     its = g('its'); assur = g('insurance_amount'); ded = g('deductions'); av = g('avances'); ar = g('autres_retenues')
-    total_sal = cnps_sal + its + assur + ded + av + ar
+    # v57 : ITS retiré du total des retenues pour bulletin simplifié
+    total_sal = cnps_sal + assur + ded + av + ar
     
     cw5 = [pw*0.32, pw*0.14, pw*0.14, pw*0.18, pw*0.22]
-    cnps_label = 'CNPS Retraite' if has_cnps else 'CNPS Retraite (non déclaré)'
+    # NOUVEAU v57 : tableau simplifié — uniquement les retenues effectives
+    # (suppression des lignes "CNPS Retraite (non déclaré)" / Prestations / Accidents /
+    #  Taxe apprentissage / Formation prof / ITS qui faisaient déborder le bulletin)
     ret = [
-        [Paragraph('<b>RETENUES / COTISATIONS</b>', swb), Paragraph('<b>Part patron.</b>', swb), Paragraph('<b>Part salar.</b>', swb), Paragraph('<b>Base</b>', swb), Paragraph('<b>Montant sal.</b>', swb)],
-        [Paragraph(cnps_label, sc), Paragraph('7,7%' if has_cnps else '—', sr), Paragraph('6,3%' if has_cnps else '—', sr), Paragraph(f'Plaf. {fmt(plafond)}' if has_cnps else '—', ParagraphStyle('sm',fontSize=7,alignment=TA_RIGHT,textColor=GREY)), Paragraph(fmt(cnps_sal) if has_cnps else '—', srb)],
-        [Paragraph('CNPS Prestations familiales', sc), Paragraph('5,75%' if has_cnps else '—', sr), Paragraph('0%' if has_cnps else '—', sr), Paragraph(fmt(brut) if has_cnps else '—', sr), Paragraph('—', sr)],
-        [Paragraph('CNPS Accidents du travail', sc), Paragraph('3%' if has_cnps else '—', sr), Paragraph('0%' if has_cnps else '—', sr), Paragraph(fmt(brut) if has_cnps else '—', sr), Paragraph('—', sr)],
-        [Paragraph("Taxe d'apprentissage", sc), Paragraph('0,4%', sr), Paragraph('0%', sr), Paragraph(fmt(brut), sr), Paragraph('—', sr)],
-        [Paragraph('Formation prof. (FDFP)', sc), Paragraph('1,2%', sr), Paragraph('0%', sr), Paragraph(fmt(brut), sr), Paragraph('—', sr)],
-        [Paragraph('ITS (Impôt sur salaire)', sc), Paragraph('', sr), Paragraph('', sr), Paragraph('', sr), Paragraph(fmt(its), sr)],
-        [Paragraph('Assurance maladie', sc), Paragraph('', sr), Paragraph('', sr), Paragraph('', sr), Paragraph(fmt(assur), sr)],
-        [Paragraph('Autres déductions', sc), Paragraph('', sr), Paragraph('', sr), Paragraph('', sr), Paragraph(fmt(ded), sr)],
-        [Paragraph('Avances / Prêts', sc), Paragraph('', sr), Paragraph('', sr), Paragraph('', sr), Paragraph(fmt(av), sr)],
+        [Paragraph('<b>RETENUES / COTISATIONS</b>', swb),
+         Paragraph('<b>Part patron.</b>', swb), Paragraph('<b>Part salar.</b>', swb),
+         Paragraph('<b>Base</b>', swb), Paragraph('<b>Montant sal.</b>', swb)],
     ]
+    if has_cnps:
+        ret.append([Paragraph('CNPS Retraite', sc),
+                    Paragraph('7,7%', sr), Paragraph('6,3%', sr),
+                    Paragraph(f'Plaf. {fmt(plafond)}', ParagraphStyle('sm',fontSize=7,alignment=TA_RIGHT,textColor=GREY)),
+                    Paragraph(fmt(cnps_sal), srb)])
+    if assur > 0:
+        ret.append([Paragraph('Assurance maladie', sc),
+                    Paragraph('', sr), Paragraph('', sr),
+                    Paragraph('', sr), Paragraph(fmt(assur), sr)])
+    if ded > 0:
+        ret.append([Paragraph('Autres déductions', sc),
+                    Paragraph('', sr), Paragraph('', sr),
+                    Paragraph('', sr), Paragraph(fmt(ded), sr)])
+    if av > 0:
+        ret.append([Paragraph('Avances / Prêts', sc),
+                    Paragraph('', sr), Paragraph('', sr),
+                    Paragraph('', sr), Paragraph(fmt(av), sr)])
+    if ar > 0:
+        ret.append([Paragraph('Autres retenues', sc),
+                    Paragraph('', sr), Paragraph('', sr),
+                    Paragraph('', sr), Paragraph(fmt(ar), sr)])
     rt = Table(ret, colWidths=cw5)
     rt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),ORANGE),('GRID',(0,0),(-1,-1),0.3,HexColor('#ddd')),
         ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),('LEFTPADDING',(0,0),(-1,-1),5),
@@ -16419,6 +16456,144 @@ def export_fournisseurs():
     os.makedirs(os.path.dirname(output), exist_ok=True)
     wb.save(output)
     return send_file(output, as_attachment=True, download_name='Fournisseurs_RAMYA.xlsx')
+
+@app.route('/achats/stock/article/add', methods=['POST'])
+@permission_required_any('achats_edit', 'comptabilite_edit', 'admin')
+def stock_article_add():
+    """v57 : Ajouter un article au stock."""
+    name = (request.form.get('name', '') or '').strip()
+    if not name:
+        flash("Le nom de l'article est obligatoire", "error")
+        return redirect('/achats?tab=stock')
+    
+    conn = _gdb()
+    conn.execute("""INSERT INTO stock_items
+        (name, reference, category, quantity, unit_price, min_stock, location, notes)
+        VALUES (?,?,?,?,?,?,?,?)""", (
+        name,
+        request.form.get('reference', '').strip(),
+        request.form.get('category', '').strip(),
+        int(request.form.get('quantity', 0) or 0),
+        float(request.form.get('unit_price', 0) or 0),
+        int(request.form.get('min_stock', 0) or 0),
+        request.form.get('location', '').strip(),
+        request.form.get('notes', '').strip(),
+    ))
+    item_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    
+    # Mouvement initial si quantité > 0
+    qty = int(request.form.get('quantity', 0) or 0)
+    if qty > 0:
+        conn.execute("""INSERT INTO stock_movements
+            (item_id, movement_type, quantity, unit_price, reference, notes, created_by)
+            VALUES (?, 'entree', ?, ?, ?, ?, ?)""",
+            (item_id, qty, float(request.form.get('unit_price', 0) or 0),
+             'STOCK-INIT', 'Stock initial', session.get('user_id', 0)))
+    conn.commit(); conn.close()
+    flash(f"✅ Article '{name}' ajouté au stock", "success")
+    return redirect('/achats?tab=stock')
+
+
+@app.route('/achats/stock/article/<int:iid>/edit', methods=['GET', 'POST'])
+@permission_required_any('achats_edit', 'comptabilite_edit', 'admin')
+def stock_article_edit(iid):
+    """v57 : Modifier un article du stock."""
+    conn = _gdb()
+    item = conn.execute("SELECT * FROM stock_items WHERE id=?", (iid,)).fetchone()
+    if not item:
+        conn.close()
+        flash("Article introuvable", "error")
+        return redirect('/achats?tab=stock')
+    
+    if request.method == 'POST':
+        try:
+            conn.execute("""UPDATE stock_items SET
+                name=?, reference=?, category=?, unit_price=?, min_stock=?,
+                location=?, notes=? WHERE id=?""", (
+                request.form.get('name', '').strip(),
+                request.form.get('reference', '').strip(),
+                request.form.get('category', '').strip(),
+                float(request.form.get('unit_price', 0) or 0),
+                int(request.form.get('min_stock', 0) or 0),
+                request.form.get('location', '').strip(),
+                request.form.get('notes', '').strip(),
+                iid))
+            conn.commit(); conn.close()
+            flash("✅ Article modifié", "success")
+            return redirect('/achats?tab=stock')
+        except Exception as e:
+            conn.close()
+            flash(f"Erreur : {e}", "error")
+            return redirect(f'/achats/stock/article/{iid}/edit')
+    
+    item = dict(item)
+    conn.close()
+    return render_template('stock_article_edit.html', item=item)
+
+
+@app.route('/achats/stock/article/<int:iid>/delete')
+@permission_required_any('achats_edit', 'comptabilite_edit', 'admin')
+def stock_article_delete(iid):
+    """v57 : Supprimer un article du stock + ses mouvements."""
+    conn = _gdb()
+    item = conn.execute("SELECT name FROM stock_items WHERE id=?", (iid,)).fetchone()
+    if not item:
+        conn.close()
+        flash("Article introuvable", "error")
+        return redirect('/achats?tab=stock')
+    name = item['name']
+    conn.execute("DELETE FROM stock_movements WHERE item_id=?", (iid,))
+    conn.execute("DELETE FROM stock_items WHERE id=?", (iid,))
+    conn.commit(); conn.close()
+    flash(f"🗑️ Article '{name}' supprimé", "success")
+    return redirect('/achats?tab=stock')
+
+
+@app.route('/achats/stock/article/<int:iid>/movement', methods=['POST'])
+@permission_required_any('achats_edit', 'comptabilite_edit', 'admin')
+def stock_article_movement(iid):
+    """v57 : Mouvement de stock (entrée ou sortie). Met à jour la quantité de l'article."""
+    conn = _gdb()
+    item = conn.execute("SELECT * FROM stock_items WHERE id=?", (iid,)).fetchone()
+    if not item:
+        conn.close()
+        flash("Article introuvable", "error")
+        return redirect('/achats?tab=stock')
+    
+    mv_type = request.form.get('movement_type', 'entree')
+    if mv_type not in ('entree', 'sortie'):
+        mv_type = 'entree'
+    qty = int(request.form.get('quantity', 0) or 0)
+    if qty <= 0:
+        conn.close()
+        flash("Quantité invalide", "error")
+        return redirect('/achats?tab=stock')
+    
+    # Vérifier qu'on a assez de stock pour une sortie
+    if mv_type == 'sortie' and qty > (item['quantity'] or 0):
+        conn.close()
+        flash(f"❌ Stock insuffisant : disponible {item['quantity'] or 0}, demandé {qty}", "error")
+        return redirect('/achats?tab=stock')
+    
+    # Mise à jour quantité
+    delta = qty if mv_type == 'entree' else -qty
+    conn.execute("UPDATE stock_items SET quantity = COALESCE(quantity,0) + ? WHERE id=?", (delta, iid))
+    
+    # Enregistrer le mouvement
+    conn.execute("""INSERT INTO stock_movements
+        (item_id, movement_type, quantity, unit_price, reference, notes, created_by)
+        VALUES (?,?,?,?,?,?,?)""",
+        (iid, mv_type, qty,
+         float(request.form.get('unit_price', item['unit_price']) or 0),
+         request.form.get('reference', '').strip(),
+         request.form.get('notes', '').strip(),
+         session.get('user_id', 0)))
+    conn.commit(); conn.close()
+    
+    icon = "📥" if mv_type == 'entree' else "📤"
+    flash(f"{icon} Mouvement enregistré ({mv_type} de {qty})", "success")
+    return redirect('/achats?tab=stock')
+
 
 @app.route('/achats/stock/import', methods=['POST'])
 @permission_required_any('achats_edit', 'comptabilite_edit')

@@ -1188,11 +1188,12 @@ def gen_simple_pages(story, emps, all_stats, S, provider_name, provider_info, cl
 
 # ======================== GENERATION PDF COMPLETE ========================
 
-def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0, hourly_cost=0, employee_costs=None, rest_days=None, employee_rest_days=None, days_required_default=None, employee_days_required=None):
+def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0, hourly_cost=0, employee_costs=None, rest_days=None, employee_rest_days=None, days_required_default=None, employee_days_required=None, employee_hours=None):
     if not employee_costs: employee_costs = {}
     if rest_days is None: rest_days = []
     if employee_rest_days is None: employee_rest_days = {}
     if employee_days_required is None: employee_days_required = {}
+    if employee_hours is None: employee_hours = {}
     if not work_dir:
         work_dir = os.path.dirname(os.path.abspath(output_path))
     # NOUVEAU v56 : retour en portrait A4 — 1 page par employé garanti via layout compact
@@ -1220,7 +1221,9 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
         emp_days_req = employee_days_required.get(emp['name'])
         if emp_days_req is None and days_required_default is not None and days_required_default > 0:
             emp_days_req = days_required_default
-        all_stats.append(calc_employee_stats(emp, hp, hp_weekend, emp_cost, rest_days=emp_rest,
+        # NOUVEAU v57 : heures par jour par employé
+        emp_hp = employee_hours.get(emp['name'], hp)
+        all_stats.append(calc_employee_stats(emp, emp_hp, hp_weekend, emp_cost, rest_days=emp_rest,
                                              days_required_override=emp_days_req,
                                              period_total_days=period_total_days))
     

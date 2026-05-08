@@ -204,15 +204,16 @@
                     <input type="hidden" name="non_working_days" id="nonWorkingDaysInput" value="">
                 </div>
                 
-                <!-- NOUVEAU v50 : Override individuel par employé -->
+                <!-- NOUVEAU v50/v57 : Override individuel par employé (jours obligatoires + heures/jour) -->
                 <div style="margin-top:14px;padding:12px;background:#fff;border-radius:8px;border:1.5px dashed #f29f2f">
                     <label style="font-size:12px;font-weight:600;color:#b8561f">👤 Personnalisation par employé (optionnel)</label>
-                    <p class="hint" style="margin:4px 0 8px">⭐ Saisissez ici un nombre de jours obligatoires <strong>spécifique</strong> pour certains employés (temps partiel, congés exceptionnels, etc.). Vide = utilise la valeur globale ci-dessus.<br>
+                    <p class="hint" style="margin:4px 0 8px">⭐ Saisissez ici un nombre de jours obligatoires <strong>OU/ET un nombre d'heures par jour</strong> spécifique pour certains employés (temps partiel, congés exceptionnels, etc.). Vide = utilise la valeur globale ci-dessus.<br>
                     <strong>Priorité :</strong> Override individuel → Saisie manuelle globale → Auto-calcul calendrier</p>
                     <div id="empDaysList" style="display:none;background:#f8faf9;padding:10px 14px;border-radius:6px;max-height:280px;overflow-y:auto">
                         <div style="font-size:11px;color:#999;font-style:italic;text-align:center">📂 Importez d'abord un fichier Excel</div>
                     </div>
                     <input type="hidden" name="employee_days_required_json" id="empDaysJson" value="{}">
+                    <input type="hidden" name="employee_hours_json" id="empHoursJson" value="{}">
                 </div>
             </div>
             
@@ -643,14 +644,19 @@ function collectRestDays() {
 }
 
 // NOUVEAU v50 : Override jours obligatoires par employé
+// NOUVEAU v57 : Override heures par jour par employé (en plus des jours)
 function buildEmpDaysInputs(employees) {
     var box = document.getElementById('empDaysList');
-    var html = '';
+    var html = '<div style="display:flex;gap:8px;font-size:10px;color:#0d47a1;font-weight:700;margin-bottom:6px">' +
+        '<span style="flex:1">Employé</span>' +
+        '<span style="width:90px;text-align:center">Jours obligat.</span>' +
+        '<span style="width:90px;text-align:center">Heures/jour</span>' +
+        '</div>';
     employees.forEach(function(e, i) {
         html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">' +
             '<span style="flex:1;font-size:11px;font-weight:600">' + e.name + '</span>' +
-            '<input type="number" id="emp_days_' + i + '" data-name="' + e.name + '" class="emp-days-input" min="0" max="31" placeholder="(défaut)" style="width:120px;padding:5px 8px;border:1.5px solid #ddd;border-radius:5px;font-size:11px;text-align:center">' +
-            '<span style="font-size:10px;color:#888;width:40px">jours</span>' +
+            '<input type="number" id="emp_days_' + i + '" data-name="' + e.name + '" class="emp-days-input" min="0" max="31" placeholder="(défaut)" style="width:90px;padding:5px 8px;border:1.5px solid #ddd;border-radius:5px;font-size:11px;text-align:center">' +
+            '<input type="number" id="emp_hp_' + i + '" data-name="' + e.name + '" class="emp-hp-input" min="0" max="24" step="0.5" placeholder="(défaut)" style="width:90px;padding:5px 8px;border:1.5px solid #ddd;border-radius:5px;font-size:11px;text-align:center">' +
             '</div>';
     });
     box.innerHTML = html;
@@ -665,6 +671,14 @@ function collectEmpDays() {
         if (!isNaN(val) && val > 0 && val <= 31) days[name] = val;
     });
     document.getElementById('empDaysJson').value = JSON.stringify(days);
+    // v57 : heures par jour par employé
+    var hours = {};
+    document.querySelectorAll('.emp-hp-input').forEach(function(inp) {
+        var name = inp.dataset.name;
+        var val = parseFloat(inp.value);
+        if (!isNaN(val) && val > 0 && val <= 24) hours[name] = val;
+    });
+    document.getElementById('empHoursJson').value = JSON.stringify(hours);
 }
 
 // === NOUVEAU v54 : Personnalisation EDT (personne / groupe / tous) ===
