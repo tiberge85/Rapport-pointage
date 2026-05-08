@@ -4,6 +4,17 @@
     <a href="/mg" class="btn btn-outline btn-sm">← Retour MG</a>
 </div>
 
+<!-- v58 : explication workflow + qui valide -->
+<div style="background:#fff3e0;padding:12px;border-radius:8px;border-left:4px solid #f29f2f;margin-bottom:14px;font-size:13px">
+    <strong>📌 Workflow de validation :</strong>
+    <ul style="margin:6px 0 0 18px;line-height:1.6">
+        <li><strong>Qui crée :</strong> tout employé avec la permission <code>mg_demande</code></li>
+        <li><strong>Qui valide :</strong> Admin / Directeur (permission <code>mg_valider</code>)</li>
+        <li><strong>Où ça part :</strong> les demandes restent ici, sur cette page. Le validateur les voit avec le badge rouge dans la sidebar et peut cliquer ✅ ou ❌</li>
+        <li><strong>Après validation :</strong> le gestionnaire peut créer le devis ou la commande dans Achats</li>
+    </ul>
+</div>
+
 <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
     <a href="/mg/demandes" class="btn btn-sm {% if not current_statut %}btn-primary{% else %}btn-outline{% endif %}">📋 Toutes</a>
     <a href="/mg/demandes?statut=en_attente" class="btn btn-sm {% if current_statut=='en_attente' %}btn-primary{% else %}btn-outline{% endif %}">⏳ En attente</a>

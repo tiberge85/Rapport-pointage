@@ -769,13 +769,15 @@ function buildSchedPersonList() {
     var box = document.getElementById('schedPersonList');
     var html = '';
     _employees.forEach(function(e, i) {
+        // v58 : utiliser un index numérique plutôt que data-name pour éviter les bugs de sélecteur CSS
+        var safeName = e.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         html += '<div style="display:grid;grid-template-columns:1fr 80px 80px 30px 80px 80px;gap:5px;align-items:center;margin-bottom:4px;padding:5px;background:#f8faf9;border-radius:5px">';
-        html += '<span style="font-size:11px;font-weight:600">' + e.name + '</span>';
-        html += '<input type="time" class="sched-pers-start" data-name="' + e.name.replace(/"/g, '&quot;') + '" placeholder="(garder)" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
-        html += '<input type="time" class="sched-pers-end" data-name="' + e.name.replace(/"/g, '&quot;') + '" placeholder="(garder)" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
-        html += '<label style="font-size:10px;display:flex;align-items:center;gap:2px;cursor:pointer"><input type="checkbox" class="sched-pers-pause" data-name="' + e.name.replace(/"/g, '&quot;') + '" checked> ☕</label>';
-        html += '<input type="time" class="sched-pers-pstart" data-name="' + e.name.replace(/"/g, '&quot;') + '" placeholder="pause début" value="12:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
-        html += '<input type="time" class="sched-pers-pend" data-name="' + e.name.replace(/"/g, '&quot;') + '" placeholder="pause fin" value="13:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<span style="font-size:11px;font-weight:600">' + safeName + '</span>';
+        html += '<input type="time" class="sched-pers-start" data-idx="' + i + '" placeholder="(garder)" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<input type="time" class="sched-pers-end" data-idx="' + i + '" placeholder="(garder)" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<label style="font-size:10px;display:flex;align-items:center;gap:2px;cursor:pointer"><input type="checkbox" class="sched-pers-pause" data-idx="' + i + '" checked> ☕</label>';
+        html += '<input type="time" class="sched-pers-pstart" data-idx="' + i + '" placeholder="pause début" value="12:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<input type="time" class="sched-pers-pend" data-idx="' + i + '" placeholder="pause fin" value="13:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
         html += '</div>';
     });
     if (_employees.length === 0) {
@@ -801,13 +803,18 @@ function collectSchedOverride() {
         data.groups = _schedGroups.filter(function(g) { return g.members && g.members.length > 0; });
     }
     if (document.getElementById('schedPersonEnable').checked) {
+        // v58 : utiliser data-idx (index dans _employees) au lieu de data-name pour éviter
+        // les bugs de sélecteur CSS avec apostrophes/caractères spéciaux dans les noms.
         document.querySelectorAll('.sched-pers-start').forEach(function(inp) {
-            var name = inp.dataset.name;
+            var idx = inp.dataset.idx;
+            if (idx === undefined) return;
+            var name = (_employees[idx] || {}).name;
+            if (!name) return;
             var s = inp.value;
-            var endInp = document.querySelector('.sched-pers-end[data-name="' + name + '"]');
-            var pauseInp = document.querySelector('.sched-pers-pause[data-name="' + name + '"]');
-            var pStartInp = document.querySelector('.sched-pers-pstart[data-name="' + name + '"]');
-            var pEndInp = document.querySelector('.sched-pers-pend[data-name="' + name + '"]');
+            var endInp = document.querySelector('.sched-pers-end[data-idx="' + idx + '"]');
+            var pauseInp = document.querySelector('.sched-pers-pause[data-idx="' + idx + '"]');
+            var pStartInp = document.querySelector('.sched-pers-pstart[data-idx="' + idx + '"]');
+            var pEndInp = document.querySelector('.sched-pers-pend[data-idx="' + idx + '"]');
             var e = endInp ? endInp.value : '';
             // Garder seulement si au moins start et end sont remplis
             if (s && e) {

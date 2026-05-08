@@ -1213,16 +1213,24 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
             if d: all_dates_set.add(d)
     period_total_days = len(all_dates_set) if all_dates_set else 30
     
+    # v58 : matching tolérant aux espaces/casse pour les overrides par employé
+    def _norm_name(s): return ''.join((s or '').strip().upper().split())
+    employee_costs_norm = {_norm_name(k): v for k, v in employee_costs.items()}
+    employee_rest_norm = {_norm_name(k): v for k, v in employee_rest_days.items()}
+    employee_days_norm = {_norm_name(k): v for k, v in employee_days_required.items()}
+    employee_hours_norm = {_norm_name(k): v for k, v in employee_hours.items()}
+    
     all_stats = []
     for emp in emps:
-        emp_cost = employee_costs.get(emp['name'], hourly_cost)
-        emp_rest = employee_rest_days.get(emp['name'], rest_days)
+        norm_key = _norm_name(emp['name'])
+        emp_cost = employee_costs_norm.get(norm_key, hourly_cost)
+        emp_rest = employee_rest_norm.get(norm_key, rest_days)
         # days_required : override individuel > défaut entreprise > calcul auto
-        emp_days_req = employee_days_required.get(emp['name'])
+        emp_days_req = employee_days_norm.get(norm_key)
         if emp_days_req is None and days_required_default is not None and days_required_default > 0:
             emp_days_req = days_required_default
-        # NOUVEAU v57 : heures par jour par employé
-        emp_hp = employee_hours.get(emp['name'], hp)
+        # NOUVEAU v57 : heures par jour par employé (matching tolérant v58)
+        emp_hp = employee_hours_norm.get(norm_key, hp)
         all_stats.append(calc_employee_stats(emp, emp_hp, hp_weekend, emp_cost, rest_days=emp_rest,
                                              days_required_override=emp_days_req,
                                              period_total_days=period_total_days))

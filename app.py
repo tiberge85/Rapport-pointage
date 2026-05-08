@@ -1696,10 +1696,17 @@ def traitement_generate():
         
         # NOUVEAU v54 : appliquer schedule_override aux records des employés
         # Priorité : Personne > Groupe > Tous > Original (gardé inchangé)
+        # v58 : matching tolérant aux espaces/casse + flash de feedback
+        override_applied_to = []
+        override_not_matched = []
         if schedule_override:
             sched_all = schedule_override.get('all')
             sched_groups = schedule_override.get('groups') or []
             sched_persons = schedule_override.get('persons') or {}
+            
+            # Helper : normalisation pour matching tolérant
+            def _norm(s): return ''.join((s or '').strip().upper().split())
+            emps_by_norm = {_norm(e['name']): e for e in emps}
             
             # Index name -> override (priorité personne > groupe > tous)
             name_to_sched = {}
@@ -1707,7 +1714,7 @@ def traitement_generate():
             # 1. Tous (plus faible priorité)
             if sched_all and isinstance(sched_all, dict) and sched_all.get('start') and sched_all.get('end'):
                 for emp in emps:
-                    name_to_sched[emp['name']] = sched_all
+                    name_to_sched[_norm(emp['name'])] = sched_all
             
             # 2. Groupes (priorité moyenne)
             for grp in sched_groups:
@@ -1715,16 +1722,17 @@ def traitement_generate():
                 members = grp.get('members') or []
                 if not members or not grp.get('start') or not grp.get('end'): continue
                 for member_name in members:
-                    name_to_sched[member_name] = grp
+                    name_to_sched[_norm(member_name)] = grp
             
             # 3. Personnes (priorité maximale)
             for pname, psched in sched_persons.items():
                 if isinstance(psched, dict) and psched.get('start') and psched.get('end'):
-                    name_to_sched[pname] = psched
+                    name_to_sched[_norm(pname)] = psched
             
-            # Appliquer aux records
+            # Appliquer aux records (avec matching tolérant)
             for emp in emps:
-                sch = name_to_sched.get(emp['name'])
+                norm_key = _norm(emp['name'])
+                sch = name_to_sched.get(norm_key)
                 if not sch: continue
                 new_start = sch.get('start')
                 new_end = sch.get('end')
@@ -1733,8 +1741,21 @@ def traitement_generate():
                 for rec in emp['records']:
                     rec['sched_start'] = new_start
                     rec['sched_end'] = new_end
-                    # Note : on ne stocke pas la pause dans rec car le calcul ne l'utilise pas directement
-                    # (le calcul de durée se fait via duration calculée dans le fichier source)
+                override_applied_to.append(f"{emp['name']} ({new_start}-{new_end})")
+            
+            # Détecter overrides non-matched (saisis mais pas trouvés dans le fichier)
+            for pname in sched_persons.keys():
+                if _norm(pname) not in {_norm(e['name']) for e in emps}:
+                    override_not_matched.append(pname)
+        
+        # Flash de feedback (visible après génération)
+        if override_applied_to:
+            flash(f"🕒 EDT personnalisé appliqué à {len(override_applied_to)} employé(s) : "
+                  + ", ".join(override_applied_to[:5])
+                  + ("..." if len(override_applied_to) > 5 else ""), "success")
+        if override_not_matched:
+            flash(f"⚠️ Overrides non appliqués (employé non trouvé dans le fichier) : "
+                  + ", ".join(override_not_matched), "warning")
         
         base = os.path.splitext(filename)[0]
         pdf_name = f"{base}_RAPPORT_DE_PRESENCE.pdf"
@@ -14970,21 +14991,32 @@ def achats_demande_add():
     flash(f"Demande {ref} créée", "success"); return redirect('/achats?tab=demandes')
 
 @app.route('/achats/demande/<int:did>/approve')
-@permission_required_any('achats_edit', 'comptabilite_edit')
+@permission_required_any('achats_edit', 'comptabilite_edit', 'mg_valider', 'admin')
 def achats_demande_approve(did):
+    """Approuver une demande (alias unifié — même logique que /mg/demandes)."""
     conn = _gdb()
-    conn.execute("UPDATE achats_demandes SET status='approuvee', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
+    # v58 : statut unifié 'validee' (au lieu de 'approuvee') pour cohérence avec /mg
+    conn.execute("UPDATE achats_demandes SET status='validee', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (session['user_id'], did))
     conn.commit(); conn.close()
-    flash("Demande approuvée", "success"); return redirect('/achats?tab=demandes')
+    flash("✅ Demande validée", "success")
+    # Redirection : si la demande vient de /mg, retour /mg ; sinon /achats
+    referer = request.referrer or ''
+    if '/mg/' in referer:
+        return redirect('/mg/demandes')
+    return redirect('/achats?tab=demandes')
 
 @app.route('/achats/demande/<int:did>/reject')
-@permission_required_any('achats_edit', 'comptabilite_edit')
+@permission_required_any('achats_edit', 'comptabilite_edit', 'mg_valider', 'admin')
 def achats_demande_reject(did):
     conn = _gdb()
     conn.execute("UPDATE achats_demandes SET status='refusee' WHERE id=?", (did,))
     conn.commit(); conn.close()
-    flash("Demande refusée", "success"); return redirect('/achats?tab=demandes')
+    flash("❌ Demande refusée", "success")
+    referer = request.referrer or ''
+    if '/mg/' in referer:
+        return redirect('/mg/demandes')
+    return redirect('/achats?tab=demandes')
 
 @app.route('/achats/devis/add', methods=['POST'])
 @permission_required('proforma_edit')
