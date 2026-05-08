@@ -23,7 +23,7 @@ th{text-align:left;font-weight:600}
 {% set fmt = '{:,.0f}'.format %}
 {% set g = p.get %}
 {% set has_cnps = g('cnps_declared',0) and g('cnps_number','') %}
-<div class="page-header"><h1>🧾 Bulletin de paie</h1></div>
+<div class="page-header"><h1>🧾 Bulletin de paie <span style="font-size:11px;color:#888;font-weight:400">(v63)</span></h1></div>
 <div class="actions-bar">
     <a href="/rh/paie/{{ p.id }}/edit" class="btn btn-orange">✏️ Modifier</a>
     <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimer</button>
@@ -84,7 +84,7 @@ th{text-align:left;font-weight:600}
 <div class="emp-grid">
     <div class="emp-cell"><b>Employé :</b> {{ p.employee_name }}</div>
     <div class="emp-cell"><b>Matricule :</b> {{ g('matricule','') or '-' }}</div>
-    <div class="emp-cell"><b>N° CNPS :</b> {% if g('cnps_declared',0) %}{{ g('cnps_number','') or '-' }}{% else %}Non déclaré{% endif %}</div>
+    <div class="emp-cell"><b>N° CNPS :</b> {{ g('cnps_number','') or '-' }}</div>
     <div class="emp-cell"><b>Poste :</b> {{ g('position','') or '-' }}</div>
     <div class="emp-cell"><b>Département :</b> {{ g('department','') or '-' }}</div>
     <div class="emp-cell"><b>Assurance :</b> {% if g('insurance','') or g('insurance_number','') %}{{ g('insurance','') }} {{ g('insurance_number','') }}{% else %}-{% endif %}</div>

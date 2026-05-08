@@ -17,7 +17,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 from flask import (Flask, render_template, request, send_file, flash,
                    redirect, url_for, jsonify, session, send_from_directory,
-                   abort, Response)
+                   abort, Response, make_response)
 from werkzeug.utils import secure_filename
 
 from rapport_core import extract_from_excel, generate_full_pdf
@@ -5258,9 +5258,8 @@ def _generate_bulletin_pdf(pid):
     story.extend([ht, Spacer(1, 3*mm)])
     
     # === EMPLOYEE INFO ===
+    # v62 : retirer "Non déclaré" — afficher juste le numéro ou tiret si absent
     cnps_display = p.get('cnps_number','') or '-'
-    if not p.get('cnps_declared'):
-        cnps_display = 'Non déclaré'
     assurance_display = ''
     if p.get('insurance') or p.get('insurance_number'):
         ins_name = p.get('insurance','') or ''
@@ -5530,7 +5529,13 @@ def rh_paie_view(pid):
         conn.close()
         if not emp or emp['id'] != p.get('employee_id'):
             flash("Accès non autorisé","error"); return redirect('/dashboard')
-    return render_template('rh_paie_view.html', page='paie', p=p)
+    # v63 : forcer le navigateur à NE PAS mettre cette page en cache
+    # car le contenu (libellés, retenues...) peut changer entre versions
+    response = make_response(render_template('rh_paie_view.html', page='paie', p=p))
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/rh/paie/<int:pid>/status/<status>')
 @login_required
