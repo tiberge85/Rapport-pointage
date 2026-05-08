@@ -1630,12 +1630,17 @@ def traitement_generate():
     # Format : {"all": {start, end, has_pause, pause_start, pause_end} ou null,
     #          "groups": [{name, members[], start, end, has_pause, pause_start, pause_end}],
     #          "persons": {name: {start, end, has_pause, pause_start, pause_end}}}
+    raw_override = request.form.get('schedule_override_json', '{}')
+    print(f"[traitement_generate] schedule_override_json reçu (len={len(raw_override)}): {raw_override[:300]}", flush=True)
     try:
-        schedule_override = json.loads(request.form.get('schedule_override_json', '{}'))
+        schedule_override = json.loads(raw_override)
         if not isinstance(schedule_override, dict):
             schedule_override = {}
     except:
         schedule_override = {}
+    print(f"[traitement_generate] schedule_override parsé: all={bool(schedule_override.get('all'))}, "
+          f"groups={len(schedule_override.get('groups',[]) or [])}, "
+          f"persons={len(schedule_override.get('persons',{}) or {})}", flush=True)
     
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(app.config['UPLOAD_FOLDER'], job_id)

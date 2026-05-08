@@ -217,36 +217,39 @@
                 </div>
             </div>
             
-            <!-- Step 7ter: Personnalisation des emplois du temps (REFONTE v60) -->
+            <!-- Step 7ter: Personnalisation des emplois du temps (REFONTE TOTALE v61) -->
             <div class="step" style="background:linear-gradient(135deg,#e3f2fd 0%,#bbdefb 100%);padding:14px;border-radius:10px;border-left:5px solid #1976d2;margin-bottom:14px">
                 <div class="step-label">
                     <span class="step-num" style="background:#1976d2">🕒</span>
                     <span class="step-title" style="color:#0d47a1">Personnalisation des emplois du temps</span>
                 </div>
-                <p class="hint" style="margin:0 0 10px;color:#0d47a1">
+                <p class="hint" style="margin:0 0 12px;color:#0d47a1">
                     Forcez les horaires de travail (heure début, heure fin, pause). 
                     <strong>Priorité :</strong> Personne → Groupe → Toute la base → Horaire d'origine du fichier.
                 </p>
                 
+                <!-- v61 : Utilise des cases simples + JavaScript inline pour fiabilité maximale -->
+                <p style="font-weight:700;color:#0d47a1;margin:0 0 8px;font-size:13px">Cochez les cases ci-dessous pour activer la personnalisation :</p>
+                
                 <!-- 1. Toute la base -->
-                <div style="background:#fff;padding:10px;border-radius:6px;margin-bottom:8px">
-                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:12px">
-                        <input type="checkbox" id="schedAllEnable" onclick="document.getElementById('schedAllFields').style.display = this.checked ? 'block' : 'none';">
-                        <span>🌐 <strong>Appliquer un EDT global à TOUS les employés</strong></span>
+                <div style="background:#fff;padding:12px;border-radius:6px;margin-bottom:8px;border:2px solid transparent" id="schedAllBox">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:13px">
+                        <input type="checkbox" id="schedAllEnable" style="width:18px;height:18px;cursor:pointer">
+                        <span>🌐 <strong>EDT global pour TOUS les employés</strong></span>
                     </label>
-                    <div id="schedAllFields" style="display:none;margin-top:8px">
-                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;align-items:end">
-                            <div><label style="font-size:11px;color:#666">Heure début</label>
-                                <input type="time" id="schedAllStart" value="08:00" style="width:100%;padding:6px;border:1.5px solid #ddd;border-radius:5px;font-size:12px"></div>
-                            <div><label style="font-size:11px;color:#666">Heure fin</label>
-                                <input type="time" id="schedAllEnd" value="17:00" style="width:100%;padding:6px;border:1.5px solid #ddd;border-radius:5px;font-size:12px"></div>
-                            <div style="display:flex;align-items:center;gap:6px">
+                    <div id="schedAllFields" style="display:none;margin-top:10px;padding:10px;background:#f0f8ff;border-radius:6px">
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end">
+                            <div><label style="font-size:11px;color:#666;font-weight:600">Heure début *</label>
+                                <input type="time" id="schedAllStart" value="08:00" style="width:100%;padding:8px;border:2px solid #1976d2;border-radius:5px;font-size:13px;font-weight:600"></div>
+                            <div><label style="font-size:11px;color:#666;font-weight:600">Heure fin *</label>
+                                <input type="time" id="schedAllEnd" value="17:00" style="width:100%;padding:8px;border:2px solid #1976d2;border-radius:5px;font-size:13px;font-weight:600"></div>
+                            <div>
                                 <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                                    <input type="checkbox" id="schedAllHasPause" checked onclick="document.getElementById('schedAllPauseFields').style.display = this.checked ? 'grid' : 'none';"> ☕ Pause
+                                    <input type="checkbox" id="schedAllHasPause" checked> ☕ Avec pause
                                 </label>
                             </div>
                         </div>
-                        <div id="schedAllPauseFields" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+                        <div id="schedAllPauseFields" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
                             <div><label style="font-size:11px;color:#666">Pause début</label>
                                 <input type="time" id="schedAllPauseStart" value="12:00" style="width:100%;padding:6px;border:1.5px solid #ddd;border-radius:5px;font-size:12px"></div>
                             <div><label style="font-size:11px;color:#666">Pause fin</label>
@@ -256,24 +259,24 @@
                 </div>
                 
                 <!-- 2. Par groupe -->
-                <div style="background:#fff;padding:10px;border-radius:6px;margin-bottom:8px">
-                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:12px">
-                        <input type="checkbox" id="schedGroupEnable" onclick="toggleSchedGroup()">
-                        <span>👥 <strong>Appliquer un EDT par groupe</strong> (créer des groupes en sélectionnant les employés)</span>
+                <div style="background:#fff;padding:12px;border-radius:6px;margin-bottom:8px;border:2px solid transparent" id="schedGroupBox">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:13px">
+                        <input type="checkbox" id="schedGroupEnable" style="width:18px;height:18px;cursor:pointer">
+                        <span>👥 <strong>EDT par groupe</strong> (créer des groupes)</span>
                     </label>
-                    <div id="schedGroupFields" style="display:none;margin-top:10px">
+                    <div id="schedGroupFields" style="display:none;margin-top:10px;padding:10px;background:#f0f8ff;border-radius:6px">
                         <div id="schedGroupsList"></div>
                         <button type="button" onclick="addSchedGroup()" class="btn btn-sm btn-outline" style="font-size:11px;margin-top:6px">+ Ajouter un groupe</button>
                     </div>
                 </div>
                 
                 <!-- 3. Par personne -->
-                <div style="background:#fff;padding:10px;border-radius:6px">
-                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:12px">
-                        <input type="checkbox" id="schedPersonEnable" onclick="toggleSchedPerson()">
-                        <span>👤 <strong>Appliquer un EDT spécifique par personne</strong></span>
+                <div style="background:#fff;padding:12px;border-radius:6px;border:2px solid transparent" id="schedPersonBox">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:13px">
+                        <input type="checkbox" id="schedPersonEnable" style="width:18px;height:18px;cursor:pointer">
+                        <span>👤 <strong>EDT spécifique par personne</strong></span>
                     </label>
-                    <div id="schedPersonList" style="display:none;margin-top:10px;max-height:300px;overflow-y:auto">
+                    <div id="schedPersonList" style="display:none;margin-top:10px;padding:10px;background:#f0f8ff;border-radius:6px;max-height:300px;overflow-y:auto">
                         <div style="font-size:11px;color:#999;font-style:italic;text-align:center">📂 Importez d'abord un fichier Excel</div>
                     </div>
                 </div>
@@ -281,10 +284,49 @@
                 <input type="hidden" name="schedule_override_json" id="schedOverrideJson" value="{}">
                 
                 <!-- v59 : Bouton aperçu avant génération -->
-                <div style="margin-top:10px;text-align:center">
-                    <button type="button" onclick="previewSchedOverride()" class="btn btn-sm btn-outline" style="font-size:11px">🔍 Aperçu de la personnalisation</button>
+                <div style="margin-top:14px;text-align:center">
+                    <button type="button" onclick="previewSchedOverride()" class="btn btn-orange btn-sm" style="font-size:12px;padding:8px 16px">🔍 Vérifier la personnalisation</button>
                 </div>
                 <div id="schedPreview" style="display:none;margin-top:10px;padding:10px;background:#e8f5e9;border-left:4px solid #2e7d32;border-radius:6px;font-size:12px"></div>
+                
+                <!-- v61 : Script INLINE et IMMÉDIAT pour les toggles — pas de dépendance externe -->
+                <script>
+                    // Toggle inline robuste : exécution garantie au clic, sans dépendance externe
+                    (function() {
+                        function setupToggle(checkboxId, fieldsId, displayValue) {
+                            var cb = document.getElementById(checkboxId);
+                            var fields = document.getElementById(fieldsId);
+                            if (!cb || !fields) { console.error('EDT setup error:', checkboxId, fieldsId); return; }
+                            cb.addEventListener('change', function() {
+                                fields.style.display = cb.checked ? displayValue : 'none';
+                                console.log('[EDT] ' + checkboxId + ' = ' + cb.checked + ' → ' + fields.style.display);
+                                // Pour personne : remplir la liste si activé
+                                if (checkboxId === 'schedPersonEnable' && cb.checked) {
+                                    if (typeof buildSchedPersonList === 'function') buildSchedPersonList();
+                                }
+                                // Pour groupe : ajouter premier groupe si activé
+                                if (checkboxId === 'schedGroupEnable' && cb.checked) {
+                                    if (typeof _schedGroups !== 'undefined' && _schedGroups.length === 0 && typeof addSchedGroup === 'function') {
+                                        addSchedGroup();
+                                    }
+                                }
+                            });
+                        }
+                        // Setup au chargement immédiat (le script est juste après les éléments)
+                        setupToggle('schedAllEnable', 'schedAllFields', 'block');
+                        setupToggle('schedGroupEnable', 'schedGroupFields', 'block');
+                        setupToggle('schedPersonEnable', 'schedPersonList', 'block');
+                        // Pause toggle
+                        var pauseCb = document.getElementById('schedAllHasPause');
+                        var pauseFields = document.getElementById('schedAllPauseFields');
+                        if (pauseCb && pauseFields) {
+                            pauseCb.addEventListener('change', function() {
+                                pauseFields.style.display = pauseCb.checked ? 'grid' : 'none';
+                            });
+                        }
+                        console.log('[EDT] Toggles initialized');
+                    })();
+                </script>
             </div>
             
             <!-- Step 8: Logo -->
