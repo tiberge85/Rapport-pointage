@@ -2985,6 +2985,69 @@ def dpci_generate():
             if name not in schedules_map:
                 schedules_map[name] = s  # Use first found (e.g., Monday schedule)
         
+        # v62 NOUVEAU : appliquer schedule_override aux employés
+        # Format: {"all":{start,end,has_pause,pause_start,pause_end}, "groups":[...], "persons":{name:{...}}}
+        try:
+            schedule_override = json.loads(request.form.get('schedule_override_json', '{}'))
+            if not isinstance(schedule_override, dict):
+                schedule_override = {}
+        except:
+            schedule_override = {}
+        print(f"[dpci_generate] schedule_override reçu: all={bool(schedule_override.get('all'))}, "
+              f"groups={len(schedule_override.get('groups',[]) or [])}, "
+              f"persons={len(schedule_override.get('persons',{}) or {})}", flush=True)
+        
+        if schedule_override:
+            sched_all = schedule_override.get('all')
+            sched_groups = schedule_override.get('groups') or []
+            sched_persons = schedule_override.get('persons') or {}
+            
+            # Helper : normalisation pour matching tolérant
+            def _norm(s): return ''.join((s or '').strip().upper().split())
+            
+            # Index name -> override (priorité personne > groupe > tous)
+            name_to_sched = {}
+            
+            # 1. Tous (priorité minimale)
+            if sched_all and isinstance(sched_all, dict) and sched_all.get('start') and sched_all.get('end'):
+                for emp in emps:
+                    name_to_sched[_norm(emp['name'])] = sched_all
+            
+            # 2. Groupes
+            for grp in sched_groups:
+                if not isinstance(grp, dict): continue
+                members = grp.get('members') or []
+                if not members or not grp.get('start') or not grp.get('end'): continue
+                for member_name in members:
+                    name_to_sched[_norm(member_name)] = grp
+            
+            # 3. Personnes (priorité maximale)
+            for pname, psched in sched_persons.items():
+                if isinstance(psched, dict) and psched.get('start') and psched.get('end'):
+                    name_to_sched[_norm(pname)] = psched
+            
+            # Appliquer en modifiant schedules_map (le DPCI utilise schedules_map[name])
+            override_count = 0
+            for emp in emps:
+                norm_key = _norm(emp['name'])
+                sch = name_to_sched.get(norm_key)
+                if not sch: continue
+                new_start = sch.get('start')
+                new_end = sch.get('end')
+                if not new_start or not new_end: continue
+                # Construire une entrée schedules_map pour cet employé
+                schedules_map[emp['name']] = {
+                    'employee_name': emp['name'],
+                    'start_time': new_start,
+                    'end_time': new_end,
+                    'break_start': sch.get('pause_start', '12:00') if sch.get('has_pause', True) else None,
+                    'break_end': sch.get('pause_end', '13:00') if sch.get('has_pause', True) else None,
+                }
+                override_count += 1
+            print(f"[dpci_generate] Override appliqué à {override_count} employé(s)", flush=True)
+            if override_count > 0:
+                flash(f"🕒 EDT personnalisé appliqué à {override_count} employé(s)", "success")
+        
         # Generate PDF
         pdf_name = f"DPCI_{client_name.replace(' ', '_')}_{job_id}.pdf"
         output_path = os.path.join(job_dir, pdf_name)
@@ -5322,6 +5385,8 @@ def _generate_bulletin_pdf(pid):
          Paragraph('', sr), Paragraph(fmt(ded), sr)],
         [Paragraph('Avances / Prêts', sc), Paragraph('', sr), Paragraph('', sr),
          Paragraph('', sr), Paragraph(fmt(av), sr)],
+        [Paragraph('Autres retenues', sc), Paragraph('', sr), Paragraph('', sr),
+         Paragraph('', sr), Paragraph(fmt(ar), sr)],
     ]
     rt = Table(ret, colWidths=cw5)
     rt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),ORANGE),('GRID',(0,0),(-1,-1),0.3,HexColor('#ddd')),
