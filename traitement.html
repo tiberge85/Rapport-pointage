@@ -217,7 +217,7 @@
                 </div>
             </div>
             
-            <!-- Step 7ter: Personnalisation des emplois du temps (NOUVEAU v54) -->
+            <!-- Step 7ter: Personnalisation des emplois du temps (REFONTE v60) -->
             <div class="step" style="background:linear-gradient(135deg,#e3f2fd 0%,#bbdefb 100%);padding:14px;border-radius:10px;border-left:5px solid #1976d2;margin-bottom:14px">
                 <div class="step-label">
                     <span class="step-num" style="background:#1976d2">🕒</span>
@@ -231,10 +231,10 @@
                 <!-- 1. Toute la base -->
                 <div style="background:#fff;padding:10px;border-radius:6px;margin-bottom:8px">
                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:12px">
-                        <input type="checkbox" id="schedAllEnable" onchange="toggleSchedAll()">
+                        <input type="checkbox" id="schedAllEnable" onclick="document.getElementById('schedAllFields').style.display = this.checked ? 'block' : 'none';">
                         <span>🌐 <strong>Appliquer un EDT global à TOUS les employés</strong></span>
                     </label>
-                    <div id="schedAllFields" style="display:none;margin-top:8px;display:none">
+                    <div id="schedAllFields" style="display:none;margin-top:8px">
                         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;align-items:end">
                             <div><label style="font-size:11px;color:#666">Heure début</label>
                                 <input type="time" id="schedAllStart" value="08:00" style="width:100%;padding:6px;border:1.5px solid #ddd;border-radius:5px;font-size:12px"></div>
@@ -242,7 +242,7 @@
                                 <input type="time" id="schedAllEnd" value="17:00" style="width:100%;padding:6px;border:1.5px solid #ddd;border-radius:5px;font-size:12px"></div>
                             <div style="display:flex;align-items:center;gap:6px">
                                 <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                                    <input type="checkbox" id="schedAllHasPause" checked onchange="toggleSchedAllPause()"> ☕ Pause
+                                    <input type="checkbox" id="schedAllHasPause" checked onclick="document.getElementById('schedAllPauseFields').style.display = this.checked ? 'grid' : 'none';"> ☕ Pause
                                 </label>
                             </div>
                         </div>
@@ -258,7 +258,7 @@
                 <!-- 2. Par groupe -->
                 <div style="background:#fff;padding:10px;border-radius:6px;margin-bottom:8px">
                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:12px">
-                        <input type="checkbox" id="schedGroupEnable" onchange="toggleSchedGroup()">
+                        <input type="checkbox" id="schedGroupEnable" onclick="toggleSchedGroup()">
                         <span>👥 <strong>Appliquer un EDT par groupe</strong> (créer des groupes en sélectionnant les employés)</span>
                     </label>
                     <div id="schedGroupFields" style="display:none;margin-top:10px">
@@ -270,7 +270,7 @@
                 <!-- 3. Par personne -->
                 <div style="background:#fff;padding:10px;border-radius:6px">
                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:12px">
-                        <input type="checkbox" id="schedPersonEnable" onchange="toggleSchedPerson()">
+                        <input type="checkbox" id="schedPersonEnable" onclick="toggleSchedPerson()">
                         <span>👤 <strong>Appliquer un EDT spécifique par personne</strong></span>
                     </label>
                     <div id="schedPersonList" style="display:none;margin-top:10px;max-height:300px;overflow-y:auto">
@@ -279,6 +279,12 @@
                 </div>
                 
                 <input type="hidden" name="schedule_override_json" id="schedOverrideJson" value="{}">
+                
+                <!-- v59 : Bouton aperçu avant génération -->
+                <div style="margin-top:10px;text-align:center">
+                    <button type="button" onclick="previewSchedOverride()" class="btn btn-sm btn-outline" style="font-size:11px">🔍 Aperçu de la personnalisation</button>
+                </div>
+                <div id="schedPreview" style="display:none;margin-top:10px;padding:10px;background:#e8f5e9;border-left:4px solid #2e7d32;border-radius:6px;font-size:12px"></div>
             </div>
             
             <!-- Step 8: Logo -->
@@ -682,7 +688,7 @@ function collectEmpDays() {
 }
 
 // === NOUVEAU v54 : Personnalisation EDT (personne / groupe / tous) ===
-var _employees = [];
+// v60 : NE PAS redéclarer _employees ici (déjà déclaré ligne 590) sinon JS hoist & écrasement
 var _schedGroups = [];
 
 function toggleSchedAll() {
@@ -828,6 +834,53 @@ function collectSchedOverride() {
         });
     }
     document.getElementById('schedOverrideJson').value = JSON.stringify(data);
+}
+
+// v59 : Aperçu de la personnalisation avant génération
+function previewSchedOverride() {
+    collectSchedOverride();
+    var data = JSON.parse(document.getElementById('schedOverrideJson').value);
+    var box = document.getElementById('schedPreview');
+    var html = '<strong style="color:#2e7d32">📋 Récapitulatif de la personnalisation :</strong><br><br>';
+    var hasAny = false;
+    
+    if (data.all && data.all.start && data.all.end) {
+        hasAny = true;
+        html += '🌐 <strong>TOUS les employés</strong> : <code>' + data.all.start + ' → ' + data.all.end + '</code>';
+        if (data.all.has_pause) html += ' (avec pause ' + data.all.pause_start + '-' + data.all.pause_end + ')';
+        html += '<br>';
+    }
+    
+    if (data.groups && data.groups.length > 0) {
+        data.groups.forEach(function(g) {
+            if (g.members && g.members.length > 0 && g.start && g.end) {
+                hasAny = true;
+                html += '👥 <strong>' + g.name + '</strong> (' + g.members.length + ' membres : ' + g.members.join(', ') + ') : <code>' + g.start + ' → ' + g.end + '</code><br>';
+            }
+        });
+    }
+    
+    if (data.persons && Object.keys(data.persons).length > 0) {
+        Object.keys(data.persons).forEach(function(name) {
+            var p = data.persons[name];
+            hasAny = true;
+            html += '👤 <strong>' + name + '</strong> : <code>' + p.start + ' → ' + p.end + '</code><br>';
+        });
+    }
+    
+    if (!hasAny) {
+        html = '<strong style="color:#c53030">⚠️ Aucune personnalisation détectée.</strong><br>' +
+               '<span style="font-size:11px;color:#666">Cochez une option ci-dessus (🌐 / 👥 / 👤) puis remplissez les champs.</span>';
+        box.style.borderLeftColor = '#c53030';
+        box.style.background = '#fde8e8';
+    } else {
+        html += '<br><span style="color:#2e7d32;font-weight:600">✓ Cette configuration sera appliquée à la génération du PDF.</span>';
+        box.style.borderLeftColor = '#2e7d32';
+        box.style.background = '#e8f5e9';
+    }
+    
+    box.innerHTML = html;
+    box.style.display = 'block';
 }
 
 document.getElementById('reportForm').addEventListener('submit', () => {

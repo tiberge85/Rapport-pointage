@@ -373,6 +373,8 @@ from models import migrate_v68
 migrate_v68()
 from models import migrate_v69
 migrate_v69()
+from models import migrate_v70
+migrate_v70()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -5277,39 +5279,45 @@ def _generate_bulletin_pdf(pid):
     fdfp_v = round(brut * 0.012)
     total_pat = cnps_ret_pat + cnps_pf + cnps_acc + tx_app + fdfp_v
     its = g('its'); assur = g('insurance_amount'); ded = g('deductions'); av = g('avances'); ar = g('autres_retenues')
-    # v57 : ITS retiré du total des retenues pour bulletin simplifié
-    total_sal = cnps_sal + assur + ded + av + ar
+    # v60 : ITS remis dans le total
+    total_sal = cnps_sal + its + assur + ded + av + ar
     
     cw5 = [pw*0.32, pw*0.14, pw*0.14, pw*0.18, pw*0.22]
-    # NOUVEAU v57 : tableau simplifié — uniquement les retenues effectives
-    # (suppression des lignes "CNPS Retraite (non déclaré)" / Prestations / Accidents /
-    #  Taxe apprentissage / Formation prof / ITS qui faisaient déborder le bulletin)
+    # v60 : remise du tableau complet (CNPS Prestations, Accidents, Apprentissage, FDFP, ITS)
+    # Mais on retire juste la mention "(non déclaré)" devant CNPS Retraite
     ret = [
         [Paragraph('<b>RETENUES / COTISATIONS</b>', swb),
          Paragraph('<b>Part patron.</b>', swb), Paragraph('<b>Part salar.</b>', swb),
          Paragraph('<b>Base</b>', swb), Paragraph('<b>Montant sal.</b>', swb)],
+        [Paragraph('CNPS Retraite', sc),
+         Paragraph('7,7%' if has_cnps else '—', sr),
+         Paragraph('6,3%' if has_cnps else '—', sr),
+         Paragraph(f'Plaf. {fmt(plafond)}' if has_cnps else '—',
+                   ParagraphStyle('sm', fontSize=7, alignment=TA_RIGHT, textColor=GREY)),
+         Paragraph(fmt(cnps_sal) if has_cnps else '—', srb)],
+        [Paragraph('CNPS Prestations familiales', sc),
+         Paragraph('5,75%' if has_cnps else '—', sr),
+         Paragraph('0%' if has_cnps else '—', sr),
+         Paragraph(fmt(brut) if has_cnps else '—', sr),
+         Paragraph('—', sr)],
+        [Paragraph('CNPS Accidents du travail', sc),
+         Paragraph('3%' if has_cnps else '—', sr),
+         Paragraph('0%' if has_cnps else '—', sr),
+         Paragraph(fmt(brut) if has_cnps else '—', sr),
+         Paragraph('—', sr)],
+        [Paragraph("Taxe d'apprentissage", sc), Paragraph('0,4%', sr), Paragraph('0%', sr),
+         Paragraph(fmt(brut), sr), Paragraph('—', sr)],
+        [Paragraph('Formation prof. (FDFP)', sc), Paragraph('1,2%', sr), Paragraph('0%', sr),
+         Paragraph(fmt(brut), sr), Paragraph('—', sr)],
+        [Paragraph('ITS (Impôt sur salaire)', sc), Paragraph('', sr), Paragraph('', sr),
+         Paragraph('', sr), Paragraph(fmt(its), sr)],
+        [Paragraph('Assurance maladie', sc), Paragraph('', sr), Paragraph('', sr),
+         Paragraph('', sr), Paragraph(fmt(assur), sr)],
+        [Paragraph('Autres déductions', sc), Paragraph('', sr), Paragraph('', sr),
+         Paragraph('', sr), Paragraph(fmt(ded), sr)],
+        [Paragraph('Avances / Prêts', sc), Paragraph('', sr), Paragraph('', sr),
+         Paragraph('', sr), Paragraph(fmt(av), sr)],
     ]
-    if has_cnps:
-        ret.append([Paragraph('CNPS Retraite', sc),
-                    Paragraph('7,7%', sr), Paragraph('6,3%', sr),
-                    Paragraph(f'Plaf. {fmt(plafond)}', ParagraphStyle('sm',fontSize=7,alignment=TA_RIGHT,textColor=GREY)),
-                    Paragraph(fmt(cnps_sal), srb)])
-    if assur > 0:
-        ret.append([Paragraph('Assurance maladie', sc),
-                    Paragraph('', sr), Paragraph('', sr),
-                    Paragraph('', sr), Paragraph(fmt(assur), sr)])
-    if ded > 0:
-        ret.append([Paragraph('Autres déductions', sc),
-                    Paragraph('', sr), Paragraph('', sr),
-                    Paragraph('', sr), Paragraph(fmt(ded), sr)])
-    if av > 0:
-        ret.append([Paragraph('Avances / Prêts', sc),
-                    Paragraph('', sr), Paragraph('', sr),
-                    Paragraph('', sr), Paragraph(fmt(av), sr)])
-    if ar > 0:
-        ret.append([Paragraph('Autres retenues', sc),
-                    Paragraph('', sr), Paragraph('', sr),
-                    Paragraph('', sr), Paragraph(fmt(ar), sr)])
     rt = Table(ret, colWidths=cw5)
     rt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),ORANGE),('GRID',(0,0),(-1,-1),0.3,HexColor('#ddd')),
         ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),('LEFTPADDING',(0,0),(-1,-1),5),

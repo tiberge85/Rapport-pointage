@@ -121,25 +121,19 @@ th{text-align:left;font-weight:600}
 <div class="sec-hdr sec-orange" style="margin-top:8px">RETENUES / COTISATIONS</div>
 <table>
 <tr style="background:#f0f4f0"><th>Libellé</th><th style="text-align:right">Part patron.</th><th style="text-align:right">Part salar.</th><th style="text-align:right">Base</th><th style="text-align:right">Montant sal.</th></tr>
-{% if has_cnps %}
-<tr><td>CNPS Retraite</td><td style="text-align:right;color:#888">7,7%</td><td style="text-align:right">6,3%</td><td style="text-align:right;font-size:10px;color:#888">Plaf. 2 700 000</td><td style="text-align:right"><strong>{{ fmt((g('cnps_retraite_sal',0) or 0) or (([brut, 2700000]|min) * 0.063)) }}</strong></td></tr>
-{% endif %}
-{% if (g('insurance_amount',0) or 0) > 0 %}
+<tr><td>CNPS Retraite</td><td style="text-align:right;color:#888">{% if has_cnps %}7,7%{% else %}—{% endif %}</td><td style="text-align:right">{% if has_cnps %}6,3%{% else %}—{% endif %}</td><td style="text-align:right;font-size:10px;color:#888">{% if has_cnps %}Plaf. 2 700 000{% else %}—{% endif %}</td><td style="text-align:right"><strong>{% if has_cnps %}{{ fmt((g('cnps_retraite_sal',0) or 0) or (([brut, 2700000]|min) * 0.063)) }}{% else %}—{% endif %}</strong></td></tr>
+<tr><td>CNPS Prestations familiales</td><td style="text-align:right;color:#888">{% if has_cnps %}5,75%{% else %}—{% endif %}</td><td style="text-align:right">{% if has_cnps %}0%{% else %}—{% endif %}</td><td style="text-align:right;font-size:10px;color:#888">{% if has_cnps %}{{ fmt(brut) }}{% else %}—{% endif %}</td><td style="text-align:right">—</td></tr>
+<tr><td>CNPS Accidents du travail</td><td style="text-align:right;color:#888">{% if has_cnps %}3%{% else %}—{% endif %}</td><td style="text-align:right">{% if has_cnps %}0%{% else %}—{% endif %}</td><td style="text-align:right;font-size:10px;color:#888">{% if has_cnps %}{{ fmt(brut) }}{% else %}—{% endif %}</td><td style="text-align:right">—</td></tr>
+<tr><td>Taxe d'apprentissage</td><td style="text-align:right;color:#888">0,4%</td><td style="text-align:right">0%</td><td style="text-align:right;font-size:10px;color:#888">{{ fmt(brut) }}</td><td style="text-align:right">—</td></tr>
+<tr><td>Formation prof. (FDFP)</td><td style="text-align:right;color:#888">1,2%</td><td style="text-align:right">0%</td><td style="text-align:right;font-size:10px;color:#888">{{ fmt(brut) }}</td><td style="text-align:right">—</td></tr>
+<tr><td>ITS (Impôt sur salaire)</td><td></td><td></td><td></td><td style="text-align:right">{{ fmt(g('its',0) or 0) }}</td></tr>
 <tr><td>Assurance maladie</td><td></td><td></td><td></td><td style="text-align:right">{{ fmt(g('insurance_amount',0) or 0) }}</td></tr>
-{% endif %}
-{% if (g('deductions',0) or 0) > 0 %}
 <tr><td>Autres déductions</td><td></td><td></td><td></td><td style="text-align:right">{{ fmt(g('deductions',0) or 0) }}</td></tr>
-{% endif %}
-{% if (g('avances',0) or 0) > 0 %}
 <tr><td>Avances / Prêts</td><td></td><td></td><td></td><td style="text-align:right">{{ fmt(g('avances',0) or 0) }}</td></tr>
-{% endif %}
-{% if (g('autres_retenues',0) or 0) > 0 %}
-<tr><td>Autres retenues</td><td></td><td></td><td></td><td style="text-align:right">{{ fmt(g('autres_retenues',0) or 0) }}</td></tr>
-{% endif %}
 </table>
 
 <div style="background:#e8672a;color:#fff;padding:6px 10px;border-radius:4px;font-size:11px;display:flex;justify-content:space-between;margin:8px 0">
-    {% set cnps_amount = ((g('cnps_retraite_sal',0) or 0) or (([brut, 2700000]|min) * 0.063)) if has_cnps else 0 %}{% set total_sal = cnps_amount + (g('insurance_amount',0) or 0) + (g('deductions',0) or 0) + (g('avances',0) or 0) + (g('autres_retenues',0) or 0) %}
+    {% set cnps_amount = ((g('cnps_retraite_sal',0) or 0) or (([brut, 2700000]|min) * 0.063)) if has_cnps else 0 %}{% set total_sal = cnps_amount + (g('its',0) or 0) + (g('insurance_amount',0) or 0) + (g('deductions',0) or 0) + (g('avances',0) or 0) + (g('autres_retenues',0) or 0) %}
     <b>Total retenues salariales</b><b>{{ fmt(total_sal) }} F</b>
 </div>
 

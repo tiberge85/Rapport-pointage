@@ -452,27 +452,33 @@
             </div>
             {% endif %}
             
-            {% if 'moyens_generaux' in permissions or 'comptabilite' in permissions or 'admin' in permissions %}
-            <!-- Moyens Généraux -->
+            {% if 'moyens_generaux' in permissions or 'comptabilite' in permissions or 'mg_view' in permissions or 'admin' in permissions %}
+            <!-- Moyens Généraux (UNIFIÉ v59) -->
             <div class="nav-section" id="sec-moyens">
-                <div class="nav-section-title" onclick="toggleSection('sec-moyens')">🏠 MOYENS GÉNÉRAUX <span class="arrow">▼</span></div>
-                <div class="nav-section-items">
-                    {% if 'fournisseurs' in permissions or 'admin' in permissions %}
-                    <a href="/fournisseurs" class="{% if page in ('fournisseurs_list','fournisseur_detail','purchase_detail') %}active{% endif %}">🏭 Fournisseurs &amp; Paiements</a>
+                <div class="nav-section-title" onclick="toggleSection('sec-moyens')">
+                    🏠 MOYENS GÉNÉRAUX
+                    {% if mg_pending_count and mg_pending_count > 0 %}
+                        <span style="background:#c53030;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px;margin-left:4px">{{ mg_pending_count }}</span>
                     {% endif %}
-                    <a href="/achats?tab=stock" class="{% if page == 'achats' or page == 'stock' %}active{% endif %}">🛒 Achats &amp; Stock</a>
-                    <a href="/moyens-generaux/fournitures" class="{% if page == 'fournitures' %}active{% endif %}">📦 Fournitures bureau</a>
-                    <a href="/moyens-generaux/maintenance" class="{% if page == 'maintenance' %}active{% endif %}">🔧 Maintenance</a>
-                    <a href="/moyens-generaux/vehicules" class="{% if page == 'vehicules' %}active{% endif %}">🚗 Parc véhicules</a>
-                    <a href="/moyens-generaux" class="{% if page == 'moyens' %}active{% endif %}">📊 Tableau de bord</a>
-                    {% if 'mg_view' in permissions or 'admin' in permissions %}
-                    <a href="/mg" class="{% if page in ('mg','mg_demandes','mg_receptions','mg_paiements','mg_equipements','mg_fournisseurs') %}active{% endif %}" style="font-weight:600;color:#1A7A6D">
-                        ⭐ Moyens Généraux Pro
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="nav-section-items">
+                    <a href="/mg" class="{% if page == 'mg' %}active{% endif %}">📊 Tableau de bord MG</a>
+                    <a href="/mg/demandes" class="{% if page in ('mg_demandes',) %}active{% endif %}">
+                        📋 Demandes internes
                         {% if mg_pending_count and mg_pending_count > 0 %}
-                            <span style="background:#c53030;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px;margin-left:4px">{{ mg_pending_count }}</span>
+                            <span style="background:#c53030;color:#fff;padding:1px 5px;border-radius:8px;font-size:9px;margin-left:2px">{{ mg_pending_count }}</span>
                         {% endif %}
                     </a>
+                    {% if 'fournisseurs' in permissions or 'admin' in permissions or 'mg_view' in permissions %}
+                    <a href="/fournisseurs" class="{% if page in ('fournisseurs_list','fournisseur_detail','purchase_detail') %}active{% endif %}">🏭 Fournisseurs &amp; Paiements</a>
                     {% endif %}
+                    <a href="/mg/fournisseurs-dashboard" class="{% if page == 'mg_fournisseurs' %}active{% endif %}">💰 Suivi financier fournisseurs</a>
+                    <a href="/achats?tab=stock" class="{% if page == 'achats' or page == 'stock' %}active{% endif %}">🛒 Stock &amp; Articles</a>
+                    <a href="/achats?tab=commandes" class="{% if page == 'commandes' %}active{% endif %}">🚚 Bons de commande</a>
+                    <a href="/mg/receptions" class="{% if page == 'mg_receptions' %}active{% endif %}">📦 Réceptions</a>
+                    <a href="/mg/paiements" class="{% if page == 'mg_paiements' %}active{% endif %}">💵 Paiements fournisseurs</a>
+                    <a href="/mg/equipements" class="{% if page == 'mg_equipements' %}active{% endif %}">🖥️ Équipements</a>
                 </div>
             </div>
             {% endif %}

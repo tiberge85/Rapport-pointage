@@ -4389,6 +4389,42 @@ def migrate_v69():
     conn.commit(); conn.close()
 
 
+def migrate_v70():
+    """v70 : Synchroniser les permissions entre l'ancien module 'moyens_generaux'
+    et le nouveau module unifié MG.
+    
+    - Tous les users qui ont 'moyens_generaux' reçoivent : mg_view, mg_demande, mg_gestion
+    - Ceux qui ont 'moyens_generaux_edit' reçoivent en plus : mg_valider
+    
+    Cela permet à l'utilisateur final de garder ses anciennes permissions tout en ayant
+    accès au nouveau module unifié."""
+    conn = get_db()
+    
+    # Trouver tous les rôles qui ont 'moyens_generaux'
+    roles_with_mg = [r[0] for r in conn.execute(
+        "SELECT DISTINCT role FROM permissions WHERE permission='moyens_generaux'"
+    ).fetchall()]
+    for role in roles_with_mg:
+        for perm in ['mg_view', 'mg_demande', 'mg_gestion']:
+            try:
+                conn.execute("INSERT OR IGNORE INTO permissions (role, permission) VALUES (?,?)",
+                            (role, perm))
+            except: pass
+    
+    # Trouver tous les rôles qui ont 'moyens_generaux_edit'
+    roles_with_mg_edit = [r[0] for r in conn.execute(
+        "SELECT DISTINCT role FROM permissions WHERE permission='moyens_generaux_edit'"
+    ).fetchall()]
+    for role in roles_with_mg_edit:
+        for perm in ['mg_valider', 'mg_gestion']:
+            try:
+                conn.execute("INSERT OR IGNORE INTO permissions (role, permission) VALUES (?,?)",
+                            (role, perm))
+            except: pass
+    
+    conn.commit(); conn.close()
+
+
 def mg_get_fournisseur_dashboard(fournisseur_id=None):
     """Tableau de bord fournisseur :
     - total_commandes : somme des commandes du fournisseur
