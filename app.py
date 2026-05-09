@@ -1702,57 +1702,93 @@ def traitement_generate():
             days_required_default = len(ouvrables)
         
         # NOUVEAU v54 : appliquer schedule_override aux records des employés
-        # Priorité : Personne > Groupe > Tous > Original (gardé inchangé)
-        # v58 : matching tolérant aux espaces/casse + flash de feedback
+        # v64 : ajout de "days" (par jour de la semaine) et "person_days" (personne + jour)
+        # Priorité (du plus prioritaire au moins prioritaire) :
+        #   Personne+Jour > Personne > Groupe+Jour > Groupe > Tous+Jour > Tous > Original
         override_applied_to = []
         override_not_matched = []
         if schedule_override:
             sched_all = schedule_override.get('all')
             sched_groups = schedule_override.get('groups') or []
             sched_persons = schedule_override.get('persons') or {}
+            sched_days = schedule_override.get('days') or {}            # v64 : {jour: {start,end,...}}
+            sched_person_days = schedule_override.get('person_days') or {}  # v64 : {nom: {jour: {...}}}
+            sched_group_days = schedule_override.get('group_days') or []   # v64 : groupes avec days={...}
             
             # Helper : normalisation pour matching tolérant
             def _norm(s): return ''.join((s or '').strip().upper().split())
-            emps_by_norm = {_norm(e['name']): e for e in emps}
             
-            # Index name -> override (priorité personne > groupe > tous)
-            name_to_sched = {}
+            # Helper : nom du jour de la semaine en français pour une date
+            from datetime import datetime as _dt2
+            _DAY_NAMES = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche']
+            def _day_of(date_str):
+                try:
+                    d = _dt2.strptime(date_str[:10], '%Y-%m-%d')
+                    return _DAY_NAMES[d.weekday()]
+                except:
+                    return None
             
-            # 1. Tous (plus faible priorité)
-            if sched_all and isinstance(sched_all, dict) and sched_all.get('start') and sched_all.get('end'):
-                for emp in emps:
-                    name_to_sched[_norm(emp['name'])] = sched_all
-            
-            # 2. Groupes (priorité moyenne)
-            for grp in sched_groups:
-                if not isinstance(grp, dict): continue
-                members = grp.get('members') or []
-                if not members or not grp.get('start') or not grp.get('end'): continue
-                for member_name in members:
-                    name_to_sched[_norm(member_name)] = grp
-            
-            # 3. Personnes (priorité maximale)
-            for pname, psched in sched_persons.items():
-                if isinstance(psched, dict) and psched.get('start') and psched.get('end'):
-                    name_to_sched[_norm(pname)] = psched
-            
-            # Appliquer aux records (avec matching tolérant)
+            # Pour chaque (employé, record) appliquer la priorité
             for emp in emps:
                 norm_key = _norm(emp['name'])
-                sch = name_to_sched.get(norm_key)
-                if not sch: continue
-                new_start = sch.get('start')
-                new_end = sch.get('end')
-                if not new_start or not new_end: continue
-                # Forcer sched_start et sched_end pour TOUS les records de cet employé
+                # Person-level overrides applicables à cet employé
+                pers_sch = None
+                for pname, psched in sched_persons.items():
+                    if _norm(pname) == norm_key and isinstance(psched, dict) and psched.get('start') and psched.get('end'):
+                        pers_sch = psched; break
+                pers_days = sched_person_days.get(emp['name']) or {}
+                # tolérant : essayer de retrouver via _norm
+                if not pers_days:
+                    for pname, pdays in sched_person_days.items():
+                        if _norm(pname) == norm_key:
+                            pers_days = pdays; break
+                # Group-level
+                grp_sch = None
+                grp_days = {}
+                for grp in sched_groups:
+                    if not isinstance(grp, dict): continue
+                    members = grp.get('members') or []
+                    if not members: continue
+                    if any(_norm(m) == norm_key for m in members):
+                        if grp.get('start') and grp.get('end'):
+                            grp_sch = grp
+                        if isinstance(grp.get('days'), dict):
+                            grp_days = grp['days']
+                        break
+                
+                applied_for_this_emp = False
                 for rec in emp['records']:
-                    rec['sched_start'] = new_start
-                    rec['sched_end'] = new_end
-                override_applied_to.append(f"{emp['name']} ({new_start}-{new_end})")
+                    day_name = _day_of(rec.get('date',''))
+                    chosen = None
+                    # Priorité descendante
+                    if day_name and pers_days.get(day_name) and pers_days[day_name].get('start') and pers_days[day_name].get('end'):
+                        chosen = pers_days[day_name]
+                    elif pers_sch:
+                        chosen = pers_sch
+                    elif day_name and grp_days.get(day_name) and grp_days[day_name].get('start') and grp_days[day_name].get('end'):
+                        chosen = grp_days[day_name]
+                    elif grp_sch:
+                        chosen = grp_sch
+                    elif day_name and sched_days.get(day_name) and sched_days[day_name].get('start') and sched_days[day_name].get('end'):
+                        chosen = sched_days[day_name]
+                    elif sched_all and isinstance(sched_all, dict) and sched_all.get('start') and sched_all.get('end'):
+                        chosen = sched_all
+                    
+                    if chosen:
+                        rec['sched_start'] = chosen['start']
+                        rec['sched_end'] = chosen['end']
+                        applied_for_this_emp = True
+                
+                if applied_for_this_emp:
+                    override_applied_to.append(emp['name'])
             
             # Détecter overrides non-matched (saisis mais pas trouvés dans le fichier)
+            existing_norms = {_norm(e['name']) for e in emps}
             for pname in sched_persons.keys():
-                if _norm(pname) not in {_norm(e['name']) for e in emps}:
+                if _norm(pname) not in existing_norms:
+                    override_not_matched.append(pname)
+            for pname in sched_person_days.keys():
+                if _norm(pname) not in existing_norms and pname not in override_not_matched:
                     override_not_matched.append(pname)
         
         # Flash de feedback (visible après génération)
@@ -2986,7 +3022,7 @@ def dpci_generate():
                 schedules_map[name] = s  # Use first found (e.g., Monday schedule)
         
         # v62 NOUVEAU : appliquer schedule_override aux employés
-        # Format: {"all":{start,end,has_pause,pause_start,pause_end}, "groups":[...], "persons":{name:{...}}}
+        # v64 : ajout du support "days" (par jour de semaine) et "person_days" (personne+jour)
         try:
             schedule_override = json.loads(request.form.get('schedule_override_json', '{}'))
             if not isinstance(schedule_override, dict):
@@ -2995,56 +3031,84 @@ def dpci_generate():
             schedule_override = {}
         print(f"[dpci_generate] schedule_override reçu: all={bool(schedule_override.get('all'))}, "
               f"groups={len(schedule_override.get('groups',[]) or [])}, "
-              f"persons={len(schedule_override.get('persons',{}) or {})}", flush=True)
+              f"persons={len(schedule_override.get('persons',{}) or {})}, "
+              f"days={len(schedule_override.get('days',{}) or {})}, "
+              f"person_days={len(schedule_override.get('person_days',{}) or {})}", flush=True)
+        
+        schedules_per_day_map = {}  # v64 : {emp_name: {jour: {start_time, end_time, ...}}}
         
         if schedule_override:
             sched_all = schedule_override.get('all')
             sched_groups = schedule_override.get('groups') or []
             sched_persons = schedule_override.get('persons') or {}
+            sched_days = schedule_override.get('days') or {}
+            sched_person_days = schedule_override.get('person_days') or {}
             
             # Helper : normalisation pour matching tolérant
             def _norm(s): return ''.join((s or '').strip().upper().split())
             
-            # Index name -> override (priorité personne > groupe > tous)
-            name_to_sched = {}
-            
-            # 1. Tous (priorité minimale)
-            if sched_all and isinstance(sched_all, dict) and sched_all.get('start') and sched_all.get('end'):
-                for emp in emps:
-                    name_to_sched[_norm(emp['name'])] = sched_all
-            
-            # 2. Groupes
-            for grp in sched_groups:
-                if not isinstance(grp, dict): continue
-                members = grp.get('members') or []
-                if not members or not grp.get('start') or not grp.get('end'): continue
-                for member_name in members:
-                    name_to_sched[_norm(member_name)] = grp
-            
-            # 3. Personnes (priorité maximale)
-            for pname, psched in sched_persons.items():
-                if isinstance(psched, dict) and psched.get('start') and psched.get('end'):
-                    name_to_sched[_norm(pname)] = psched
-            
-            # Appliquer en modifiant schedules_map (le DPCI utilise schedules_map[name])
+            # Construire schedules_map (override total) ET schedules_per_day_map (par jour) pour chaque employé
             override_count = 0
             for emp in emps:
                 norm_key = _norm(emp['name'])
-                sch = name_to_sched.get(norm_key)
-                if not sch: continue
-                new_start = sch.get('start')
-                new_end = sch.get('end')
-                if not new_start or not new_end: continue
-                # Construire une entrée schedules_map pour cet employé
-                schedules_map[emp['name']] = {
-                    'employee_name': emp['name'],
-                    'start_time': new_start,
-                    'end_time': new_end,
-                    'break_start': sch.get('pause_start', '12:00') if sch.get('has_pause', True) else None,
-                    'break_end': sch.get('pause_end', '13:00') if sch.get('has_pause', True) else None,
-                }
-                override_count += 1
-            print(f"[dpci_generate] Override appliqué à {override_count} employé(s)", flush=True)
+                # Trouver les overrides applicables (priorité : Person > Group > Tous)
+                pers_sch = None
+                pers_days_dict = None
+                for pname, psched in sched_persons.items():
+                    if _norm(pname) == norm_key and isinstance(psched, dict) and psched.get('start') and psched.get('end'):
+                        pers_sch = psched; break
+                for pname, pdays in sched_person_days.items():
+                    if _norm(pname) == norm_key and isinstance(pdays, dict):
+                        pers_days_dict = pdays; break
+                
+                grp_sch = None
+                grp_days_dict = None
+                for grp in sched_groups:
+                    if not isinstance(grp, dict): continue
+                    members = grp.get('members') or []
+                    if any(_norm(m) == norm_key for m in members):
+                        if grp.get('start') and grp.get('end'):
+                            grp_sch = grp
+                        if isinstance(grp.get('days'), dict):
+                            grp_days_dict = grp['days']
+                        break
+                
+                # Le schedule de base le plus prioritaire
+                final_sched = pers_sch or grp_sch or (sched_all if (sched_all and isinstance(sched_all,dict) and sched_all.get('start') and sched_all.get('end')) else None)
+                if final_sched:
+                    schedules_map[emp['name']] = {
+                        'employee_name': emp['name'],
+                        'start_time': final_sched.get('start'),
+                        'end_time': final_sched.get('end'),
+                        'break_start': final_sched.get('pause_start', '12:00') if final_sched.get('has_pause', True) else None,
+                        'break_end': final_sched.get('pause_end', '13:00') if final_sched.get('has_pause', True) else None,
+                    }
+                    override_count += 1
+                
+                # Construire schedules_per_day pour cet employé (priorité : Person+Day > Group+Day > Tous+Day)
+                per_day = {}
+                _DAYS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche']
+                for dn in _DAYS:
+                    chosen_d = None
+                    if pers_days_dict and pers_days_dict.get(dn) and pers_days_dict[dn].get('start') and pers_days_dict[dn].get('end'):
+                        chosen_d = pers_days_dict[dn]
+                    elif grp_days_dict and grp_days_dict.get(dn) and grp_days_dict[dn].get('start') and grp_days_dict[dn].get('end'):
+                        chosen_d = grp_days_dict[dn]
+                    elif sched_days and sched_days.get(dn) and sched_days[dn].get('start') and sched_days[dn].get('end'):
+                        chosen_d = sched_days[dn]
+                    if chosen_d:
+                        per_day[dn] = {
+                            'start_time': chosen_d.get('start'),
+                            'end_time': chosen_d.get('end'),
+                            'break_start': chosen_d.get('pause_start', '12:00') if chosen_d.get('has_pause', True) else None,
+                            'break_end': chosen_d.get('pause_end', '13:00') if chosen_d.get('has_pause', True) else None,
+                        }
+                if per_day:
+                    schedules_per_day_map[emp['name']] = per_day
+                    if not final_sched:
+                        override_count += 1  # compté comme override aussi
+            
+            print(f"[dpci_generate] Override appliqué à {override_count} employé(s) (per_day_map={len(schedules_per_day_map)})", flush=True)
             if override_count > 0:
                 flash(f"🕒 EDT personnalisé appliqué à {override_count} employé(s)", "success")
         
@@ -3059,7 +3123,8 @@ def dpci_generate():
                          schedules_map=schedules_map, employee_costs=employee_costs,
                          default_cost=default_cost, hp=hp, hp_weekend=hp_weekend,
                          provider_name=provider_name, treated_by=treated_by, period_mode=period_mode,
-                         rest_days=request.form.getlist('rest_days'))
+                         rest_days=request.form.getlist('rest_days'),
+                         schedules_per_day_map=schedules_per_day_map)  # v64
         
         if not os.path.exists(output_path):
             flash("Erreur de génération PDF", "error")

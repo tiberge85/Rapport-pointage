@@ -281,6 +281,18 @@
                     </div>
                 </div>
                 
+                <!-- 4. NOUVEAU v64 : Par jour de la semaine -->
+                <div style="background:#fff;padding:12px;border-radius:6px;margin-top:8px;border:2px solid transparent" id="schedDaysBox">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:13px">
+                        <input type="checkbox" id="schedDaysEnable" style="width:18px;height:18px;cursor:pointer">
+                        <span>📅 <strong>EDT par jour spécifique</strong> (lundi 6h, samedi 4h, etc.)</span>
+                    </label>
+                    <div id="schedDaysFields" style="display:none;margin-top:10px;padding:10px;background:#f0f8ff;border-radius:6px">
+                        <div style="font-size:11px;color:#0d47a1;margin-bottom:8px">Cochez les jours à personnaliser. Les jours non cochés gardent l'horaire d'origine (ou de la priorité supérieure : Personne / Groupe / Tous).</div>
+                        <div id="schedDaysList"></div>
+                    </div>
+                </div>
+                
                 <input type="hidden" name="schedule_override_json" id="schedOverrideJson" value="{}">
                 
                 <!-- v59 : Bouton aperçu avant génération -->
@@ -310,12 +322,17 @@
                                         addSchedGroup();
                                     }
                                 }
+                                // v64 : Pour jours : construire la liste des jours
+                                if (checkboxId === 'schedDaysEnable' && cb.checked) {
+                                    if (typeof buildSchedDaysList === 'function') buildSchedDaysList();
+                                }
                             });
                         }
                         // Setup au chargement immédiat (le script est juste après les éléments)
                         setupToggle('schedAllEnable', 'schedAllFields', 'block');
                         setupToggle('schedGroupEnable', 'schedGroupFields', 'block');
                         setupToggle('schedPersonEnable', 'schedPersonList', 'block');
+                        setupToggle('schedDaysEnable', 'schedDaysFields', 'block');  // v64
                         // Pause toggle
                         var pauseCb = document.getElementById('schedAllHasPause');
                         var pauseFields = document.getElementById('schedAllPauseFields');
@@ -837,7 +854,7 @@ function buildSchedPersonList() {
 }
 
 function collectSchedOverride() {
-    var data = {all: null, groups: [], persons: {}};
+    var data = {all: null, groups: [], persons: {}, days: {}};  // v64 : ajout days
     if (document.getElementById('schedAllEnable').checked) {
         data.all = {
             start: document.getElementById('schedAllStart').value,
@@ -875,7 +892,46 @@ function collectSchedOverride() {
             }
         });
     }
+    // v64 : Par jour de la semaine
+    if (document.getElementById('schedDaysEnable').checked) {
+        ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'].forEach(function(dn) {
+            var enable = document.getElementById('schedDay_' + dn + '_enable');
+            if (!enable || !enable.checked) return;
+            var s = document.getElementById('schedDay_' + dn + '_start').value;
+            var e = document.getElementById('schedDay_' + dn + '_end').value;
+            if (s && e) {
+                data.days[dn] = {
+                    start: s, end: e,
+                    has_pause: document.getElementById('schedDay_' + dn + '_haspause').checked,
+                    pause_start: document.getElementById('schedDay_' + dn + '_pstart').value || '12:00',
+                    pause_end: document.getElementById('schedDay_' + dn + '_pend').value || '13:00'
+                };
+            }
+        });
+    }
     document.getElementById('schedOverrideJson').value = JSON.stringify(data);
+}
+
+// v64 : construire la liste des 7 jours de la semaine
+function buildSchedDaysList() {
+    var box = document.getElementById('schedDaysList');
+    if (box.dataset.built === '1') return;  // ne pas reconstruire
+    var days = [['lundi','Lundi'],['mardi','Mardi'],['mercredi','Mercredi'],['jeudi','Jeudi'],['vendredi','Vendredi'],['samedi','Samedi'],['dimanche','Dimanche']];
+    var html = '<div style="display:grid;grid-template-columns:90px 60px 80px 80px 30px 80px 80px;gap:5px;font-size:10px;font-weight:700;color:#0d47a1;margin-bottom:6px"><span>Jour</span><span>Activer</span><span>Début</span><span>Fin</span><span>P</span><span>Pause début</span><span>Pause fin</span></div>';
+    days.forEach(function(d) {
+        var dn = d[0], lbl = d[1];
+        html += '<div style="display:grid;grid-template-columns:90px 60px 80px 80px 30px 80px 80px;gap:5px;align-items:center;margin-bottom:4px;padding:5px;background:#f8faf9;border-radius:5px">';
+        html += '<span style="font-size:11px;font-weight:600">' + lbl + '</span>';
+        html += '<input type="checkbox" id="schedDay_' + dn + '_enable" style="width:18px;height:18px;cursor:pointer">';
+        html += '<input type="time" id="schedDay_' + dn + '_start" value="08:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<input type="time" id="schedDay_' + dn + '_end" value="17:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<label style="font-size:10px;display:flex;align-items:center;gap:2px;cursor:pointer"><input type="checkbox" id="schedDay_' + dn + '_haspause" checked> ☕</label>';
+        html += '<input type="time" id="schedDay_' + dn + '_pstart" value="12:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<input type="time" id="schedDay_' + dn + '_pend" value="13:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '</div>';
+    });
+    box.innerHTML = html;
+    box.dataset.built = '1';
 }
 
 // v59 : Aperçu de la personnalisation avant génération
@@ -910,9 +966,20 @@ function previewSchedOverride() {
         });
     }
     
+    // v64 : days
+    if (data.days && Object.keys(data.days).length > 0) {
+        Object.keys(data.days).forEach(function(dn) {
+            var d = data.days[dn];
+            hasAny = true;
+            html += '📅 <strong>' + dn.charAt(0).toUpperCase() + dn.slice(1) + '</strong> : <code>' + d.start + ' → ' + d.end + '</code>';
+            if (d.has_pause) html += ' (pause ' + d.pause_start + '-' + d.pause_end + ')';
+            html += '<br>';
+        });
+    }
+    
     if (!hasAny) {
         html = '<strong style="color:#c53030">⚠️ Aucune personnalisation détectée.</strong><br>' +
-               '<span style="font-size:11px;color:#666">Cochez une option ci-dessus (🌐 / 👥 / 👤) puis remplissez les champs.</span>';
+               '<span style="font-size:11px;color:#666">Cochez une option ci-dessus (🌐 / 👥 / 👤 / 📅) puis remplissez les champs.</span>';
         box.style.borderLeftColor = '#c53030';
         box.style.background = '#fde8e8';
     } else {

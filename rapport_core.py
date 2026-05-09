@@ -1883,8 +1883,12 @@ def parse_dpci_excel(xlsx_path):
     return list(employees.values()), time_period
 
 
-def calc_dpci_stats(emp, schedule=None, hourly_cost=0, hp=0, hp_weekend=0):
-    """Calcule les stats pour un employé DPCI. hp/hp_weekend en heures."""
+def calc_dpci_stats(emp, schedule=None, hourly_cost=0, hp=0, hp_weekend=0, schedules_per_day=None):
+    """Calcule les stats pour un employé DPCI. hp/hp_weekend en heures.
+    
+    v64 : schedules_per_day = {'lundi': {start_time, end_time, break_start, break_end}, ...}
+    Si fourni, le schedule est choisi en fonction du jour de la semaine du record.
+    """
     records = emp['records']
     total_worked = 0
     total_pause = 0
@@ -1896,15 +1900,16 @@ def calc_dpci_stats(emp, schedule=None, hourly_cost=0, hp=0, hp_weekend=0):
     days_absent = 0
 
     # Default schedule from DB or fallback
-    sched_start = t2m(schedule.get('start_time', '07:00')) if schedule else t2m('07:00')
-    sched_end = t2m(schedule.get('end_time', '17:00')) if schedule else t2m('17:00')
-    sched_break_start = t2m(schedule.get('break_start', '12:00')) if schedule else t2m('12:00')
-    sched_break_end = t2m(schedule.get('break_end', '13:00')) if schedule else t2m('13:00')
+    default_sched_start = t2m(schedule.get('start_time', '07:00')) if schedule else t2m('07:00')
+    default_sched_end = t2m(schedule.get('end_time', '17:00')) if schedule else t2m('17:00')
+    default_sched_break_start = t2m(schedule.get('break_start', '12:00')) if schedule else t2m('12:00')
+    default_sched_break_end = t2m(schedule.get('break_end', '13:00')) if schedule else t2m('13:00')
     
     hm = hp * 60  # heures obligatoires semaine en minutes
     hm_we = hp_weekend * 60
 
     enriched = []
+    _DAY_NAMES = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche']
 
     for rec in records:
         arr = t2m(rec['arrival'])
@@ -1912,14 +1917,29 @@ def calc_dpci_stats(emp, schedule=None, hourly_cost=0, hp=0, hp_weekend=0):
         pe = t2m(rec['pause_end'])
         dep = t2m(rec['departure'])
 
-        # Detect weekend
+        # Detect weekend + day name
         is_weekend = False
+        day_name = None
         try:
             from datetime import datetime as _dt
             d = _dt.strptime(rec['date'][:10], '%Y-%m-%d')
             is_weekend = d.weekday() >= 5
+            day_name = _DAY_NAMES[d.weekday()]
         except:
             pass
+        
+        # v64 : choisir le schedule du jour si disponible
+        if schedules_per_day and day_name and schedules_per_day.get(day_name):
+            day_s = schedules_per_day[day_name]
+            sched_start = t2m(day_s.get('start_time') or day_s.get('start') or '07:00')
+            sched_end = t2m(day_s.get('end_time') or day_s.get('end') or '17:00')
+            sched_break_start = t2m(day_s.get('break_start') or day_s.get('pause_start') or '12:00')
+            sched_break_end = t2m(day_s.get('break_end') or day_s.get('pause_end') or '13:00')
+        else:
+            sched_start = default_sched_start
+            sched_end = default_sched_end
+            sched_break_start = default_sched_break_start
+            sched_break_end = default_sched_break_end
 
         # Determine required hours for this day
         if is_weekend and hp_weekend > 0:
@@ -2008,14 +2028,20 @@ def calc_dpci_stats(emp, schedule=None, hourly_cost=0, hp=0, hp_weekend=0):
     return enriched, stats
 
 
-def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None, employee_costs=None, default_cost=0, hp=0, hp_weekend=0, provider_name='', treated_by='', period_mode='all', rest_days=None):
-    """Génère le rapport PDF DPCI — design identique à la fiche de présence."""
+def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None, employee_costs=None, default_cost=0, hp=0, hp_weekend=0, provider_name='', treated_by='', period_mode='all', rest_days=None, schedules_per_day_map=None):
+    """Génère le rapport PDF DPCI — design identique à la fiche de présence.
+    
+    v64 : schedules_per_day_map = {nom_employé: {jour: {start_time, end_time, ...}}} (par jour)
+    Si fourni, l'EDT est choisi en fonction du jour de la semaine de chaque record.
+    """
     if not schedules_map:
         schedules_map = {}
     if not employee_costs:
         employee_costs = {}
     if rest_days is None:
         rest_days = []
+    if schedules_per_day_map is None:
+        schedules_per_day_map = {}
 
     doc = SimpleDocTemplate(output_path, pagesize=A4,
                             leftMargin=12 * mm, rightMargin=12 * mm, topMargin=10 * mm, bottomMargin=10 * mm)
@@ -2062,7 +2088,8 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
 
             sched = schedules_map.get(emp['name'], None)
             cost = employee_costs.get(emp['name'], default_cost)
-            enriched, stats = calc_dpci_stats(emp, schedule=sched, hourly_cost=cost, hp=hp, hp_weekend=hp_weekend)
+            sched_per_day = schedules_per_day_map.get(emp['name'])  # v64
+            enriched, stats = calc_dpci_stats(emp, schedule=sched, hourly_cost=cost, hp=hp, hp_weekend=hp_weekend, schedules_per_day=sched_per_day)
 
             # BARRE EN-TETE
             prov = provider_name or 'RAMYA TECHNOLOGIE & INNOVATION'

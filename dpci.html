@@ -145,6 +145,18 @@
             </div>
         </div>
         
+        <!-- 4. NOUVEAU v64 : Par jour de la semaine -->
+        <div style="background:#fff;padding:12px;border-radius:6px;margin-top:8px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:13px">
+                <input type="checkbox" id="dpciSchedDaysEnable" style="width:18px;height:18px;cursor:pointer">
+                <span>📅 <strong>EDT par jour spécifique</strong> (lundi 6h, samedi 4h, etc.)</span>
+            </label>
+            <div id="dpciSchedDaysFields" style="display:none;margin-top:10px;padding:10px;background:#f0f8ff;border-radius:6px">
+                <div style="font-size:11px;color:#0d47a1;margin-bottom:8px">Cochez les jours à personnaliser. Les jours non cochés gardent l'horaire d'origine (ou de la priorité supérieure : Personne / Groupe / Tous).</div>
+                <div id="dpciSchedDaysList"></div>
+            </div>
+        </div>
+        
         <input type="hidden" name="schedule_override_json" id="dpciSchedOverrideJson" value="{}">
         
         <div style="margin-top:14px;text-align:center">
@@ -171,6 +183,9 @@
                 });
                 setupToggle('dpciSchedPersonEnable', 'dpciSchedPersonList', 'block', function() {
                     dpciBuildSchedPersonList();
+                });
+                setupToggle('dpciSchedDaysEnable', 'dpciSchedDaysFields', 'block', function() {  // v64
+                    dpciBuildSchedDaysList();
                 });
                 var pauseCb = document.getElementById('dpciSchedAllHasPause');
                 var pauseFields = document.getElementById('dpciSchedAllPauseFields');
@@ -352,7 +367,7 @@ function dpciRenderSchedGroups() {
 }
 
 function dpciCollectSchedOverride() {
-    var data = {all: null, groups: [], persons: {}};
+    var data = {all: null, groups: [], persons: {}, days: {}};  // v64
     if (document.getElementById('dpciSchedAllEnable').checked) {
         data.all = {
             start: document.getElementById('dpciSchedAllStart').value,
@@ -387,7 +402,46 @@ function dpciCollectSchedOverride() {
             }
         });
     }
+    // v64 : Par jour de la semaine
+    if (document.getElementById('dpciSchedDaysEnable').checked) {
+        ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'].forEach(function(dn) {
+            var enable = document.getElementById('dpciSchedDay_' + dn + '_enable');
+            if (!enable || !enable.checked) return;
+            var s = document.getElementById('dpciSchedDay_' + dn + '_start').value;
+            var e = document.getElementById('dpciSchedDay_' + dn + '_end').value;
+            if (s && e) {
+                data.days[dn] = {
+                    start: s, end: e,
+                    has_pause: document.getElementById('dpciSchedDay_' + dn + '_haspause').checked,
+                    pause_start: document.getElementById('dpciSchedDay_' + dn + '_pstart').value || '12:00',
+                    pause_end: document.getElementById('dpciSchedDay_' + dn + '_pend').value || '13:00'
+                };
+            }
+        });
+    }
     document.getElementById('dpciSchedOverrideJson').value = JSON.stringify(data);
+}
+
+// v64 : construire la liste des 7 jours (DPCI)
+function dpciBuildSchedDaysList() {
+    var box = document.getElementById('dpciSchedDaysList');
+    if (box.dataset.built === '1') return;
+    var days = [['lundi','Lundi'],['mardi','Mardi'],['mercredi','Mercredi'],['jeudi','Jeudi'],['vendredi','Vendredi'],['samedi','Samedi'],['dimanche','Dimanche']];
+    var html = '<div style="display:grid;grid-template-columns:90px 60px 80px 80px 30px 80px 80px;gap:5px;font-size:10px;font-weight:700;color:#0d47a1;margin-bottom:6px"><span>Jour</span><span>Activer</span><span>Début</span><span>Fin</span><span>P</span><span>Pause début</span><span>Pause fin</span></div>';
+    days.forEach(function(d) {
+        var dn = d[0], lbl = d[1];
+        html += '<div style="display:grid;grid-template-columns:90px 60px 80px 80px 30px 80px 80px;gap:5px;align-items:center;margin-bottom:4px;padding:5px;background:#f8faf9;border-radius:5px">';
+        html += '<span style="font-size:11px;font-weight:600">' + lbl + '</span>';
+        html += '<input type="checkbox" id="dpciSchedDay_' + dn + '_enable" style="width:18px;height:18px;cursor:pointer">';
+        html += '<input type="time" id="dpciSchedDay_' + dn + '_start" value="08:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<input type="time" id="dpciSchedDay_' + dn + '_end" value="17:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<label style="font-size:10px;display:flex;align-items:center;gap:2px;cursor:pointer"><input type="checkbox" id="dpciSchedDay_' + dn + '_haspause" checked> ☕</label>';
+        html += '<input type="time" id="dpciSchedDay_' + dn + '_pstart" value="12:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<input type="time" id="dpciSchedDay_' + dn + '_pend" value="13:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '</div>';
+    });
+    box.innerHTML = html;
+    box.dataset.built = '1';
 }
 
 function dpciPreviewSchedOverride() {
@@ -415,6 +469,16 @@ function dpciPreviewSchedOverride() {
             var p = data.persons[name];
             hasAny = true;
             html += '👤 <strong>' + name + '</strong> : <code>' + p.start + ' → ' + p.end + '</code><br>';
+        });
+    }
+    // v64 : days
+    if (data.days && Object.keys(data.days).length > 0) {
+        Object.keys(data.days).forEach(function(dn) {
+            var d = data.days[dn];
+            hasAny = true;
+            html += '📅 <strong>' + dn.charAt(0).toUpperCase() + dn.slice(1) + '</strong> : <code>' + d.start + ' → ' + d.end + '</code>';
+            if (d.has_pause) html += ' (pause ' + d.pause_start + '-' + d.pause_end + ')';
+            html += '<br>';
         });
     }
     if (!hasAny) {
