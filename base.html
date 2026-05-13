@@ -223,6 +223,7 @@
                 <div class="nav-section-items">
                     <a href="/traitement" class="{% if page == 'traitement' %}active{% endif %}">Calcul d'heures</a>
                     <a href="/dpci" class="{% if page == 'dpci' %}active{% endif %}">🏢 Calcul d'heures DPCI</a>
+                    <a href="/pharma" class="{% if page == 'pharma' %}active{% endif %}">💊 Calcul d'heures Pharmacie</a>
                     <a href="/emploi-du-temps" class="{% if page == 'schedule' %}active{% endif %}">📅 Emploi du temps</a>
                     <a href="/alertes" class="{% if page == 'alertes' %}active{% endif %}">Alertes assiduité</a>
                     <a href="/comparaison" class="{% if page == 'comparaison' %}active{% endif %}">Comparaison</a>
@@ -479,20 +480,6 @@
                     <a href="/mg/receptions" class="{% if page == 'mg_receptions' %}active{% endif %}">📦 Réceptions</a>
                     <a href="/mg/paiements" class="{% if page == 'mg_paiements' %}active{% endif %}">💵 Paiements fournisseurs</a>
                     <a href="/mg/equipements" class="{% if page == 'mg_equipements' %}active{% endif %}">🖥️ Équipements</a>
-                </div>
-            </div>
-            {% endif %}
-            
-            {% if 'pharma_view' in permissions or 'admin' in permissions %}
-            <!-- Pharmacie (v66+) -->
-            <div class="nav-section" id="sec-pharma">
-                <div class="nav-section-title" onclick="toggleSection('sec-pharma')">💊 PHARMACIE <span class="arrow">▼</span></div>
-                <div class="nav-section-items">
-                    <a href="/pharma" class="{% if page == 'pharma' %}active{% endif %}">📊 Tableau de bord</a>
-                    <a href="/pharma/gardes" class="{% if page == 'pharma' and request.path.startswith('/pharma/gardes') %}active{% endif %}">🗓️ Planning des gardes</a>
-                    <a href="/pharma/pharmaciens" class="{% if request.path.startswith('/pharma/pharmaciens') %}active{% endif %}">👨‍⚕️ Pharmaciens</a>
-                    <a href="/pharma/types-service" class="{% if request.path.startswith('/pharma/types-service') %}active{% endif %}">⚙️ Types de service</a>
-                    <a href="/pharma/jours-feries" class="{% if request.path.startswith('/pharma/jours-feries') %}active{% endif %}">📅 Jours fériés</a>
                 </div>
             </div>
             {% endif %}

@@ -3953,7 +3953,7 @@ def bilan_pdf():
     
     output = os.path.join(app.config['UPLOAD_FOLDER'], f'bilan_{exercice}.pdf')
     os.makedirs(os.path.dirname(output), exist_ok=True)
-    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=10*mm, bottomMargin=10*mm)
+    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=8*mm, bottomMargin=8*mm)
     
     BG = HexColor('#44546A'); BL = HexColor('#4472C4'); GR = HexColor('#2e7d32'); RD = HexColor('#c53030')
     hw = ParagraphStyle('hw', fontName='Helvetica-Bold', fontSize=8, textColor=white, alignment=TA_CENTER)
@@ -4184,7 +4184,7 @@ def rapport_caisse_pdf(rid):
     
     output = os.path.join(app.config['UPLOAD_FOLDER'], f'rapport_caisse_{rid}.pdf')
     os.makedirs(os.path.dirname(output), exist_ok=True)
-    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=10*mm, bottomMargin=10*mm)
+    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=8*mm, bottomMargin=8*mm)
     
     BG = HexColor('#44546A'); BL = HexColor('#4472C4'); WH = white; BK = HexColor('#222')
     hw = ParagraphStyle('hw', fontName='Helvetica-Bold', fontSize=8, textColor=WH, alignment=TA_CENTER)
@@ -5262,7 +5262,7 @@ def _generate_bulletin_pdf(pid):
     
     output = os.path.join(app.config['UPLOAD_FOLDER'], f'bulletin_{p["period"]}_{p["employee_name"].replace(" ","_")}.pdf')
     os.makedirs(os.path.dirname(output), exist_ok=True)
-    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=10*mm, bottomMargin=10*mm)
+    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=8*mm, bottomMargin=8*mm)
     
     VERT = HexColor('#1A7A6D'); VERT_F = HexColor('#0D6B5E')
     ORANGE = HexColor('#e8672a'); ORANGE_L = HexColor('#fff3e0')
@@ -11085,8 +11085,8 @@ def admin_pointage_rapport_pdf(user_id, month):
         
         buf = io.BytesIO()
         # v56 : retour en portrait
-        doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=10*mm, rightMargin=10*mm,
-                                topMargin=10*mm, bottomMargin=10*mm)
+        doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=8*mm, rightMargin=8*mm,
+                                topMargin=8*mm, bottomMargin=8*mm)
         story = []
         
         # Page individuelle (même format que rapport heures)
@@ -11192,6 +11192,9 @@ def admin_pointage_rapport_entreprise(month):
                     dd = by_day[d]
                     arrival = dd['arrivee']['time'] if dd['arrivee'] else ''
                     departure = dd['depart']['time'] if dd['depart'] else ''
+                    # v67 NOUVEAU : capturer pause début et pause fin
+                    pause_start = dd['pause']['time'] if dd['pause'] else ''
+                    pause_end = dd['retour']['time'] if dd['retour'] else ''
                     dur = ''
                     try:
                         if dd['arrivee'] and dd['depart']:
@@ -11209,6 +11212,7 @@ def admin_pointage_rapport_entreprise(month):
                     records.append({
                         'date': d, 'sched_start': sched_start, 'sched_end': sched_end,
                         'arrival': arrival, 'departure': departure, 'duration': dur,
+                        'pause_start': pause_start, 'pause_end': pause_end,  # v67
                     })
             else:
                 # === Mode SESSION : collecter les sessions individuelles pour rapport dédié ===
@@ -11295,7 +11299,8 @@ def admin_pointage_rapport_entreprise(month):
                     ds = cur.strftime('%Y-%m-%d')
                     if ds not in existing and cur.weekday() < 5:
                         records.append({'date': ds, 'sched_start': sched_start, 'sched_end': sched_end,
-                                       'arrival': '', 'departure': '', 'duration': ''})
+                                       'arrival': '', 'departure': '', 'duration': '',
+                                       'pause_start': '', 'pause_end': ''})
                     cur += _td(days=1)
                 records.sort(key=lambda r: r['date'])
             except: pass
@@ -11346,6 +11351,9 @@ def admin_pointage_rapport_entreprise(month):
                 dd = by_day[d]
                 arrival = dd['arrivee']['time'] if dd['arrivee'] else ''
                 departure = dd['depart']['time'] if dd['depart'] else ''
+                # v67 : capturer pause début et fin pour le PDF
+                pause_start = dd['pause']['time'] if dd['pause'] else ''
+                pause_end = dd['retour']['time'] if dd['retour'] else ''
                 dur = ''
                 try:
                     if dd['arrivee'] and dd['depart']:
@@ -11363,6 +11371,7 @@ def admin_pointage_rapport_entreprise(month):
                 records.append({
                     'date': d, 'sched_start': sched_start, 'sched_end': sched_end,
                     'arrival': arrival, 'departure': departure, 'duration': dur,
+                    'pause_start': pause_start, 'pause_end': pause_end,
                 })
             
             # Compléter avec jours sans pointage
@@ -11381,6 +11390,7 @@ def admin_pointage_rapport_entreprise(month):
                         records.append({
                             'date': ds, 'sched_start': sched_start, 'sched_end': sched_end,
                             'arrival': '', 'departure': '', 'duration': '',
+                            'pause_start': '', 'pause_end': '',
                         })
                     cur += _td(days=1)
                 records.sort(key=lambda r: r['date'])
@@ -11474,8 +11484,8 @@ def admin_pointage_rapport_entreprise(month):
         
         buf = io.BytesIO()
         # v56 : retour en portrait
-        doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=10*mm, rightMargin=10*mm,
-                                topMargin=10*mm, bottomMargin=10*mm)
+        doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=8*mm, rightMargin=8*mm,
+                                topMargin=8*mm, bottomMargin=8*mm)
         story = []
         
         # Section 1 : Rapports individuels (un par employé en mode CONTINU)
@@ -15698,246 +15708,215 @@ def mg_fournisseur_details(fid):
 
 
 # ============================================================
-# PHARMACIE - Routes (v66+)
-# Planning de gardes, calculs horaires complexes
-# Voir migrate_v71 pour les tables associées
+# PHARMACIE - Calcul d'heures via upload Excel (refonte v68)
+# Pattern identique à /dpci : page → preview → generate PDF
 # ============================================================
 
 @app.route('/pharma')
-@permission_required_any('pharma_view', 'admin')
-def pharma_dashboard():
-    """Tableau de bord du module Pharmacie."""
-    from models import (pharma_get_dashboard_stats, pharma_list_gardes,
-                        pharma_list_pharmaciens, pharma_list_types_service)
-    from datetime import datetime, timedelta
-    
-    # Période : mois en cours par défaut
-    today = datetime.now()
-    first_day = today.replace(day=1)
-    if today.month == 12:
-        last_day = today.replace(year=today.year+1, month=1, day=1) - timedelta(days=1)
-    else:
-        last_day = today.replace(month=today.month+1, day=1) - timedelta(days=1)
-    
-    stats = pharma_get_dashboard_stats(
-        first_day.strftime('%Y-%m-%d'),
-        last_day.strftime('%Y-%m-%d'))
-    
-    # Gardes des 7 prochains jours
-    next_week = (today + timedelta(days=7)).strftime('%Y-%m-%d')
-    upcoming = pharma_list_gardes(
-        date_debut=today.strftime('%Y-%m-%d'),
-        date_fin=next_week)
-    
+@permission_required('traitement')
+def pharma_page():
+    """Page d'accueil Pharmacie — formulaire d'upload Excel."""
+    from models import pharma_list_types_service, pharma_list_jours_feries
     types_service = pharma_list_types_service()
-    pharmaciens_count = stats.get('nb_pharmaciens', 0)
-    
-    return render_template('pharma_dashboard.html', page='pharma',
-                          stats=stats, upcoming=upcoming[:10],
+    feries_2026 = pharma_list_jours_feries(year=2026)
+    return render_template('pharma_form.html', page='pharma',
                           types_service=types_service,
-                          pharmaciens_count=pharmaciens_count,
-                          today=today.strftime('%Y-%m-%d'),
-                          mois_label=today.strftime('%B %Y'))
+                          feries=feries_2026)
 
 
-@app.route('/pharma/pharmaciens')
-@permission_required_any('pharma_view', 'admin')
-def pharma_pharmaciens_list():
-    """Liste des pharmaciens."""
-    from models import pharma_list_pharmaciens
-    pharmaciens = pharma_list_pharmaciens(actifs_uniquement=False)
-    return render_template('pharma_pharmaciens.html', page='pharma',
-                          pharmaciens=pharmaciens)
-
-
-@app.route('/pharma/pharmaciens/add', methods=['POST'])
-@permission_required_any('pharma_edit', 'admin')
-def pharma_pharmacien_add():
-    """Crée un nouveau pharmacien."""
-    from models import pharma_create_pharmacien
-    try:
-        data = {
-            'nom': (request.form.get('nom') or '').strip(),
-            'prenom': (request.form.get('prenom') or '').strip(),
-            'matricule': (request.form.get('matricule') or '').strip() or None,
-            'numero_ordre': (request.form.get('numero_ordre') or '').strip() or None,
-            'tel': (request.form.get('tel') or '').strip() or None,
-            'email': (request.form.get('email') or '').strip() or None,
-            'poste': (request.form.get('poste') or 'pharmacien').strip(),
-            'taux_horaire_base': float(request.form.get('taux_horaire_base') or 0),
-            'heures_contractuelles': int(request.form.get('heures_contractuelles') or 173),
-            'date_embauche': (request.form.get('date_embauche') or '').strip() or None,
-            'notes': (request.form.get('notes') or '').strip() or None,
-            'created_by': session.get('user_id'),
-        }
-        if not data['nom'] or not data['prenom']:
-            flash("Nom et prénom requis.", "error")
-            return redirect('/pharma/pharmaciens')
-        pharma_create_pharmacien(**data)
-        flash(f"✅ Pharmacien {data['prenom']} {data['nom']} ajouté", "success")
-    except Exception as e:
-        flash(f"❌ Erreur : {e}", "error")
-    return redirect('/pharma/pharmaciens')
-
-
-@app.route('/pharma/pharmaciens/<int:pid>/toggle', methods=['POST', 'GET'])
-@permission_required_any('pharma_edit', 'admin')
-def pharma_pharmacien_toggle(pid):
-    """Active/désactive un pharmacien."""
-    from models import pharma_get_pharmacien, pharma_update_pharmacien
-    p = pharma_get_pharmacien(pid)
-    if not p:
-        flash("Pharmacien introuvable", "error")
-        return redirect('/pharma/pharmaciens')
-    new_state = 0 if p.get('est_actif') else 1
-    pharma_update_pharmacien(pid, est_actif=new_state)
-    flash(f"{'✅ Activé' if new_state else '🚫 Désactivé'} : {p['prenom']} {p['nom']}", "success")
-    return redirect('/pharma/pharmaciens')
-
-
-@app.route('/pharma/gardes')
-@permission_required_any('pharma_view', 'admin')
-def pharma_gardes_list():
-    """Planning des gardes — vue tableau avec filtres."""
-    from models import pharma_list_gardes, pharma_list_pharmaciens, pharma_list_types_service
-    from datetime import datetime, timedelta
+@app.route('/pharma/preview', methods=['POST'])
+@login_required
+def pharma_preview():
+    """Lecture du fichier Excel pharmacie et retour JSON avec les pharmaciens détectés."""
+    if 'excel_file' not in request.files:
+        return jsonify({"error": "Fichier requis"}), 400
+    f = request.files['excel_file']
+    if not f.filename:
+        return jsonify({"error": "Fichier vide"}), 400
     
-    # Filtres
-    today = datetime.now()
-    date_debut = request.args.get('date_debut') or today.replace(day=1).strftime('%Y-%m-%d')
-    # Fin = défaut fin de mois
+    import tempfile
+    tmp = os.path.join(tempfile.gettempdir(), f'pharma_{uuid.uuid4().hex[:8]}.xlsx')
+    f.save(tmp)
     try:
-        d_debut = datetime.strptime(date_debut, '%Y-%m-%d')
-        if d_debut.month == 12:
-            fin_default = d_debut.replace(year=d_debut.year+1, month=1, day=1) - timedelta(days=1)
-        else:
-            fin_default = d_debut.replace(month=d_debut.month+1, day=1) - timedelta(days=1)
+        from rapport_core import parse_pharma_excel
+        emps, period = parse_pharma_excel(tmp)
+        
+        return jsonify({
+            "count": len(emps),
+            "period": period,
+            "employees": [{
+                "name": e['name'],
+                "nb_gardes": len(e['gardes']),
+                "types_uniques": list(set(g.get('type','') for g in e['gardes']))
+            } for e in emps]
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if os.path.exists(tmp): os.remove(tmp)
+
+
+@app.route('/pharma/generate', methods=['POST'])
+@permission_required('traitement')
+def pharma_generate():
+    """Génère le PDF rapport Pharmacie à partir d'un fichier Excel."""
+    if 'excel_file' not in request.files:
+        flash("Fichier requis", "error")
+        return redirect('/pharma')
+    f = request.files['excel_file']
+    if not f.filename:
+        flash("Fichier vide", "error")
+        return redirect('/pharma')
+    
+    # Paramètres
+    pharmacy_name = (request.form.get('pharmacy_name') or 'PHARMACIE').strip()
+    period_label = (request.form.get('period_label') or '').strip()
+    default_hourly_rate = float(request.form.get('default_hourly_rate', '0') or 0)
+    
+    # Coûts par pharmacien (optionnel, JSON)
+    employee_rates = {}
+    try:
+        rates_json = request.form.get('rates_json', '{}')
+        rates_data = json.loads(rates_json) if rates_json else {}
+        if isinstance(rates_data, dict):
+            employee_rates = {k: float(v) for k, v in rates_data.items() if v}
     except:
-        fin_default = today
-    date_fin = request.args.get('date_fin') or fin_default.strftime('%Y-%m-%d')
-    pharmacien_id_filter = request.args.get('pharmacien_id') or ''
-    statut_filter = request.args.get('statut') or ''
+        pass
     
-    gardes = pharma_list_gardes(
-        date_debut=date_debut, date_fin=date_fin,
-        pharmacien_id=int(pharmacien_id_filter) if pharmacien_id_filter.isdigit() else None,
-        statut=statut_filter or None)
+    import tempfile
+    tmp_in = os.path.join(tempfile.gettempdir(), f'pharma_in_{uuid.uuid4().hex[:8]}.xlsx')
+    tmp_out = os.path.join(tempfile.gettempdir(), f'pharma_out_{uuid.uuid4().hex[:8]}.pdf')
+    f.save(tmp_in)
     
-    # Pour les filtres
-    pharmaciens = pharma_list_pharmaciens(actifs_uniquement=True)
-    types_service = pharma_list_types_service()
-    
-    return render_template('pharma_gardes.html', page='pharma',
-                          gardes=gardes, pharmaciens=pharmaciens, types_service=types_service,
-                          date_debut=date_debut, date_fin=date_fin,
-                          pharmacien_id_filter=pharmacien_id_filter,
-                          statut_filter=statut_filter)
-
-
-@app.route('/pharma/gardes/add', methods=['POST'])
-@permission_required_any('pharma_edit', 'admin')
-def pharma_garde_add():
-    """Crée une garde planifiée."""
-    from models import pharma_create_garde
     try:
-        pharmacien_id = int(request.form.get('pharmacien_id') or 0)
-        type_service_id = int(request.form.get('type_service_id') or 0)
-        date = (request.form.get('date') or '').strip()
-        heure_debut = (request.form.get('heure_debut') or '').strip()
-        heure_fin = (request.form.get('heure_fin') or '').strip()
-        notes = (request.form.get('notes') or '').strip() or None
+        from rapport_core import parse_pharma_excel, generate_pharma_pdf
+        from models import pharma_list_types_service, pharma_list_jours_feries
         
-        if not pharmacien_id or not type_service_id or not date or not heure_debut or not heure_fin:
-            flash("Tous les champs sont requis", "error")
-            return redirect('/pharma/gardes')
+        emps, period = parse_pharma_excel(tmp_in)
+        if not emps:
+            flash("Aucun pharmacien trouvé dans le fichier", "error")
+            return redirect('/pharma')
         
-        pharma_create_garde(pharmacien_id, type_service_id, date, heure_debut, heure_fin,
-                             notes=notes, created_by=session.get('user_id'))
-        flash("✅ Garde planifiée ajoutée", "success")
+        # Charger les paramètres
+        types_service = pharma_list_types_service()
+        # Indexer par code et libellé pour matching tolérant
+        types_by_key = {}
+        for t in types_service:
+            types_by_key[(t['code'] or '').lower()] = t
+            types_by_key[(t['libelle'] or '').lower()] = t
+        
+        # Liste des dates fériées (toutes années)
+        feries_set = set(f['date'] for f in pharma_list_jours_feries(year=None))
+        
+        # Logo
+        logo_path = os.path.join(BASE_DIR, 'logo_ramya.png')
+        if not os.path.exists(logo_path):
+            logo_path = None
+        
+        generate_pharma_pdf(
+            emps, tmp_out,
+            pharmacy_name=pharmacy_name,
+            period=period_label or period,
+            types_by_key=types_by_key,
+            feries_set=feries_set,
+            default_hourly_rate=default_hourly_rate,
+            employee_rates=employee_rates,
+            logo_path=logo_path,
+        )
+        
+        if not os.path.exists(tmp_out):
+            flash("Erreur génération PDF", "error")
+            return redirect('/pharma')
+        
+        # Send file
+        with open(tmp_out, 'rb') as fp:
+            pdf_data = fp.read()
+        
+        fname = f"Rapport_Pharmacie_{period_label or 'mois'}.pdf".replace(' ', '_')
+        from flask import Response
+        resp = Response(pdf_data, mimetype='application/pdf',
+                       headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+        return resp
+    
     except Exception as e:
-        flash(f"❌ Erreur : {e}", "error")
-    return redirect(request.referrer or '/pharma/gardes')
-
-
-@app.route('/pharma/gardes/<int:gid>/delete', methods=['POST', 'GET'])
-@permission_required_any('pharma_edit', 'admin')
-def pharma_garde_delete(gid):
-    """Supprime une garde."""
-    from models import pharma_delete_garde
-    pharma_delete_garde(gid)
-    flash("🗑️ Garde supprimée", "success")
-    return redirect(request.referrer or '/pharma/gardes')
-
-
-@app.route('/pharma/gardes/<int:gid>/statut/<statut>', methods=['POST', 'GET'])
-@permission_required_any('pharma_edit', 'admin')
-def pharma_garde_statut(gid, statut):
-    """Change le statut d'une garde (planifie / effectue / annule / absence)."""
-    from models import pharma_update_garde
-    if statut not in ('planifie', 'effectue', 'annule', 'absence'):
-        flash("Statut invalide", "error")
-        return redirect('/pharma/gardes')
-    pharma_update_garde(gid, statut=statut)
-    flash(f"✅ Statut → {statut}", "success")
-    return redirect(request.referrer or '/pharma/gardes')
-
-
-@app.route('/pharma/types-service')
-@permission_required_any('pharma_view', 'admin')
-def pharma_types_service_list():
-    """Liste/édite les types de service."""
-    from models import pharma_list_types_service
-    types_service = pharma_list_types_service()
-    return render_template('pharma_types_service.html', page='pharma',
-                          types_service=types_service)
-
-
-@app.route('/pharma/jours-feries')
-@permission_required_any('pharma_view', 'admin')
-def pharma_jours_feries_list():
-    """Liste des jours fériés."""
-    from models import pharma_list_jours_feries
-    year = request.args.get('year', '2026')
-    feries = pharma_list_jours_feries(year=year)
-    return render_template('pharma_jours_feries.html', page='pharma',
-                          feries=feries, year=year)
-
-
-@app.route('/pharma/jours-feries/add', methods=['POST'])
-@permission_required_any('pharma_admin', 'admin')
-def pharma_jour_ferie_add():
-    """Ajoute un jour férié."""
-    date = (request.form.get('date') or '').strip()
-    libelle = (request.form.get('libelle') or '').strip()
-    recurrent = 1 if request.form.get('recurrent') else 0
-    if not date or not libelle:
-        flash("Date et libellé requis", "error")
-        return redirect('/pharma/jours-feries')
-    conn = _gdb()
-    try:
-        conn.execute("INSERT OR REPLACE INTO pharma_jours_feries (date, libelle, recurrent, actif) VALUES (?,?,?,1)",
-                     (date, libelle, recurrent))
-        conn.commit()
-        flash(f"✅ Jour férié ajouté : {date} - {libelle}", "success")
-    except Exception as e:
-        flash(f"❌ Erreur : {e}", "error")
+        import traceback
+        traceback.print_exc()
+        flash(f"Erreur : {e}", "error")
+        return redirect('/pharma')
     finally:
-        conn.close()
-    return redirect('/pharma/jours-feries')
+        for p in (tmp_in, tmp_out):
+            try:
+                if os.path.exists(p): os.remove(p)
+            except: pass
 
 
-@app.route('/pharma/jours-feries/<int:fid>/delete', methods=['POST', 'GET'])
-@permission_required_any('pharma_admin', 'admin')
-def pharma_jour_ferie_delete(fid):
-    """Supprime un jour férié."""
-    conn = _gdb()
-    try:
-        conn.execute("DELETE FROM pharma_jours_feries WHERE id=?", (fid,))
-        conn.commit()
-        flash("🗑️ Jour férié supprimé", "success")
-    finally:
-        conn.close()
-    return redirect('/pharma/jours-feries')
+@app.route('/pharma/template')
+@login_required
+def pharma_template():
+    """Génère un modèle Excel vierge pour le rapport Pharmacie."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    import io
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Gardes Pharmacie"
+    
+    # En-têtes
+    headers = ['Nom complet', 'Date (YYYY-MM-DD)', 'Type de service',
+               'Heure début (HH:MM)', 'Heure fin (HH:MM)', 'Pause (min)', 'Notes']
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = Font(bold=True, color='FFFFFF', size=10)
+        cell.fill = PatternFill(start_color='1A7A6D', end_color='1A7A6D', fill_type='solid')
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        ws.column_dimensions[chr(64+col)].width = 18
+    ws.row_dimensions[1].height = 30
+    
+    # Exemples
+    examples = [
+        ['Marie DUPONT', '2026-05-01', 'Garde Nuit', '20:00', '08:00', 60, 'Garde de nuit'],
+        ['Marie DUPONT', '2026-05-02', 'Service Normal', '08:00', '17:00', 60, ''],
+        ['Jean MARTIN', '2026-05-01', 'Garde Week-end', '08:00', '20:00', 60, 'Samedi'],
+        ['Jean MARTIN', '2026-05-02', 'Garde Week-end', '08:00', '20:00', 60, 'Dimanche'],
+        ['Marie DUPONT', '2026-05-07', 'Jour Férié', '08:00', '20:00', 60, 'Fête Nationale'],
+    ]
+    for r, row in enumerate(examples, 2):
+        for c, val in enumerate(row, 1):
+            ws.cell(row=r, column=c, value=val)
+    
+    # Feuille d'aide
+    ws2 = wb.create_sheet("Types de service")
+    ws2['A1'] = 'Code'
+    ws2['B1'] = 'Libellé à utiliser'
+    ws2['C1'] = 'Description'
+    for c in ['A1','B1','C1']:
+        ws2[c].font = Font(bold=True, color='FFFFFF')
+        ws2[c].fill = PatternFill(start_color='1A7A6D', end_color='1A7A6D', fill_type='solid')
+    types = [
+        ('normal', 'Service Normal', 'Pas de majoration'),
+        ('garde_nuit', 'Garde Nuit', '+50% + prime 5000 F'),
+        ('garde_we', 'Garde Week-end', '+75% + prime 10000 F'),
+        ('ferie', 'Jour Férié', '+100% + prime 15000 F'),
+        ('astreinte', 'Astreinte', '+25% + prime 3000 F'),
+    ]
+    for r, (code, lib, desc) in enumerate(types, 2):
+        ws2.cell(row=r, column=1, value=code)
+        ws2.cell(row=r, column=2, value=lib)
+        ws2.cell(row=r, column=3, value=desc)
+    ws2.column_dimensions['A'].width = 15
+    ws2.column_dimensions['B'].width = 20
+    ws2.column_dimensions['C'].width = 35
+    
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    from flask import Response
+    return Response(buf.getvalue(),
+                   mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                   headers={'Content-Disposition': 'attachment; filename="modele_pharmacie.xlsx"'})
 
 
 # ============================================================
@@ -16455,7 +16434,7 @@ def compta_pro_balance_pdf():
         
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=10*mm, rightMargin=10*mm,
-                                topMargin=10*mm, bottomMargin=10*mm)
+                                topMargin=8*mm, bottomMargin=8*mm)
         story = []
         TEAL = HexColor('#1A7A6D')
         
