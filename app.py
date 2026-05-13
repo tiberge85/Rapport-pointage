@@ -375,6 +375,8 @@ from models import migrate_v69
 migrate_v69()
 from models import migrate_v70
 migrate_v70()
+from models import migrate_v71
+migrate_v71()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -15693,6 +15695,249 @@ def mg_fournisseur_details(fid):
     return render_template('mg_fournisseur_details.html',
                           fournisseur=f_data,
                           commandes=commandes, paiements=paiements)
+
+
+# ============================================================
+# PHARMACIE - Routes (v66+)
+# Planning de gardes, calculs horaires complexes
+# Voir migrate_v71 pour les tables associées
+# ============================================================
+
+@app.route('/pharma')
+@permission_required_any('pharma_view', 'admin')
+def pharma_dashboard():
+    """Tableau de bord du module Pharmacie."""
+    from models import (pharma_get_dashboard_stats, pharma_list_gardes,
+                        pharma_list_pharmaciens, pharma_list_types_service)
+    from datetime import datetime, timedelta
+    
+    # Période : mois en cours par défaut
+    today = datetime.now()
+    first_day = today.replace(day=1)
+    if today.month == 12:
+        last_day = today.replace(year=today.year+1, month=1, day=1) - timedelta(days=1)
+    else:
+        last_day = today.replace(month=today.month+1, day=1) - timedelta(days=1)
+    
+    stats = pharma_get_dashboard_stats(
+        first_day.strftime('%Y-%m-%d'),
+        last_day.strftime('%Y-%m-%d'))
+    
+    # Gardes des 7 prochains jours
+    next_week = (today + timedelta(days=7)).strftime('%Y-%m-%d')
+    upcoming = pharma_list_gardes(
+        date_debut=today.strftime('%Y-%m-%d'),
+        date_fin=next_week)
+    
+    types_service = pharma_list_types_service()
+    pharmaciens_count = stats.get('nb_pharmaciens', 0)
+    
+    return render_template('pharma_dashboard.html', page='pharma',
+                          stats=stats, upcoming=upcoming[:10],
+                          types_service=types_service,
+                          pharmaciens_count=pharmaciens_count,
+                          today=today.strftime('%Y-%m-%d'),
+                          mois_label=today.strftime('%B %Y'))
+
+
+@app.route('/pharma/pharmaciens')
+@permission_required_any('pharma_view', 'admin')
+def pharma_pharmaciens_list():
+    """Liste des pharmaciens."""
+    from models import pharma_list_pharmaciens
+    pharmaciens = pharma_list_pharmaciens(actifs_uniquement=False)
+    return render_template('pharma_pharmaciens.html', page='pharma',
+                          pharmaciens=pharmaciens)
+
+
+@app.route('/pharma/pharmaciens/add', methods=['POST'])
+@permission_required_any('pharma_edit', 'admin')
+def pharma_pharmacien_add():
+    """Crée un nouveau pharmacien."""
+    from models import pharma_create_pharmacien
+    try:
+        data = {
+            'nom': (request.form.get('nom') or '').strip(),
+            'prenom': (request.form.get('prenom') or '').strip(),
+            'matricule': (request.form.get('matricule') or '').strip() or None,
+            'numero_ordre': (request.form.get('numero_ordre') or '').strip() or None,
+            'tel': (request.form.get('tel') or '').strip() or None,
+            'email': (request.form.get('email') or '').strip() or None,
+            'poste': (request.form.get('poste') or 'pharmacien').strip(),
+            'taux_horaire_base': float(request.form.get('taux_horaire_base') or 0),
+            'heures_contractuelles': int(request.form.get('heures_contractuelles') or 173),
+            'date_embauche': (request.form.get('date_embauche') or '').strip() or None,
+            'notes': (request.form.get('notes') or '').strip() or None,
+            'created_by': session.get('user_id'),
+        }
+        if not data['nom'] or not data['prenom']:
+            flash("Nom et prénom requis.", "error")
+            return redirect('/pharma/pharmaciens')
+        pharma_create_pharmacien(**data)
+        flash(f"✅ Pharmacien {data['prenom']} {data['nom']} ajouté", "success")
+    except Exception as e:
+        flash(f"❌ Erreur : {e}", "error")
+    return redirect('/pharma/pharmaciens')
+
+
+@app.route('/pharma/pharmaciens/<int:pid>/toggle', methods=['POST', 'GET'])
+@permission_required_any('pharma_edit', 'admin')
+def pharma_pharmacien_toggle(pid):
+    """Active/désactive un pharmacien."""
+    from models import pharma_get_pharmacien, pharma_update_pharmacien
+    p = pharma_get_pharmacien(pid)
+    if not p:
+        flash("Pharmacien introuvable", "error")
+        return redirect('/pharma/pharmaciens')
+    new_state = 0 if p.get('est_actif') else 1
+    pharma_update_pharmacien(pid, est_actif=new_state)
+    flash(f"{'✅ Activé' if new_state else '🚫 Désactivé'} : {p['prenom']} {p['nom']}", "success")
+    return redirect('/pharma/pharmaciens')
+
+
+@app.route('/pharma/gardes')
+@permission_required_any('pharma_view', 'admin')
+def pharma_gardes_list():
+    """Planning des gardes — vue tableau avec filtres."""
+    from models import pharma_list_gardes, pharma_list_pharmaciens, pharma_list_types_service
+    from datetime import datetime, timedelta
+    
+    # Filtres
+    today = datetime.now()
+    date_debut = request.args.get('date_debut') or today.replace(day=1).strftime('%Y-%m-%d')
+    # Fin = défaut fin de mois
+    try:
+        d_debut = datetime.strptime(date_debut, '%Y-%m-%d')
+        if d_debut.month == 12:
+            fin_default = d_debut.replace(year=d_debut.year+1, month=1, day=1) - timedelta(days=1)
+        else:
+            fin_default = d_debut.replace(month=d_debut.month+1, day=1) - timedelta(days=1)
+    except:
+        fin_default = today
+    date_fin = request.args.get('date_fin') or fin_default.strftime('%Y-%m-%d')
+    pharmacien_id_filter = request.args.get('pharmacien_id') or ''
+    statut_filter = request.args.get('statut') or ''
+    
+    gardes = pharma_list_gardes(
+        date_debut=date_debut, date_fin=date_fin,
+        pharmacien_id=int(pharmacien_id_filter) if pharmacien_id_filter.isdigit() else None,
+        statut=statut_filter or None)
+    
+    # Pour les filtres
+    pharmaciens = pharma_list_pharmaciens(actifs_uniquement=True)
+    types_service = pharma_list_types_service()
+    
+    return render_template('pharma_gardes.html', page='pharma',
+                          gardes=gardes, pharmaciens=pharmaciens, types_service=types_service,
+                          date_debut=date_debut, date_fin=date_fin,
+                          pharmacien_id_filter=pharmacien_id_filter,
+                          statut_filter=statut_filter)
+
+
+@app.route('/pharma/gardes/add', methods=['POST'])
+@permission_required_any('pharma_edit', 'admin')
+def pharma_garde_add():
+    """Crée une garde planifiée."""
+    from models import pharma_create_garde
+    try:
+        pharmacien_id = int(request.form.get('pharmacien_id') or 0)
+        type_service_id = int(request.form.get('type_service_id') or 0)
+        date = (request.form.get('date') or '').strip()
+        heure_debut = (request.form.get('heure_debut') or '').strip()
+        heure_fin = (request.form.get('heure_fin') or '').strip()
+        notes = (request.form.get('notes') or '').strip() or None
+        
+        if not pharmacien_id or not type_service_id or not date or not heure_debut or not heure_fin:
+            flash("Tous les champs sont requis", "error")
+            return redirect('/pharma/gardes')
+        
+        pharma_create_garde(pharmacien_id, type_service_id, date, heure_debut, heure_fin,
+                             notes=notes, created_by=session.get('user_id'))
+        flash("✅ Garde planifiée ajoutée", "success")
+    except Exception as e:
+        flash(f"❌ Erreur : {e}", "error")
+    return redirect(request.referrer or '/pharma/gardes')
+
+
+@app.route('/pharma/gardes/<int:gid>/delete', methods=['POST', 'GET'])
+@permission_required_any('pharma_edit', 'admin')
+def pharma_garde_delete(gid):
+    """Supprime une garde."""
+    from models import pharma_delete_garde
+    pharma_delete_garde(gid)
+    flash("🗑️ Garde supprimée", "success")
+    return redirect(request.referrer or '/pharma/gardes')
+
+
+@app.route('/pharma/gardes/<int:gid>/statut/<statut>', methods=['POST', 'GET'])
+@permission_required_any('pharma_edit', 'admin')
+def pharma_garde_statut(gid, statut):
+    """Change le statut d'une garde (planifie / effectue / annule / absence)."""
+    from models import pharma_update_garde
+    if statut not in ('planifie', 'effectue', 'annule', 'absence'):
+        flash("Statut invalide", "error")
+        return redirect('/pharma/gardes')
+    pharma_update_garde(gid, statut=statut)
+    flash(f"✅ Statut → {statut}", "success")
+    return redirect(request.referrer or '/pharma/gardes')
+
+
+@app.route('/pharma/types-service')
+@permission_required_any('pharma_view', 'admin')
+def pharma_types_service_list():
+    """Liste/édite les types de service."""
+    from models import pharma_list_types_service
+    types_service = pharma_list_types_service()
+    return render_template('pharma_types_service.html', page='pharma',
+                          types_service=types_service)
+
+
+@app.route('/pharma/jours-feries')
+@permission_required_any('pharma_view', 'admin')
+def pharma_jours_feries_list():
+    """Liste des jours fériés."""
+    from models import pharma_list_jours_feries
+    year = request.args.get('year', '2026')
+    feries = pharma_list_jours_feries(year=year)
+    return render_template('pharma_jours_feries.html', page='pharma',
+                          feries=feries, year=year)
+
+
+@app.route('/pharma/jours-feries/add', methods=['POST'])
+@permission_required_any('pharma_admin', 'admin')
+def pharma_jour_ferie_add():
+    """Ajoute un jour férié."""
+    date = (request.form.get('date') or '').strip()
+    libelle = (request.form.get('libelle') or '').strip()
+    recurrent = 1 if request.form.get('recurrent') else 0
+    if not date or not libelle:
+        flash("Date et libellé requis", "error")
+        return redirect('/pharma/jours-feries')
+    conn = _gdb()
+    try:
+        conn.execute("INSERT OR REPLACE INTO pharma_jours_feries (date, libelle, recurrent, actif) VALUES (?,?,?,1)",
+                     (date, libelle, recurrent))
+        conn.commit()
+        flash(f"✅ Jour férié ajouté : {date} - {libelle}", "success")
+    except Exception as e:
+        flash(f"❌ Erreur : {e}", "error")
+    finally:
+        conn.close()
+    return redirect('/pharma/jours-feries')
+
+
+@app.route('/pharma/jours-feries/<int:fid>/delete', methods=['POST', 'GET'])
+@permission_required_any('pharma_admin', 'admin')
+def pharma_jour_ferie_delete(fid):
+    """Supprime un jour férié."""
+    conn = _gdb()
+    try:
+        conn.execute("DELETE FROM pharma_jours_feries WHERE id=?", (fid,))
+        conn.commit()
+        flash("🗑️ Jour férié supprimé", "success")
+    finally:
+        conn.close()
+    return redirect('/pharma/jours-feries')
 
 
 # ============================================================

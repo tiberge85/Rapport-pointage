@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% block title %}WannyGest - Types de service{% endblock %}{% block content %}
+<div class="page-header">
+    <h1>⚙️ Types de service</h1>
+    <a href="/pharma" class="btn btn-outline btn-sm">← Retour Pharmacie</a>
+</div>
+
+<div style="background:#fff3e0;padding:12px;border-radius:8px;border-left:4px solid #f29f2f;margin-bottom:14px;font-size:13px">
+    <strong>ℹ️ À propos des taux de majoration :</strong>
+    <ul style="margin:6px 0 0 18px;line-height:1.6">
+        <li><strong>0%</strong> = pas de majoration (service normal)</li>
+        <li><strong>50%</strong> = heure rémunérée 1,5× le taux base (ex: 1000 F/h → 1500 F/h)</li>
+        <li><strong>100%</strong> = heure rémunérée 2× le taux base</li>
+        <li>La <strong>prime fixe</strong> s'ajoute en plus, par garde effectuée</li>
+    </ul>
+</div>
+
+<div class="card">
+    <div class="card-body" style="padding:0">
+    <table>
+        <thead><tr><th>Code</th><th>Libellé</th><th>Couleur</th><th>Majoration</th><th>Prime fixe</th><th>Plage défaut</th><th>Description</th></tr></thead>
+        <tbody>
+        {% for t in types_service %}
+        <tr>
+            <td><code style="font-size:11px;background:#f5f7fa;padding:2px 6px;border-radius:3px">{{ t.code }}</code></td>
+            <td><strong>{{ t.libelle }}</strong></td>
+            <td><span style="display:inline-block;width:24px;height:18px;background:{{ t.couleur }};border-radius:3px;vertical-align:middle"></span> <code style="font-size:11px">{{ t.couleur }}</code></td>
+            <td style="text-align:right;font-weight:600;color:#1976d2">+{{ (t.taux_majoration * 100)|round|int }}%</td>
+            <td style="text-align:right">{{ "{:,.0f}".format(t.prime_fixe or 0) }} F</td>
+            <td style="font-family:monospace;font-size:11px">{{ t.heure_debut_defaut or '-' }} → {{ t.heure_fin_defaut or '-' }}</td>
+            <td style="font-size:12px;color:#666">{{ t.description }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<div style="background:#f0f4f0;padding:12px;border-radius:8px;margin-top:14px;font-size:12px;color:#666">
+    <strong>📌 Note :</strong> Ces taux sont préconfigurés selon les pratiques courantes. La personnalisation arrivera dans v67 avec l'éditeur dédié.
+</div>
+{% endblock %}

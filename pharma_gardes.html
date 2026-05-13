@@ -1,0 +1,161 @@
+{% extends "base.html" %}{% block title %}WannyGest - Planning Gardes{% endblock %}{% block content %}
+<div class="page-header">
+    <h1>🗓️ Planning des gardes</h1>
+    <a href="/pharma" class="btn btn-outline btn-sm">← Retour Pharmacie</a>
+</div>
+
+<!-- Filtres -->
+<div class="card" style="margin-bottom:14px">
+    <div class="card-body" style="padding:14px">
+        <form method="GET" action="/pharma/gardes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end">
+            <div class="form-group">
+                <label style="font-size:11px">Du</label>
+                <input type="date" name="date_debut" value="{{ date_debut }}" style="width:100%">
+            </div>
+            <div class="form-group">
+                <label style="font-size:11px">Au</label>
+                <input type="date" name="date_fin" value="{{ date_fin }}" style="width:100%">
+            </div>
+            <div class="form-group">
+                <label style="font-size:11px">Pharmacien</label>
+                <select name="pharmacien_id" style="width:100%">
+                    <option value="">— Tous —</option>
+                    {% for p in pharmaciens %}
+                    <option value="{{ p.id }}" {% if pharmacien_id_filter == p.id|string %}selected{% endif %}>{{ p.prenom }} {{ p.nom }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label style="font-size:11px">Statut</label>
+                <select name="statut" style="width:100%">
+                    <option value="">— Tous —</option>
+                    <option value="planifie" {% if statut_filter == 'planifie' %}selected{% endif %}>📅 Planifié</option>
+                    <option value="effectue" {% if statut_filter == 'effectue' %}selected{% endif %}>✅ Effectué</option>
+                    <option value="annule" {% if statut_filter == 'annule' %}selected{% endif %}>❌ Annulé</option>
+                    <option value="absence" {% if statut_filter == 'absence' %}selected{% endif %}>🚫 Absence</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm" style="height:36px">🔍 Filtrer</button>
+        </form>
+    </div>
+</div>
+
+<!-- Stats rapides -->
+<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+    <span style="font-size:13px;color:#666"><strong>{{ gardes|length }}</strong> garde(s) sur la période</span>
+    <span style="flex:1"></span>
+    <button class="btn btn-orange btn-sm" onclick="document.getElementById('addGardeModal').style.display='flex'">+ Planifier une garde</button>
+</div>
+
+<!-- Liste des gardes -->
+<div class="card">
+    <div class="card-body" style="padding:0">
+    {% if gardes %}
+    <div style="max-height:600px;overflow-y:auto">
+    <table>
+        <thead style="position:sticky;top:0;background:#f8faf9;z-index:1">
+            <tr><th>Date</th><th>Pharmacien</th><th>Type</th><th>Horaire</th><th>Durée</th><th>Statut</th><th>Notes</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+        {% for g in gardes %}
+        {% set h1, m1 = g.heure_debut.split(':')[0]|int, g.heure_debut.split(':')[1]|int %}
+        {% set h2, m2 = g.heure_fin.split(':')[0]|int, g.heure_fin.split(':')[1]|int %}
+        {% set debut_min = h1*60+m1 %}
+        {% set fin_min = h2*60+m2 %}
+        {% set duree_min = (fin_min + 1440 - debut_min) if (g.franchit_minuit or fin_min <= debut_min) else (fin_min - debut_min) %}
+        <tr>
+            <td style="font-family:monospace;font-size:11px;font-weight:600">{{ g.date }}</td>
+            <td>{{ g.pharm_prenom }} {{ g.pharm_nom }}</td>
+            <td><span style="background:{{ g.type_couleur }};color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">{{ g.type_libelle }}</span></td>
+            <td style="font-family:monospace;font-size:11px">{{ g.heure_debut }} → {{ g.heure_fin }}{% if g.franchit_minuit %} <span style="color:#3949ab;font-size:10px">(+1j)</span>{% endif %}</td>
+            <td style="text-align:center;font-size:11px">{{ "%dh%02d"|format(duree_min // 60, duree_min % 60) }}</td>
+            <td>
+                {% if g.statut == 'planifie' %}<span style="background:#e3f2fd;color:#1976d2;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700">📅 Planifié</span>
+                {% elif g.statut == 'effectue' %}<span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700">✅ Effectué</span>
+                {% elif g.statut == 'annule' %}<span style="background:#fde8e8;color:#c53030;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700">❌ Annulé</span>
+                {% elif g.statut == 'absence' %}<span style="background:#fff3e0;color:#b8561f;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700">🚫 Absence</span>
+                {% endif %}
+            </td>
+            <td style="font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ g.notes }}">{{ g.notes or '-' }}</td>
+            <td style="white-space:nowrap">
+                {% if g.statut != 'effectue' %}<a href="/pharma/gardes/{{ g.id }}/statut/effectue" class="btn btn-sm" style="font-size:10px;padding:3px 7px;background:#2e7d32;color:#fff" title="Marquer effectué">✓</a>{% endif %}
+                {% if g.statut != 'absence' %}<a href="/pharma/gardes/{{ g.id }}/statut/absence" class="btn btn-sm" style="font-size:10px;padding:3px 7px;background:#b8561f;color:#fff" title="Absence">🚫</a>{% endif %}
+                <a href="/pharma/gardes/{{ g.id }}/delete" class="btn btn-sm" style="font-size:10px;padding:3px 7px;background:#c53030;color:#fff" title="Supprimer" onclick="return confirm('Supprimer cette garde ?')">🗑️</a>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:40px;color:#888">
+        Aucune garde pour cette période.<br>
+        <button class="btn btn-orange btn-sm" style="margin-top:10px" onclick="document.getElementById('addGardeModal').style.display='flex'">+ Planifier une garde</button>
+    </div>
+    {% endif %}
+    </div>
+</div>
+
+<!-- Modal Ajouter garde -->
+<div id="addGardeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;padding:20px">
+    <div style="background:#fff;border-radius:10px;max-width:550px;width:100%;max-height:90vh;overflow-y:auto">
+        <div style="padding:14px 18px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
+            <h3 style="margin:0;font-size:15px">➕ Planifier une garde</h3>
+            <button onclick="document.getElementById('addGardeModal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button>
+        </div>
+        <form method="POST" action="/pharma/gardes/add" style="padding:18px">
+            <div class="form-group">
+                <label>Pharmacien *</label>
+                <select name="pharmacien_id" required style="width:100%">
+                    <option value="">— Choisir —</option>
+                    {% for p in pharmaciens %}
+                    <option value="{{ p.id }}">{{ p.prenom }} {{ p.nom }} {% if p.poste %}({{ p.poste }}){% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Type de service *</label>
+                <select name="type_service_id" required style="width:100%" onchange="prefillHeures(this)">
+                    <option value="">— Choisir —</option>
+                    {% for t in types_service %}
+                    <option value="{{ t.id }}" data-debut="{{ t.heure_debut_defaut or '' }}" data-fin="{{ t.heure_fin_defaut or '' }}">{{ t.libelle }}{% if t.taux_majoration %} (+{{ (t.taux_majoration*100)|round|int }}%){% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+                <div class="form-group">
+                    <label>Date *</label>
+                    <input type="date" name="date" required>
+                </div>
+                <div class="form-group">
+                    <label>Début *</label>
+                    <input type="time" name="heure_debut" id="hDebut" required>
+                </div>
+                <div class="form-group">
+                    <label>Fin *</label>
+                    <input type="time" name="heure_fin" id="hFin" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea name="notes" rows="2" style="width:100%" placeholder="Remplaçant de…, urgences,..."></textarea>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+                <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('addGardeModal').style.display='none'">Annuler</button>
+                <button type="submit" class="btn btn-orange">✅ Planifier</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function prefillHeures(sel) {
+    var opt = sel.options[sel.selectedIndex];
+    if (!opt) return;
+    var deb = opt.dataset.debut;
+    var fin = opt.dataset.fin;
+    if (deb && !document.getElementById('hDebut').value) document.getElementById('hDebut').value = deb;
+    if (fin && !document.getElementById('hFin').value) document.getElementById('hFin').value = fin;
+}
+</script>
+{% endblock %}

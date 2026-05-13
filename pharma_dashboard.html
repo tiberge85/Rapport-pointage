@@ -1,0 +1,124 @@
+{% extends "base.html" %}{% block title %}WannyGest - Pharmacie{% endblock %}{% block content %}
+<div class="page-header">
+    <h1>💊 Pharmacie — Tableau de bord</h1>
+    <span style="font-size:13px;color:#666">{{ mois_label }}</span>
+</div>
+
+<!-- KPIs -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:18px">
+    <div class="card" style="border-left:5px solid #1A7A6D">
+        <div class="card-body" style="padding:14px">
+            <div style="font-size:11px;color:#666;font-weight:600">PHARMACIENS ACTIFS</div>
+            <div style="font-size:28px;font-weight:700;color:#1A7A6D;margin-top:4px">{{ stats.nb_pharmaciens or 0 }}</div>
+            <a href="/pharma/pharmaciens" style="font-size:11px;color:#1A7A6D">Gérer →</a>
+        </div>
+    </div>
+    <div class="card" style="border-left:5px solid #3949ab">
+        <div class="card-body" style="padding:14px">
+            <div style="font-size:11px;color:#666;font-weight:600">GARDES CE MOIS</div>
+            <div style="font-size:28px;font-weight:700;color:#3949ab;margin-top:4px">{{ stats.nb_gardes_periode or 0 }}</div>
+            <span style="font-size:11px;color:#888">{{ stats.nb_gardes_effectuees or 0 }} effectuée(s)</span>
+        </div>
+    </div>
+    <div class="card" style="border-left:5px solid #f29f2f">
+        <div class="card-body" style="padding:14px">
+            <div style="font-size:11px;color:#666;font-weight:600">GARDES AUJOURD'HUI</div>
+            <div style="font-size:28px;font-weight:700;color:#f29f2f;margin-top:4px">{{ stats.gardes_aujourdhui or 0 }}</div>
+            <span style="font-size:11px;color:#888">{{ stats.gardes_demain or 0 }} demain</span>
+        </div>
+    </div>
+    <div class="card" style="border-left:5px solid #c53030">
+        <div class="card-body" style="padding:14px">
+            <div style="font-size:11px;color:#666;font-weight:600">À VENIR (PLANIFIÉES)</div>
+            <div style="font-size:28px;font-weight:700;color:#c53030;margin-top:4px">{{ stats.nb_gardes_planifiees or 0 }}</div>
+            <a href="/pharma/gardes" style="font-size:11px;color:#c53030">Voir planning →</a>
+        </div>
+    </div>
+</div>
+
+<!-- Répartition par type -->
+{% if stats.repartition_types %}
+<div class="card" style="margin-bottom:18px">
+    <div class="card-body" style="padding:14px">
+        <h3 style="font-size:14px;color:#1a3a5c;margin:0 0 12px">📊 Répartition des gardes par type</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+            {% for t in stats.repartition_types %}
+            <div style="padding:10px;border-radius:6px;border-left:4px solid {{ t.couleur }};background:#f8faf9">
+                <div style="font-size:11px;color:#666">{{ t.libelle }}</div>
+                <div style="font-size:22px;font-weight:700;color:{{ t.couleur }}">{{ t.nb or 0 }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Gardes à venir 7 jours -->
+<div class="card">
+    <div class="card-body" style="padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h3 style="font-size:14px;color:#1a3a5c;margin:0">🗓️ Prochaines gardes (7 jours)</h3>
+            <a href="/pharma/gardes" class="btn btn-orange btn-sm" style="font-size:11px">+ Planifier une garde</a>
+        </div>
+        {% if upcoming %}
+        <table>
+            <thead><tr><th>Date</th><th>Pharmacien</th><th>Type</th><th>Horaire</th><th>Statut</th><th>Actions</th></tr></thead>
+            <tbody>
+            {% for g in upcoming %}
+            <tr>
+                <td style="font-family:monospace;font-size:11px;font-weight:600">{{ g.date }}</td>
+                <td>{{ g.pharm_prenom }} {{ g.pharm_nom }}</td>
+                <td><span style="background:{{ g.type_couleur }};color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">{{ g.type_libelle }}</span></td>
+                <td style="font-family:monospace;font-size:11px">{{ g.heure_debut }} → {{ g.heure_fin }}{% if g.franchit_minuit %} <span style="color:#3949ab;font-size:10px">(+1j)</span>{% endif %}</td>
+                <td>
+                    {% if g.statut == 'planifie' %}<span style="background:#e3f2fd;color:#1976d2;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700">📅 Planifié</span>
+                    {% elif g.statut == 'effectue' %}<span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700">✅ Effectué</span>
+                    {% elif g.statut == 'annule' %}<span style="background:#fde8e8;color:#c53030;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700">❌ Annulé</span>
+                    {% elif g.statut == 'absence' %}<span style="background:#fff3e0;color:#b8561f;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700">🚫 Absence</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="/pharma/gardes/{{ g.id }}/statut/effectue" class="btn btn-sm" style="font-size:10px;padding:3px 7px;background:#2e7d32;color:#fff" title="Marquer effectué">✓</a>
+                    <a href="/pharma/gardes/{{ g.id }}/delete" class="btn btn-sm" style="font-size:10px;padding:3px 7px;background:#c53030;color:#fff" title="Supprimer" onclick="return confirm('Supprimer cette garde ?')">🗑️</a>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="text-align:center;padding:30px;color:#888;font-size:13px">
+            Aucune garde planifiée pour les 7 prochains jours.<br>
+            <a href="/pharma/gardes" style="color:#1A7A6D;font-weight:600">Planifier une garde →</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Liens rapides -->
+<div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+    <a href="/pharma/pharmaciens" class="card" style="text-decoration:none;color:inherit;border-left:4px solid #1A7A6D">
+        <div class="card-body" style="padding:12px">
+            <div style="font-size:13px;font-weight:600">👨‍⚕️ Pharmaciens</div>
+            <div style="font-size:11px;color:#666">Gérer l'équipe</div>
+        </div>
+    </a>
+    <a href="/pharma/gardes" class="card" style="text-decoration:none;color:inherit;border-left:4px solid #3949ab">
+        <div class="card-body" style="padding:12px">
+            <div style="font-size:13px;font-weight:600">🗓️ Planning des gardes</div>
+            <div style="font-size:11px;color:#666">Vue mensuelle</div>
+        </div>
+    </a>
+    <a href="/pharma/types-service" class="card" style="text-decoration:none;color:inherit;border-left:4px solid #f29f2f">
+        <div class="card-body" style="padding:12px">
+            <div style="font-size:13px;font-weight:600">⚙️ Types de service</div>
+            <div style="font-size:11px;color:#666">Majorations + primes</div>
+        </div>
+    </a>
+    <a href="/pharma/jours-feries" class="card" style="text-decoration:none;color:inherit;border-left:4px solid #c53030">
+        <div class="card-body" style="padding:12px">
+            <div style="font-size:13px;font-weight:600">📅 Jours fériés</div>
+            <div style="font-size:11px;color:#666">Calendrier CI</div>
+        </div>
+    </a>
+</div>
+{% endblock %}

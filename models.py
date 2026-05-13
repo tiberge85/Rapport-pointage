@@ -4425,6 +4425,204 @@ def migrate_v70():
     conn.commit(); conn.close()
 
 
+def migrate_v71():
+    """v71 : Module Pharmacie — Planning gardes, calculs horaires complexes.
+    
+    Tables créées :
+    - pharma_pharmaciens : liste des pharmaciens (peut référencer employees ou être autonome)
+    - pharma_types_service : types de service (Normal, Garde nuit, WE, Férié, Astreinte) + taux majoration
+    - pharma_jours_feries : calendrier des jours fériés
+    - pharma_gardes : planning des gardes (1 ligne = 1 garde planifiée)
+    - pharma_pointages : pointages réels liés aux gardes (entrée/sortie)
+    - pharma_settings : paramètres globaux (seuils légaux, taux paie, etc.)
+    
+    Permissions créées :
+    - pharma_view : voir les plannings et dashboards
+    - pharma_edit : créer/modifier les gardes
+    - pharma_admin : configurer les types de service, jours fériés, paramètres
+    """
+    conn = get_db()
+    
+    # 1. Pharmaciens
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pharma_pharmaciens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER,                    -- lien optionnel vers employees
+            nom TEXT NOT NULL,
+            prenom TEXT NOT NULL,
+            matricule TEXT,
+            numero_ordre TEXT,                      -- N° Ordre des Pharmaciens
+            tel TEXT,
+            email TEXT,
+            poste TEXT DEFAULT 'pharmacien',       -- pharmacien, assistant, préparateur
+            taux_horaire_base REAL DEFAULT 0,      -- FCFA/heure normale
+            heures_contractuelles INTEGER DEFAULT 173, -- heures mensuelles contractuelles (CI)
+            est_actif INTEGER DEFAULT 1,
+            date_embauche TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            created_by INTEGER
+        )""")
+    except Exception as e: print(f"v71 pharma_pharmaciens: {e}")
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_pharma_actif ON pharma_pharmaciens(est_actif)")
+    except: pass
+    
+    # 2. Types de service avec majorations
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pharma_types_service (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,              -- normal, garde_nuit, garde_we, ferie, astreinte
+            libelle TEXT NOT NULL,
+            couleur TEXT DEFAULT '#1A7A6D',
+            taux_majoration REAL DEFAULT 0,         -- 0=normal, 0.5=+50%, 1=+100%
+            prime_fixe REAL DEFAULT 0,              -- prime forfaitaire en plus du taux horaire
+            heure_debut_defaut TEXT,                -- ex: '20:00' pour garde nuit
+            heure_fin_defaut TEXT,                  -- ex: '08:00'
+            description TEXT,
+            ordre_affichage INTEGER DEFAULT 0
+        )""")
+    except Exception as e: print(f"v71 pharma_types_service: {e}")
+    
+    # Insérer les types par défaut (CI)
+    defaults = [
+        ('normal', 'Service Normal', '#1A7A6D', 0.0, 0, '08:00', '17:00', 'Service de jour ordinaire', 1),
+        ('garde_nuit', 'Garde de Nuit', '#3949ab', 0.5, 5000, '20:00', '08:00', 'Service de nuit (majoration 50% + prime)', 2),
+        ('garde_we', 'Garde Week-end', '#f29f2f', 0.75, 10000, '08:00', '20:00', 'Service samedi/dimanche (majoration 75% + prime)', 3),
+        ('ferie', 'Jour Férié', '#c53030', 1.0, 15000, '08:00', '20:00', 'Service jour férié (majoration 100% + prime)', 4),
+        ('astreinte', 'Astreinte', '#7b1fa2', 0.25, 3000, '00:00', '23:59', 'Disponibilité sur appel (majoration 25%)', 5),
+    ]
+    for code, lib, col, taux, prime, hd, hf, desc, ordre in defaults:
+        try:
+            conn.execute("""INSERT OR IGNORE INTO pharma_types_service
+                (code, libelle, couleur, taux_majoration, prime_fixe, heure_debut_defaut, heure_fin_defaut, description, ordre_affichage)
+                VALUES (?,?,?,?,?,?,?,?,?)""",
+                (code, lib, col, taux, prime, hd, hf, desc, ordre))
+        except: pass
+    
+    # 3. Jours fériés
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pharma_jours_feries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT UNIQUE NOT NULL,              -- YYYY-MM-DD
+            libelle TEXT NOT NULL,
+            recurrent INTEGER DEFAULT 1,            -- 1 = se répète chaque année (Nouvel An, etc.)
+            actif INTEGER DEFAULT 1,
+            notes TEXT
+        )""")
+    except Exception as e: print(f"v71 pharma_jours_feries: {e}")
+    
+    # Jours fériés CI 2026 par défaut
+    feries_ci_2026 = [
+        ('2026-01-01', 'Jour de l\'An', 1),
+        ('2026-04-06', 'Lundi de Pâques', 0),         # mobile
+        ('2026-05-01', 'Fête du Travail', 1),
+        ('2026-05-14', 'Ascension', 0),                 # mobile
+        ('2026-05-25', 'Lundi de Pentecôte', 0),       # mobile
+        ('2026-08-07', 'Fête Nationale', 1),
+        ('2026-08-15', 'Assomption', 1),
+        ('2026-11-01', 'Toussaint', 1),
+        ('2026-11-15', 'Journée de la Paix', 1),
+        ('2026-12-07', 'Anniversaire Houphouët-Boigny', 1),
+        ('2026-12-25', 'Noël', 1),
+    ]
+    for d, lib, rec in feries_ci_2026:
+        try:
+            conn.execute("INSERT OR IGNORE INTO pharma_jours_feries (date, libelle, recurrent) VALUES (?,?,?)",
+                         (d, lib, rec))
+        except: pass
+    
+    # 4. Gardes planifiées
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pharma_gardes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pharmacien_id INTEGER NOT NULL,
+            type_service_id INTEGER NOT NULL,
+            date TEXT NOT NULL,                     -- date de début (YYYY-MM-DD)
+            heure_debut TEXT NOT NULL,              -- HH:MM
+            heure_fin TEXT NOT NULL,                -- HH:MM (peut être le lendemain si garde nuit)
+            franchit_minuit INTEGER DEFAULT 0,      -- 1 si la garde traverse minuit
+            statut TEXT DEFAULT 'planifie',         -- planifie, effectue, annule, absence
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            created_by INTEGER,
+            FOREIGN KEY (pharmacien_id) REFERENCES pharma_pharmaciens(id),
+            FOREIGN KEY (type_service_id) REFERENCES pharma_types_service(id)
+        )""")
+    except Exception as e: print(f"v71 pharma_gardes: {e}")
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_pharma_gardes_date ON pharma_gardes(date)")
+    except: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_pharma_gardes_pharm ON pharma_gardes(pharmacien_id, date)")
+    except: pass
+    
+    # 5. Pointages réels (entrée/sortie) sur les gardes
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pharma_pointages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            garde_id INTEGER NOT NULL,
+            pharmacien_id INTEGER NOT NULL,
+            datetime_arrivee TEXT,
+            datetime_depart TEXT,
+            duree_pause_minutes INTEGER DEFAULT 0,
+            duree_effective_minutes INTEGER,
+            retard_minutes INTEGER DEFAULT 0,
+            avance_depart_minutes INTEGER DEFAULT 0,
+            source TEXT DEFAULT 'manuel',           -- manuel, biometrique, qr
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (garde_id) REFERENCES pharma_gardes(id),
+            FOREIGN KEY (pharmacien_id) REFERENCES pharma_pharmaciens(id)
+        )""")
+    except Exception as e: print(f"v71 pharma_pointages: {e}")
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_pharma_pointages_garde ON pharma_pointages(garde_id)")
+    except: pass
+    
+    # 6. Settings globaux
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS pharma_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            description TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+    except Exception as e: print(f"v71 pharma_settings: {e}")
+    
+    # Valeurs par défaut conformes au Code du travail CI
+    settings_defaults = [
+        ('seuil_alerte_consecutif_h', '11', 'Alerte si garde > X heures consécutives'),
+        ('seuil_repos_obligatoire_h', '11', 'Repos minimum entre 2 gardes (heures)'),
+        ('seuil_hebdo_max_h', '48', 'Plafond hebdomadaire légal (heures)'),
+        ('seuil_alerte_hebdo_h', '45', 'Alerte préventive à X heures/semaine'),
+        ('heure_debut_nuit', '21:00', 'Heure à partir de laquelle on compte en nuit'),
+        ('heure_fin_nuit', '05:00', 'Heure jusqu\'à laquelle on compte en nuit'),
+        ('jours_we', 'samedi,dimanche', 'Jours considérés week-end (séparés par virgule)'),
+        ('taux_heure_sup_25', '0.25', 'Majoration heures sup 1-8 par semaine au-delà'),
+        ('taux_heure_sup_50', '0.50', 'Majoration heures sup au-delà des premières'),
+    ]
+    for k, v, d in settings_defaults:
+        try:
+            conn.execute("INSERT OR IGNORE INTO pharma_settings (key, value, description) VALUES (?,?,?)", (k, v, d))
+        except: pass
+    
+    # 7. Permissions
+    perms = [
+        ('pharma_view', 'Pharmacie - consulter'),
+        ('pharma_edit', 'Pharmacie - planifier/modifier gardes'),
+        ('pharma_admin', 'Pharmacie - administrer (types, fériés, paramètres)'),
+    ]
+    for code, desc in perms:
+        try:
+            conn.execute("INSERT OR IGNORE INTO permissions_catalog (code, module, description) VALUES (?,?,?)",
+                         (code, 'pharmacie', desc))
+        except: pass
+        # Donner aux rôles admin et rh
+        for role in ['admin', 'rh']:
+            try:
+                conn.execute("INSERT OR IGNORE INTO permissions (role, permission) VALUES (?,?)", (role, code))
+            except: pass
+    
+    conn.commit(); conn.close()
+
+
 def mg_get_fournisseur_dashboard(fournisseur_id=None):
     """Tableau de bord fournisseur :
     - total_commandes : somme des commandes du fournisseur
@@ -5888,5 +6086,280 @@ def recompute_budget_spent(budget_id):
         return True
     except Exception:
         conn.rollback(); return False
+    finally:
+        conn.close()
+
+
+# ======================== PHARMACIE (v71+) ========================
+
+def pharma_get_setting(key, default=None):
+    """Lit un paramètre pharma_settings."""
+    conn = get_db()
+    try:
+        r = conn.execute("SELECT value FROM pharma_settings WHERE key=?", (key,)).fetchone()
+        return r['value'] if r else default
+    finally:
+        conn.close()
+
+
+def pharma_set_setting(key, value):
+    """Met à jour un paramètre pharma_settings."""
+    conn = get_db()
+    try:
+        conn.execute("""INSERT INTO pharma_settings (key, value, updated_at)
+                        VALUES (?, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP""",
+                     (key, str(value)))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def pharma_list_pharmaciens(actifs_uniquement=True):
+    """Liste les pharmaciens."""
+    conn = get_db()
+    try:
+        q = "SELECT * FROM pharma_pharmaciens"
+        if actifs_uniquement:
+            q += " WHERE est_actif=1"
+        q += " ORDER BY nom, prenom"
+        return [dict(r) for r in conn.execute(q).fetchall()]
+    finally:
+        conn.close()
+
+
+def pharma_get_pharmacien(pid):
+    """Récupère un pharmacien par ID."""
+    conn = get_db()
+    try:
+        r = conn.execute("SELECT * FROM pharma_pharmaciens WHERE id=?", (pid,)).fetchone()
+        return dict(r) if r else None
+    finally:
+        conn.close()
+
+
+def pharma_create_pharmacien(**data):
+    """Créé un pharmacien."""
+    conn = get_db()
+    try:
+        cols = ','.join(data.keys())
+        placeholders = ','.join(['?' for _ in data])
+        conn.execute(f"INSERT INTO pharma_pharmaciens ({cols}) VALUES ({placeholders})", list(data.values()))
+        rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.commit()
+        return rid
+    finally:
+        conn.close()
+
+
+def pharma_update_pharmacien(pid, **data):
+    """Met à jour un pharmacien."""
+    if not data: return False
+    conn = get_db()
+    try:
+        sets = ','.join([f"{k}=?" for k in data.keys()])
+        values = list(data.values()) + [pid]
+        conn.execute(f"UPDATE pharma_pharmaciens SET {sets} WHERE id=?", values)
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def pharma_list_types_service():
+    """Liste les types de service avec leurs paramètres."""
+    conn = get_db()
+    try:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM pharma_types_service ORDER BY ordre_affichage, libelle").fetchall()]
+    finally:
+        conn.close()
+
+
+def pharma_get_type_service(tid):
+    """Récupère un type de service par ID ou code."""
+    conn = get_db()
+    try:
+        # Essayer par ID si numérique
+        if str(tid).isdigit():
+            r = conn.execute("SELECT * FROM pharma_types_service WHERE id=?", (int(tid),)).fetchone()
+        else:
+            r = conn.execute("SELECT * FROM pharma_types_service WHERE code=?", (tid,)).fetchone()
+        return dict(r) if r else None
+    finally:
+        conn.close()
+
+
+def pharma_list_jours_feries(year=None):
+    """Liste les jours fériés actifs (filtrés par année si fournie)."""
+    conn = get_db()
+    try:
+        if year:
+            q = "SELECT * FROM pharma_jours_feries WHERE actif=1 AND substr(date,1,4)=? ORDER BY date"
+            return [dict(r) for r in conn.execute(q, (str(year),)).fetchall()]
+        else:
+            return [dict(r) for r in conn.execute(
+                "SELECT * FROM pharma_jours_feries WHERE actif=1 ORDER BY date").fetchall()]
+    finally:
+        conn.close()
+
+
+def pharma_is_jour_ferie(date_str):
+    """Vérifie si une date donnée (YYYY-MM-DD) est un jour férié actif."""
+    conn = get_db()
+    try:
+        r = conn.execute("SELECT id FROM pharma_jours_feries WHERE date=? AND actif=1", (date_str,)).fetchone()
+        return r is not None
+    finally:
+        conn.close()
+
+
+def pharma_create_garde(pharmacien_id, type_service_id, date, heure_debut, heure_fin,
+                         franchit_minuit=None, notes=None, created_by=None):
+    """Crée une garde planifiée. franchit_minuit auto-détecté si non fourni."""
+    if franchit_minuit is None:
+        try:
+            h1 = int(heure_debut.split(':')[0])
+            h2 = int(heure_fin.split(':')[0])
+            franchit_minuit = 1 if h2 < h1 else 0
+        except: franchit_minuit = 0
+    conn = get_db()
+    try:
+        conn.execute("""INSERT INTO pharma_gardes
+            (pharmacien_id, type_service_id, date, heure_debut, heure_fin,
+             franchit_minuit, notes, created_by)
+            VALUES (?,?,?,?,?,?,?,?)""",
+            (pharmacien_id, type_service_id, date, heure_debut, heure_fin,
+             franchit_minuit, notes, created_by))
+        rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.commit()
+        return rid
+    finally:
+        conn.close()
+
+
+def pharma_list_gardes(date_debut=None, date_fin=None, pharmacien_id=None, statut=None):
+    """Liste les gardes filtrées. Retourne avec les noms du pharmacien et type service joints."""
+    conn = get_db()
+    try:
+        q = """SELECT g.*, p.nom as pharm_nom, p.prenom as pharm_prenom,
+                      t.libelle as type_libelle, t.code as type_code, t.couleur as type_couleur,
+                      t.taux_majoration, t.prime_fixe
+               FROM pharma_gardes g
+               LEFT JOIN pharma_pharmaciens p ON g.pharmacien_id=p.id
+               LEFT JOIN pharma_types_service t ON g.type_service_id=t.id
+               WHERE 1=1"""
+        params = []
+        if date_debut:
+            q += " AND g.date>=?"; params.append(date_debut)
+        if date_fin:
+            q += " AND g.date<=?"; params.append(date_fin)
+        if pharmacien_id:
+            q += " AND g.pharmacien_id=?"; params.append(pharmacien_id)
+        if statut:
+            q += " AND g.statut=?"; params.append(statut)
+        q += " ORDER BY g.date, g.heure_debut"
+        return [dict(r) for r in conn.execute(q, params).fetchall()]
+    finally:
+        conn.close()
+
+
+def pharma_get_garde(gid):
+    """Récupère une garde par ID avec joins."""
+    conn = get_db()
+    try:
+        r = conn.execute("""SELECT g.*, p.nom as pharm_nom, p.prenom as pharm_prenom,
+                                   p.taux_horaire_base,
+                                   t.libelle as type_libelle, t.code as type_code,
+                                   t.taux_majoration, t.prime_fixe
+                            FROM pharma_gardes g
+                            LEFT JOIN pharma_pharmaciens p ON g.pharmacien_id=p.id
+                            LEFT JOIN pharma_types_service t ON g.type_service_id=t.id
+                            WHERE g.id=?""", (gid,)).fetchone()
+        return dict(r) if r else None
+    finally:
+        conn.close()
+
+
+def pharma_update_garde(gid, **data):
+    """Met à jour une garde."""
+    if not data: return False
+    conn = get_db()
+    try:
+        sets = ','.join([f"{k}=?" for k in data.keys()])
+        values = list(data.values()) + [gid]
+        conn.execute(f"UPDATE pharma_gardes SET {sets} WHERE id=?", values)
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def pharma_delete_garde(gid):
+    """Supprime une garde (et ses pointages liés)."""
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM pharma_pointages WHERE garde_id=?", (gid,))
+        conn.execute("DELETE FROM pharma_gardes WHERE id=?", (gid,))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def pharma_duree_garde_minutes(garde):
+    """Calcule la durée planifiée d'une garde en minutes (gérant la traversée de minuit)."""
+    try:
+        hd = garde['heure_debut']
+        hf = garde['heure_fin']
+        h1, m1 = map(int, hd.split(':'))
+        h2, m2 = map(int, hf.split(':'))
+        debut_min = h1 * 60 + m1
+        fin_min = h2 * 60 + m2
+        if garde.get('franchit_minuit') or fin_min <= debut_min:
+            fin_min += 24 * 60
+        return fin_min - debut_min
+    except:
+        return 0
+
+
+def pharma_get_dashboard_stats(date_debut=None, date_fin=None):
+    """Statistiques pour le dashboard pharmacie."""
+    from datetime import datetime, timedelta
+    if not date_debut:
+        # Mois en cours
+        today = datetime.now()
+        date_debut = today.replace(day=1).strftime('%Y-%m-%d')
+        date_fin = today.strftime('%Y-%m-%d')
+    conn = get_db()
+    try:
+        stats = {}
+        # Compteurs
+        stats['nb_pharmaciens'] = conn.execute(
+            "SELECT COUNT(*) FROM pharma_pharmaciens WHERE est_actif=1").fetchone()[0]
+        stats['nb_gardes_periode'] = conn.execute(
+            "SELECT COUNT(*) FROM pharma_gardes WHERE date BETWEEN ? AND ?",
+            (date_debut, date_fin)).fetchone()[0]
+        stats['nb_gardes_planifiees'] = conn.execute(
+            "SELECT COUNT(*) FROM pharma_gardes WHERE date BETWEEN ? AND ? AND statut='planifie'",
+            (date_debut, date_fin)).fetchone()[0]
+        stats['nb_gardes_effectuees'] = conn.execute(
+            "SELECT COUNT(*) FROM pharma_gardes WHERE date BETWEEN ? AND ? AND statut='effectue'",
+            (date_debut, date_fin)).fetchone()[0]
+        # Répartition par type
+        repartition = conn.execute("""
+            SELECT t.libelle, t.couleur, COUNT(g.id) as nb
+            FROM pharma_types_service t
+            LEFT JOIN pharma_gardes g ON g.type_service_id=t.id AND g.date BETWEEN ? AND ?
+            GROUP BY t.id ORDER BY t.ordre_affichage""", (date_debut, date_fin)).fetchall()
+        stats['repartition_types'] = [dict(r) for r in repartition]
+        # Aujourd'hui et demain
+        today = datetime.now().strftime('%Y-%m-%d')
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        stats['gardes_aujourdhui'] = conn.execute(
+            "SELECT COUNT(*) FROM pharma_gardes WHERE date=?", (today,)).fetchone()[0]
+        stats['gardes_demain'] = conn.execute(
+            "SELECT COUNT(*) FROM pharma_gardes WHERE date=?", (tomorrow,)).fetchone()[0]
+        return stats
     finally:
         conn.close()

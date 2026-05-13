@@ -483,6 +483,20 @@
             </div>
             {% endif %}
             
+            {% if 'pharma_view' in permissions or 'admin' in permissions %}
+            <!-- Pharmacie (v66+) -->
+            <div class="nav-section" id="sec-pharma">
+                <div class="nav-section-title" onclick="toggleSection('sec-pharma')">💊 PHARMACIE <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/pharma" class="{% if page == 'pharma' %}active{% endif %}">📊 Tableau de bord</a>
+                    <a href="/pharma/gardes" class="{% if page == 'pharma' and request.path.startswith('/pharma/gardes') %}active{% endif %}">🗓️ Planning des gardes</a>
+                    <a href="/pharma/pharmaciens" class="{% if request.path.startswith('/pharma/pharmaciens') %}active{% endif %}">👨‍⚕️ Pharmaciens</a>
+                    <a href="/pharma/types-service" class="{% if request.path.startswith('/pharma/types-service') %}active{% endif %}">⚙️ Types de service</a>
+                    <a href="/pharma/jours-feries" class="{% if request.path.startswith('/pharma/jours-feries') %}active{% endif %}">📅 Jours fériés</a>
+                </div>
+            </div>
+            {% endif %}
+            
             {% if 'concierge' in permissions or 'admin' in permissions %}
             <!-- Conciergerie -->
             <div class="nav-section" id="sec-concierge">
