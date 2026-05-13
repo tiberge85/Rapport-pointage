@@ -2622,31 +2622,73 @@ function getMyPos(){
 </div></div>
 {% endfor %}
 
-<!-- Pointages récents -->
-<h3 style="font-size:13px;color:#1a3a5c;margin:14px 0 8px">📋 Pointages récents</h3>
+<!-- Pointages récents (v65 : continu + session, filtre, compteur) -->
+<h3 style="font-size:13px;color:#1a3a5c;margin:14px 0 8px">
+    📋 Pointages récents
+    {% if total_records %}
+        <span style="font-size:11px;color:#888;font-weight:400">(affichage des {{ recent|length }} plus récents sur {{ total_records }} total)</span>
+    {% endif %}
+</h3>
+
+{% if total_records %}
+<div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="text" id="recentFilter" placeholder="🔍 Filtrer par employé..." oninput="filterRecent()" style="flex:1;min-width:200px;padding:6px 10px;border:1.5px solid #e0e0e0;border-radius:6px;font-size:12px">
+    <select id="recentTypeFilter" onchange="filterRecent()" style="padding:6px 10px;border:1.5px solid #e0e0e0;border-radius:6px;font-size:12px;background:#fff">
+        <option value="">Tous les types</option>
+        <option value="continu">📍 Continu (Arrivée/Départ)</option>
+        <option value="session">⏱️ Session</option>
+    </select>
+    <a href="/admin/pointage/rapport-entreprise/{{ '2026-04' }}?company_id={{ company.id }}" class="btn btn-orange btn-sm" style="font-size:11px">📊 Rapport mensuel</a>
+</div>
+{% endif %}
+
 <div class="card"><div class="card-body" style="padding:0">
 {% if recent %}
-<table>
-<thead><tr><th>Date/Heure</th><th>Employé</th><th>Type</th><th>Statut</th><th>Écart</th><th>Pénalité</th></tr></thead>
+<div style="max-height:500px;overflow-y:auto">
+<table id="recentTable">
+<thead style="position:sticky;top:0;background:#f8faf9;z-index:1"><tr><th>Date/Heure</th><th>Employé</th><th>Mode</th><th>Type/Durée</th><th>Statut</th><th>Écart</th><th>Méthode</th></tr></thead>
 <tbody>
 {% for p in recent %}
-<tr>
-    <td style="font-family:monospace;font-size:11px">{{ p.date }} {{ p.time }}</td>
+<tr data-name="{{ (p.full_name or '')|lower }}" data-mode="{{ p.mode or 'continu' }}">
+    <td style="font-family:monospace;font-size:11px">{{ p.date }} {{ p.display_time or p.time }}</td>
     <td>{{ p.full_name or '-' }}</td>
-    <td style="font-size:11px">{{ p.type }}</td>
+    <td style="font-size:11px">
+        {% if p.mode == 'session' %}<span style="background:#e3f2fd;color:#1976d2;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">⏱️ Session</span>
+        {% else %}<span style="background:#f0f4f0;color:#2e7d32;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">📍 Continu</span>{% endif %}
+    </td>
+    <td style="font-size:11px">{{ p.display_label or p.type }}</td>
     <td>
         {% if p.status == 'retard' %}<span style="padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700;background:#fde8e8;color:#c53030">⏰ Retard</span>
         {% elif p.status == 'avance' %}<span style="padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700;background:#fff3e0;color:#b8561f">🚀 Avance</span>
-        {% else %}<span style="padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700;background:#e8f5e9;color:#2e7d32">✅ OK</span>{% endif %}
+        {% elif p.status == 'en_cours' %}<span style="padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700;background:#fff8e1;color:#f57c00">⏳ En cours</span>
+        {% elif p.status == 'termine' %}<span style="padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700;background:#e8f5e9;color:#2e7d32">✅ Terminé</span>
+        {% else %}<span style="padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700;background:#e8f5e9;color:#2e7d32">{{ p.status or 'OK' }}</span>{% endif %}
     </td>
-    <td style="text-align:center;font-size:11px">{{ p.ecart_minutes }}min</td>
-    <td style="text-align:right;color:#c53030;font-size:11px">{% if p.penalty_amount %}{{ "{:,.0f}".format(p.penalty_amount) }} F{% else %}—{% endif %}</td>
+    <td style="text-align:center;font-size:11px">{{ p.ecart_minutes or 0 }}min</td>
+    <td style="text-align:center;font-size:11px;color:#666">{{ p.method or '-' }}</td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
+</div>
+<script>
+function filterRecent() {
+    var q = (document.getElementById('recentFilter').value || '').toLowerCase();
+    var typ = document.getElementById('recentTypeFilter').value;
+    document.querySelectorAll('#recentTable tbody tr').forEach(function(tr) {
+        var name = tr.dataset.name || '';
+        var mode = tr.dataset.mode || '';
+        var matchName = !q || name.indexOf(q) !== -1;
+        var matchType = !typ || mode === typ;
+        tr.style.display = (matchName && matchType) ? '' : 'none';
+    });
+}
+</script>
 {% else %}
-<div style="text-align:center;padding:30px;color:#888">Aucun pointage encore.</div>
+<div style="text-align:center;padding:30px;color:#888">
+    Aucun pointage encore.<br>
+    <span style="font-size:11px">Les employés doivent se connecter via leur QR code pour pointer.</span>
+</div>
 {% endif %}
 </div></div>
 

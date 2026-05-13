@@ -11828,13 +11828,64 @@ def admin_pointage_company_detail(cid):
             (cid,)).fetchall()]
     except: pass
     
-    # Pointages récents
+    # Pointages récents (v65 : inclure les SESSIONS aussi, augmenter la limite à 100)
     recent = []
     try:
-        recent = [dict(r) for r in conn.execute("""
-            SELECT pcr.*, pcu.full_name FROM pointage_company_records pcr
+        # Type CONTINU : pointage_company_records
+        records_continu = [dict(r) for r in conn.execute("""
+            SELECT pcr.id, pcr.company_id, pcr.company_user_id, pcr.type, pcr.date, pcr.time,
+                   pcr.datetime_full, pcr.status, pcr.ecart_minutes, pcr.method,
+                   pcu.full_name, 'continu' AS mode
+            FROM pointage_company_records pcr
             LEFT JOIN pointage_company_users pcu ON pcr.company_user_id=pcu.id
-            WHERE pcr.company_id=? ORDER BY pcr.datetime_full DESC LIMIT 30""", (cid,)).fetchall()]
+            WHERE pcr.company_id=? ORDER BY pcr.datetime_full DESC LIMIT 200""", (cid,)).fetchall()]
+        for r in records_continu:
+            r['display_time'] = r.get('time') or (r.get('datetime_full','') or '')[11:16]
+            r['display_label'] = r.get('type','-')
+        recent.extend(records_continu)
+    except Exception as e:
+        print(f"[company_detail] recent_continu err: {e}", flush=True)
+    
+    try:
+        # Type SESSION : pointage_sessions (1 ligne = 1 session avec début + fin)
+        sessions = [dict(r) for r in conn.execute("""
+            SELECT ps.id, ps.company_id, ps.company_user_id, ps.date,
+                   ps.heure_debut, ps.heure_fin, ps.datetime_debut, ps.datetime_fin,
+                   ps.duree_reelle_minutes, ps.statut, ps.method,
+                   pcu.full_name, 'session' AS mode
+            FROM pointage_sessions ps
+            LEFT JOIN pointage_company_users pcu ON ps.company_user_id=pcu.id
+            WHERE ps.company_id=? ORDER BY COALESCE(ps.datetime_debut, ps.date) DESC LIMIT 200""", (cid,)).fetchall()]
+        for s in sessions:
+            # Construire un enregistrement compatible avec l'affichage
+            duree_h = (s.get('duree_reelle_minutes') or 0) / 60.0
+            s['type'] = 'session'
+            s['datetime_full'] = s.get('datetime_debut') or (s['date'] + ' ' + (s.get('heure_debut') or '00:00'))
+            s['time'] = s.get('heure_debut','')
+            s['status'] = s.get('statut','')
+            s['ecart_minutes'] = s.get('ecart_debut_minutes', 0) or 0
+            s['display_time'] = f"{s.get('heure_debut','--:--')} → {s.get('heure_fin','--:--')}"
+            s['display_label'] = f"Session ({duree_h:.1f}h)" if duree_h > 0 else f"Session ({s.get('statut','en_cours')})"
+            recent.append(s)
+    except Exception as e:
+        print(f"[company_detail] recent_session err: {e}", flush=True)
+    
+    # Trier toutes les sources par datetime descendant et garder les 100 plus récentes
+    try:
+        recent.sort(key=lambda x: (x.get('datetime_full') or x.get('date','')) or '', reverse=True)
+        recent = recent[:100]
+    except Exception as e:
+        print(f"[company_detail] sort err: {e}", flush=True)
+    
+    # Compteurs totaux pour info
+    total_records = 0
+    try:
+        total_records += conn.execute(
+            "SELECT COUNT(*) FROM pointage_company_records WHERE company_id=?", (cid,)).fetchone()[0]
+    except: pass
+    try:
+        total_records += conn.execute(
+            "SELECT COUNT(*) FROM pointage_sessions WHERE company_id=?", (cid,)).fetchone()[0]
     except: pass
     
     # Compteurs : groupes, EDT, jours de repos
@@ -11850,7 +11901,8 @@ def admin_pointage_company_detail(cid):
     
     conn.close()
     return render_template('extra_pages.html', page='pointage_company_detail',
-                          company=company, users=users, recent=recent, counts=counts)
+                          company=company, users=users, recent=recent, counts=counts,
+                          total_records=total_records)
 
 
 @app.route('/admin/pointage/companies/<int:cid>/user/<int:uid>/reset', methods=['POST'])
