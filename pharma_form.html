@@ -1,32 +1,34 @@
-{% extends "base.html" %}{% block title %}WannyGest - Calcul Pharmacie{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}WannyGest - Présence Pharmacie{% endblock %}{% block content %}
 <style>
 .pharma-drop{border:2.5px dashed #ccc;border-radius:14px;padding:30px;text-align:center;cursor:pointer;transition:all 0.3s;background:#fafbfc}
 .pharma-drop:hover,.pharma-drop.dragover{border-color:#7b1fa2;background:#faf4fc}
 .pharma-drop.has-file{border-color:#2e7d32;background:#e8f5e9}
 .emp-preview{background:#f8faf9;border-radius:10px;padding:12px;margin-top:12px;display:none;max-height:340px;overflow-y:auto}
 .emp-preview.visible{display:block}
-.pharm-row{display:grid;grid-template-columns:1fr 80px 1fr;gap:8px;align-items:center;padding:6px 8px;font-size:12px;border-bottom:1px solid #eee}
+.pharm-row{display:grid;grid-template-columns:1fr 70px 90px 1fr;gap:8px;align-items:center;padding:7px 8px;font-size:12px;border-bottom:1px solid #eee}
 .pharm-row:last-child{border-bottom:none}
-.pharm-row .nb{text-align:center;font-weight:600;color:#7b1fa2;background:#f3e5f5;border-radius:4px;padding:2px 6px}
-.pharm-row input.rate{width:100%;padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:11px}
+.pharm-row .nb{text-align:center;font-weight:600;color:#7b1fa2;background:#f3e5f5;border-radius:4px;padding:2px 6px;font-size:11px}
+.pharm-row input.rate{width:100%;padding:5px 7px;border:1px solid #ddd;border-radius:4px;font-size:12px}
 .types-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:8px}
 .type-card{padding:8px 10px;border-radius:6px;border-left:4px solid #1A7A6D;background:#f8faf9;font-size:11px}
 .feries-list{max-height:180px;overflow-y:auto;background:#f8faf9;border-radius:6px;padding:8px;font-size:11px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:4px}
 .step-num{background:#7b1fa2;color:#fff;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;margin-right:8px}
+.classif-row{display:grid;grid-template-columns:130px 130px 160px 1fr 30px;gap:6px;padding:6px;background:#f8faf9;border-radius:6px;margin-bottom:5px;align-items:center;font-size:12px}
+.classif-row input,.classif-row select{padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px;width:100%}
+.classif-row .del{background:#c53030;color:#fff;border:none;border-radius:4px;cursor:pointer;width:24px;height:24px;font-weight:700}
 </style>
 
 <div class="page-header">
-    <h1>💊 Calcul d'heures Pharmacie</h1>
-    <p>Importez un fichier Excel des gardes, le système calcule automatiquement heures normales, nuits, week-ends, jours fériés, majorations et primes.</p>
+    <h1>💊 Rapport de présence Pharmacie</h1>
+    <p>Importez le fichier Excel de pointage de votre pharmacie. Le système calcule automatiquement présences, retards, heures travaillées et coût estimé selon le type de journée (normal / nuit / week-end / férié).</p>
 </div>
 
-<!-- Bandeau infos types & fériés -->
 <div class="card" style="margin-bottom:14px;background:#faf4fc;border-left:4px solid #7b1fa2">
     <div class="card-body" style="padding:12px 14px">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
             <div>
-                <strong style="color:#7b1fa2">ℹ️ Types de service reconnus</strong>
-                <span style="font-size:11px;color:#666">— majorations + primes appliquées automatiquement</span>
+                <strong style="color:#7b1fa2">ℹ️ Détection automatique des types de service</strong>
+                <span style="font-size:11px;color:#666">— majorations + primes appliquées sur les heures travaillées</span>
             </div>
             <a href="/pharma/template" class="btn btn-sm" style="background:#7b1fa2;color:#fff;font-size:11px">📥 Télécharger le modèle Excel</a>
         </div>
@@ -41,12 +43,22 @@
             </div>
             {% endfor %}
         </div>
+        <div style="margin-top:8px;padding:8px;background:#fff;border-radius:6px;font-size:11px;color:#555">
+            <strong>🤖 Règles automatiques :</strong>
+            <ul style="margin:4px 0 0 16px;line-height:1.5">
+                <li><strong>Jour férié</strong> : si la date est dans la liste des jours fériés CI</li>
+                <li><strong>Garde de nuit</strong> : si l'heure d'arrivée obligatoire est &ge; 18:00 ou &lt; 06:00</li>
+                <li><strong>Garde week-end</strong> : si samedi ou dimanche</li>
+                <li><strong>Service normal</strong> : tout le reste</li>
+            </ul>
+            <span style="color:#7b1fa2">Vous pourrez aussi forcer manuellement un type pour des dates précises (Étape 4).</span>
+        </div>
         {% if feries %}
         <details style="margin-top:8px">
             <summary style="cursor:pointer;font-size:12px;color:#7b1fa2;font-weight:600">📅 Jours fériés CI 2026 ({{ feries|length }})</summary>
             <div class="feries-list" style="margin-top:6px">
                 {% for f in feries %}
-                <div><strong>{{ f.date }}</strong> — {{ f.libelle }}</div>
+                <div><strong>{{ f.date }}</strong> &mdash; {{ f.libelle }}</div>
                 {% endfor %}
             </div>
         </details>
@@ -57,18 +69,16 @@
 <div class="card"><div class="card-body">
 <form method="post" action="/pharma/generate" enctype="multipart/form-data" id="pharmaForm">
     
-    <!-- Step 1: Upload -->
     <div class="step" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
-        <div style="margin-bottom:10px"><span class="step-num">1</span><strong>Fichier Excel des gardes</strong></div>
+        <div style="margin-bottom:10px"><span class="step-num">1</span><strong>Fichier Excel de pointage</strong></div>
         <div class="pharma-drop" id="dropZone" onclick="document.getElementById('xlsFile').click()">
             <div style="font-size:32px;margin-bottom:6px">💊📂</div>
             <div id="dropText"><strong>Cliquez</strong> ou glissez le fichier .xlsx</div>
-            <div style="font-size:11px;color:#888;margin-top:6px">Format attendu : Nom | Date | Type | H. début | H. fin | Pause | Notes</div>
+            <div style="font-size:11px;color:#888;margin-top:6px">Colonnes attendues : Prénom | Nom de famille | ID | Service | Date | Heure d'arrivée obligatoire | Heure de départ obligatoire | Heure de contrôle d'arrivée | Sortie à | Durée</div>
         </div>
         <input type="file" name="excel_file" id="xlsFile" accept=".xlsx,.xls" style="display:none" required onchange="handleFile()">
     </div>
     
-    <!-- Preview -->
     <div class="emp-preview" id="preview">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <strong id="previewTitle" style="font-size:13px;color:#1a3a5c"></strong>
@@ -77,17 +87,16 @@
         <div id="pharmList"></div>
     </div>
     
-    <!-- Step 2: Paramètres généraux -->
     <div class="step" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
-        <div style="margin-bottom:10px"><span class="step-num">2</span><strong>Informations & paramètres</strong></div>
+        <div style="margin-bottom:10px"><span class="step-num">2</span><strong>Informations &amp; paramètres</strong></div>
         <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div class="form-group">
                 <label>Nom de la pharmacie</label>
-                <input type="text" name="pharmacy_name" placeholder="Ex: Pharmacie de la Paix" value="PHARMACIE">
+                <input type="text" name="pharmacy_name" placeholder="Ex: PHARMACIE GNIMAH" value="PHARMACIE">
             </div>
             <div class="form-group">
                 <label>Libellé période (optionnel)</label>
-                <input type="text" name="period_label" placeholder="Ex: Mai 2026 (sinon auto-détecté)">
+                <input type="text" name="period_label" placeholder="Auto-détecté si vide">
             </div>
         </div>
         <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -96,10 +105,14 @@
                 <input type="number" name="default_hourly_rate" id="defaultRate" min="0" step="100" value="2000" oninput="updateRatesPreview()">
                 <small style="color:#888;font-size:10px">Appliqué à tous les pharmaciens, sauf override individuel ci-dessous</small>
             </div>
+            <div class="form-group">
+                <label>Heures obligatoires par jour (fallback)</label>
+                <input type="number" name="hp_default" min="0" max="24" step="0.5" value="8">
+                <small style="color:#888;font-size:10px">Utilisé seulement si Heure obligatoire absente du fichier</small>
+            </div>
         </div>
     </div>
     
-    <!-- Step 3: Taux par pharmacien (apparaît après preview) -->
     <div class="step" id="ratesStep" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px;display:none">
         <div style="margin-bottom:10px"><span class="step-num">3</span><strong>Taux horaire par pharmacien (optionnel)</strong></div>
         <div style="background:#fff3e0;padding:8px 10px;border-radius:6px;font-size:11px;color:#666;margin-bottom:8px">
@@ -109,9 +122,22 @@
         <input type="hidden" name="rates_json" id="ratesJson" value="{}">
     </div>
     
-    <!-- Submit -->
+    <div class="step" id="classifStep" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px;display:none">
+        <div style="margin-bottom:10px">
+            <span class="step-num">4</span><strong>Programmation manuelle (optionnel)</strong>
+            <span style="font-size:11px;color:#666;font-weight:normal">&mdash; forcer un type pour des dates précises</span>
+        </div>
+        <div style="background:#e3f2fd;padding:8px 10px;border-radius:6px;font-size:11px;color:#555;margin-bottom:8px">
+            💡 Utilisez cette section pour <strong>forcer</strong> un type spécifique sur certaines dates (priorité absolue sur la détection automatique).
+            <br>Exemple : « du 1er au 7 mai, garde de nuit pour Marie DUPONT » ou « le 15 août, jour férié pour TOUS ».
+        </div>
+        <div id="classifContainer"></div>
+        <button type="button" class="btn btn-sm btn-outline" onclick="addClassifRow()" style="margin-top:6px;font-size:11px">+ Ajouter une période</button>
+        <input type="hidden" name="classif_json" id="classifJson" value="[]">
+    </div>
+    
     <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:10px">
-        <button type="submit" class="btn" style="background:#7b1fa2;color:#fff" id="submitBtn" disabled>
+        <button type="submit" class="btn" style="background:#7b1fa2;color:#fff;padding:10px 22px;font-size:14px" id="submitBtn" disabled>
             📄 Générer le rapport PDF
         </button>
     </div>
@@ -128,26 +154,17 @@ function handleFile() {
     var zone = document.getElementById('dropZone');
     zone.classList.add('has-file');
     document.getElementById('dropText').innerHTML = '<strong>📎 ' + f.name + '</strong><br><span style="font-size:11px;color:#666">Cliquez pour changer</span>';
-    
-    // Upload preview
     var fd = new FormData();
     fd.append('excel_file', f);
     fetch('/pharma/preview', {method: 'POST', body: fd})
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            if (data.error) {
-                alert('❌ ' + data.error);
-                document.getElementById('submitBtn').disabled = true;
-                return;
-            }
+            if (data.error) { alert('❌ ' + data.error); document.getElementById('submitBtn').disabled = true; return; }
             _pharma = data;
             renderPreview(data);
             document.getElementById('submitBtn').disabled = false;
         })
-        .catch(function(e) {
-            alert('❌ Erreur lecture fichier : ' + e);
-            document.getElementById('submitBtn').disabled = true;
-        });
+        .catch(function(e) { alert('❌ Erreur : ' + e); document.getElementById('submitBtn').disabled = true; });
 }
 
 function renderPreview(data) {
@@ -155,32 +172,30 @@ function renderPreview(data) {
     preview.classList.add('visible');
     document.getElementById('previewTitle').textContent = '✅ ' + data.count + ' pharmacien(s) détecté(s)';
     document.getElementById('previewPeriod').textContent = 'Période : ' + (data.period || 'non détectée');
-    
-    // Liste des pharmaciens
     var list = document.getElementById('pharmList');
     list.innerHTML = '';
     data.employees.forEach(function(e) {
         var row = document.createElement('div');
         row.className = 'pharm-row';
-        var types = (e.types_uniques || []).filter(function(t) { return t; }).join(', ') || '—';
-        row.innerHTML = '<div><strong>' + e.name + '</strong><br><span style="font-size:10px;color:#888">' + types + '</span></div>' +
-                        '<div class="nb">' + e.nb_gardes + ' g.</div>' +
+        row.innerHTML = '<div><strong>' + e.name + '</strong>' + (e.id ? '<br><span style="font-size:10px;color:#888">ID: ' + e.id + '</span>' : '') + '</div>' +
+                        '<div class="nb">' + e.nb_jours + ' j.</div>' +
+                        '<div style="text-align:center;font-size:10px"><span style="color:#2e7d32">●</span> ' + (e.days_present || 0) + ' prés.</div>' +
                         '<div style="font-size:10px;color:#666">Taux : <span style="color:#7b1fa2" class="rate-display" data-name="' + e.name + '">défaut</span></div>';
         list.appendChild(row);
     });
-    
-    // Construire la section taux par pharmacien
     var ratesC = document.getElementById('ratesContainer');
     ratesC.innerHTML = '';
     data.employees.forEach(function(e) {
         var row = document.createElement('div');
         row.className = 'pharm-row';
         row.innerHTML = '<div><strong>' + e.name + '</strong></div>' +
-                        '<div class="nb">' + e.nb_gardes + ' g.</div>' +
-                        '<div><input type="number" class="rate" data-name="' + e.name + '" min="0" step="100" placeholder="Laisser vide pour défaut" oninput="updateRatesPreview()"></div>';
+                        '<div class="nb">' + e.nb_jours + ' j.</div>' +
+                        '<div></div>' +
+                        '<div><input type="number" class="rate" data-name="' + e.name + '" min="0" step="100" placeholder="Vide = défaut" oninput="updateRatesPreview()"></div>';
         ratesC.appendChild(row);
     });
     document.getElementById('ratesStep').style.display = 'block';
+    document.getElementById('classifStep').style.display = 'block';
     updateRatesPreview();
 }
 
@@ -189,12 +204,9 @@ function updateRatesPreview() {
     var defaultRate = document.getElementById('defaultRate').value || '0';
     document.querySelectorAll('input.rate').forEach(function(inp) {
         var v = inp.value;
-        if (v && parseFloat(v) > 0) {
-            rates[inp.dataset.name] = v;
-        }
+        if (v && parseFloat(v) > 0) rates[inp.dataset.name] = v;
     });
     document.getElementById('ratesJson').value = JSON.stringify(rates);
-    // Mise à jour preview
     document.querySelectorAll('.rate-display').forEach(function(sp) {
         var n = sp.dataset.name;
         if (rates[n]) {
@@ -207,7 +219,42 @@ function updateRatesPreview() {
     });
 }
 
-// Drag & drop
+function addClassifRow() {
+    var c = document.getElementById('classifContainer');
+    var row = document.createElement('div');
+    row.className = 'classif-row';
+    var empOpts = '<option value="">Tous les pharmaciens</option>';
+    (_pharma.employees || []).forEach(function(e) {
+        empOpts += '<option value="' + e.name + '">' + e.name + '</option>';
+    });
+    row.innerHTML =
+        '<input type="date" class="cl-from" oninput="updateClassif()">' +
+        '<input type="date" class="cl-to" oninput="updateClassif()">' +
+        '<select class="cl-type" onchange="updateClassif()">' +
+            '<option value="garde_nuit">🌙 Garde de Nuit (+50%)</option>' +
+            '<option value="garde_we">📅 Garde Week-end (+75%)</option>' +
+            '<option value="ferie">🎉 Jour Férié (+100%)</option>' +
+            '<option value="astreinte">⏰ Astreinte (+25%)</option>' +
+            '<option value="normal">📋 Service Normal (0%)</option>' +
+        '</select>' +
+        '<select class="cl-emp" onchange="updateClassif()">' + empOpts + '</select>' +
+        '<button type="button" class="del" onclick="this.parentNode.remove();updateClassif()" title="Supprimer">×</button>';
+    c.appendChild(row);
+    updateClassif();
+}
+
+function updateClassif() {
+    var arr = [];
+    document.querySelectorAll('.classif-row').forEach(function(row) {
+        var d1 = row.querySelector('.cl-from').value;
+        var d2 = row.querySelector('.cl-to').value;
+        var typ = row.querySelector('.cl-type').value;
+        var emp = row.querySelector('.cl-emp').value;
+        if (d1 && typ) arr.push({from: d1, to: d2 || d1, type: typ, emp: emp || ''});
+    });
+    document.getElementById('classifJson').value = JSON.stringify(arr);
+}
+
 var zone = document.getElementById('dropZone');
 ['dragenter', 'dragover'].forEach(function(ev) {
     zone.addEventListener(ev, function(e) { e.preventDefault(); zone.classList.add('dragover'); });
@@ -222,9 +269,8 @@ zone.addEventListener('drop', function(e) {
     }
 });
 
-// Submit
 document.getElementById('pharmaForm').addEventListener('submit', function() {
-    updateRatesPreview();
+    updateRatesPreview(); updateClassif();
     var btn = document.getElementById('submitBtn');
     btn.disabled = true;
     btn.innerHTML = '⏳ Génération en cours…';

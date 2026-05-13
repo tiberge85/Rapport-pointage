@@ -15741,14 +15741,22 @@ def pharma_preview():
         from rapport_core import parse_pharma_excel
         emps, period = parse_pharma_excel(tmp)
         
+        result_emps = []
+        for e in emps:
+            recs = e.get('records', [])
+            nb_present = sum(1 for r in recs if r.get('arrival') and r.get('arrival') != '-')
+            result_emps.append({
+                "name": e['name'],
+                "id": e.get('id', ''),
+                "service": e.get('service', ''),
+                "nb_jours": len(recs),
+                "days_present": nb_present,
+            })
+        
         return jsonify({
             "count": len(emps),
             "period": period,
-            "employees": [{
-                "name": e['name'],
-                "nb_gardes": len(e['gardes']),
-                "types_uniques": list(set(g.get('type','') for g in e['gardes']))
-            } for e in emps]
+            "employees": result_emps,
         })
     except Exception as e:
         import traceback
@@ -15761,7 +15769,7 @@ def pharma_preview():
 @app.route('/pharma/generate', methods=['POST'])
 @permission_required('traitement')
 def pharma_generate():
-    """Génère le PDF rapport Pharmacie à partir d'un fichier Excel."""
+    """Génère le PDF rapport de présence Pharmacie à partir d'un fichier Excel."""
     if 'excel_file' not in request.files:
         flash("Fichier requis", "error")
         return redirect('/pharma')
@@ -15774,8 +15782,9 @@ def pharma_generate():
     pharmacy_name = (request.form.get('pharmacy_name') or 'PHARMACIE').strip()
     period_label = (request.form.get('period_label') or '').strip()
     default_hourly_rate = float(request.form.get('default_hourly_rate', '0') or 0)
+    hp_default = float(request.form.get('hp_default', '8') or 8)
     
-    # Coûts par pharmacien (optionnel, JSON)
+    # Taux par pharmacien
     employee_rates = {}
     try:
         rates_json = request.form.get('rates_json', '{}')
@@ -15785,13 +15794,43 @@ def pharma_generate():
     except:
         pass
     
+    # Classifications manuelles : [{from, to, type, emp}]
+    # → on les transforme en {(emp_name|''): {date: type_code}} et {'all': {date: type_code}}
+    manual_classifications_global = {}  # date -> type_code (s'applique à tout le monde)
+    manual_classifications_emp = {}     # emp_name -> {date -> type_code}
+    try:
+        classif_json = request.form.get('classif_json', '[]')
+        classif_data = json.loads(classif_json) if classif_json else []
+        from datetime import datetime as _dt, timedelta as _td
+        for c in classif_data:
+            try:
+                d1 = _dt.strptime(c.get('from','')[:10], '%Y-%m-%d')
+                d2 = _dt.strptime((c.get('to') or c.get('from',''))[:10], '%Y-%m-%d')
+                typ = (c.get('type') or '').strip()
+                emp = (c.get('emp') or '').strip()
+                if not typ: continue
+                cur = d1
+                while cur <= d2:
+                    ds = cur.strftime('%Y-%m-%d')
+                    if emp:
+                        if emp not in manual_classifications_emp:
+                            manual_classifications_emp[emp] = {}
+                        manual_classifications_emp[emp][ds] = typ
+                    else:
+                        manual_classifications_global[ds] = typ
+                    cur += _td(days=1)
+            except:
+                continue
+    except:
+        pass
+    
     import tempfile
     tmp_in = os.path.join(tempfile.gettempdir(), f'pharma_in_{uuid.uuid4().hex[:8]}.xlsx')
     tmp_out = os.path.join(tempfile.gettempdir(), f'pharma_out_{uuid.uuid4().hex[:8]}.pdf')
     f.save(tmp_in)
     
     try:
-        from rapport_core import parse_pharma_excel, generate_pharma_pdf
+        from rapport_core import parse_pharma_excel, generate_pharma_pdf, calc_pharma_employee_stats
         from models import pharma_list_types_service, pharma_list_jours_feries
         
         emps, period = parse_pharma_excel(tmp_in)
@@ -15799,21 +15838,63 @@ def pharma_generate():
             flash("Aucun pharmacien trouvé dans le fichier", "error")
             return redirect('/pharma')
         
-        # Charger les paramètres
         types_service = pharma_list_types_service()
-        # Indexer par code et libellé pour matching tolérant
+        # Indexer par code ET par libellé (matching tolérant)
         types_by_key = {}
         for t in types_service:
-            types_by_key[(t['code'] or '').lower()] = t
-            types_by_key[(t['libelle'] or '').lower()] = t
+            t_dict = dict(t)
+            code = (t_dict.get('code') or '').lower()
+            lib = (t_dict.get('libelle') or '').lower()
+            if code: types_by_key[code] = t_dict
+            if lib: types_by_key[lib] = t_dict
+            # Variantes
+            if code == 'garde_nuit':
+                types_by_key['garde nuit'] = t_dict
+                types_by_key['nuit'] = t_dict
+            if code == 'garde_we':
+                types_by_key['garde we'] = t_dict
+                types_by_key['week-end'] = t_dict
+            if code == 'normal':
+                types_by_key['service normal'] = t_dict
         
-        # Liste des dates fériées (toutes années)
+        # Jours fériés
         feries_set = set(f['date'] for f in pharma_list_jours_feries(year=None))
         
         # Logo
         logo_path = os.path.join(BASE_DIR, 'logo_ramya.png')
         if not os.path.exists(logo_path):
             logo_path = None
+        
+        # Fusionner classifications : per-emp prend priorité sur global
+        # generate_pharma_pdf attend un dict {date: type} pour TOUS les emps
+        # → on construit un mapping global qui dépendra de l'emp à l'intérieur
+        # SIMPLE : on appelle calc_pharma_employee_stats nous-mêmes pour chaque emp
+        # avec sa classification fusionnée. Mais c'est déjà appelé dedans...
+        # → on stocke par emp_name dans un dict spécial et on passe au generator
+        
+        # Pour rester compatible : on construit custom_classifications par emp avant l'appel
+        emps_classifications = {}
+        for emp in emps:
+            merged = dict(manual_classifications_global)
+            if emp['name'] in manual_classifications_emp:
+                merged.update(manual_classifications_emp[emp['name']])
+            emps_classifications[emp['name']] = merged
+        
+        # Note : generate_pharma_pdf accepte une seule custom_classifications
+        # → on doit faire les calculs nous-mêmes, ou enrichir generate_pharma_pdf
+        # SOLUTION : passer un dict spécial qui sera lu par employé dans calc
+        # Plus simple : on monkey-patch en passant un wrapper
+        # → ACTUEL : custom_classifications est passé tel quel à calc dans generate
+        # → on doit modifier generate_pharma_pdf pour accepter un dict par-emp
+        # Pour l'instant : si UNE seule classification globale, on l'utilise
+        # Sinon, on enrichit chaque emp['records'] avec le type_code forcé
+        
+        # ✅ Approche pragmatique : enrichir chaque record avec _forced_type
+        for emp in emps:
+            classif = emps_classifications.get(emp['name'], {})
+            for rec in emp['records']:
+                if rec['date'] in classif:
+                    rec['_forced_type'] = classif[rec['date']]
         
         generate_pharma_pdf(
             emps, tmp_out,
@@ -15823,22 +15904,22 @@ def pharma_generate():
             feries_set=feries_set,
             default_hourly_rate=default_hourly_rate,
             employee_rates=employee_rates,
+            custom_classifications={},  # déjà appliqué via _forced_type
             logo_path=logo_path,
+            hp=hp_default,
         )
         
         if not os.path.exists(tmp_out):
             flash("Erreur génération PDF", "error")
             return redirect('/pharma')
         
-        # Send file
         with open(tmp_out, 'rb') as fp:
             pdf_data = fp.read()
         
-        fname = f"Rapport_Pharmacie_{period_label or 'mois'}.pdf".replace(' ', '_')
+        fname = f"Rapport_Presence_Pharmacie_{(period_label or period or 'rapport').replace(' ','_').replace('/','-')}.pdf"
         from flask import Response
-        resp = Response(pdf_data, mimetype='application/pdf',
+        return Response(pdf_data, mimetype='application/pdf',
                        headers={'Content-Disposition': f'attachment; filename="{fname}"'})
-        return resp
     
     except Exception as e:
         import traceback
@@ -15855,60 +15936,76 @@ def pharma_generate():
 @app.route('/pharma/template')
 @login_required
 def pharma_template():
-    """Génère un modèle Excel vierge pour le rapport Pharmacie."""
+    """Génère un modèle Excel vierge au format pointage pharmacie (v69)."""
     import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Font, PatternFill, Alignment
     import io
     
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Gardes Pharmacie"
+    ws.title = "Présence"
     
-    # En-têtes
-    headers = ['Nom complet', 'Date (YYYY-MM-DD)', 'Type de service',
-               'Heure début (HH:MM)', 'Heure fin (HH:MM)', 'Pause (min)', 'Notes']
-    for col, h in enumerate(headers, 1):
+    # En-têtes (format identique au fichier source réel)
+    headers = ['Prénom', 'Nom de famille', 'ID', 'Service', 'Date',
+               "Heure d'arrivée obligatoire", 'Heure de départ obligatoire',
+               "Heure de contrôle d'arrivée", 'Sortie à', 'Durée']
+    widths = [14, 18, 12, 30, 12, 18, 18, 18, 11, 10]
+    
+    for col, (h, w) in enumerate(zip(headers, widths), 1):
         cell = ws.cell(row=1, column=col, value=h)
         cell.font = Font(bold=True, color='FFFFFF', size=10)
-        cell.fill = PatternFill(start_color='1A7A6D', end_color='1A7A6D', fill_type='solid')
+        cell.fill = PatternFill(start_color='7b1fa2', end_color='7b1fa2', fill_type='solid')
         cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-        ws.column_dimensions[chr(64+col)].width = 18
+        ws.column_dimensions[chr(64+col)].width = w
     ws.row_dimensions[1].height = 30
     
-    # Exemples
+    # Exemples (calqués sur le fichier réel)
     examples = [
-        ['Marie DUPONT', '2026-05-01', 'Garde Nuit', '20:00', '08:00', 60, 'Garde de nuit'],
-        ['Marie DUPONT', '2026-05-02', 'Service Normal', '08:00', '17:00', 60, ''],
-        ['Jean MARTIN', '2026-05-01', 'Garde Week-end', '08:00', '20:00', 60, 'Samedi'],
-        ['Jean MARTIN', '2026-05-02', 'Garde Week-end', '08:00', '20:00', 60, 'Dimanche'],
-        ['Marie DUPONT', '2026-05-07', 'Jour Férié', '08:00', '20:00', 60, 'Fête Nationale'],
+        ['MARIE', 'DUPONT', 'PH001', 'PHARMACIE EXEMPLE', '2026-05-01', '07:30', '20:00', '07:25', '20:05', '12:40'],
+        ['MARIE', 'DUPONT', 'PH001', 'PHARMACIE EXEMPLE', '2026-05-02', '07:30', '20:00', '07:32', '13:30', '05:58'],
+        ['JEAN', 'MARTIN', 'PH002', 'PHARMACIE EXEMPLE', '2026-05-01', '13:00', '20:00', '13:15', '20:10', '06:55'],
+        ['JEAN', 'MARTIN', 'PH002', 'PHARMACIE EXEMPLE', '2026-05-02', '13:00', '20:00', '13:05', '-', '-'],
+        ['MARIE', 'DUPONT', 'PH001', 'PHARMACIE EXEMPLE', '2026-05-07', '07:30', '20:00', '07:35', '20:00', '12:25'],
     ]
     for r, row in enumerate(examples, 2):
         for c, val in enumerate(row, 1):
             ws.cell(row=r, column=c, value=val)
     
     # Feuille d'aide
-    ws2 = wb.create_sheet("Types de service")
-    ws2['A1'] = 'Code'
-    ws2['B1'] = 'Libellé à utiliser'
-    ws2['C1'] = 'Description'
-    for c in ['A1','B1','C1']:
-        ws2[c].font = Font(bold=True, color='FFFFFF')
-        ws2[c].fill = PatternFill(start_color='1A7A6D', end_color='1A7A6D', fill_type='solid')
-    types = [
-        ('normal', 'Service Normal', 'Pas de majoration'),
-        ('garde_nuit', 'Garde Nuit', '+50% + prime 5000 F'),
-        ('garde_we', 'Garde Week-end', '+75% + prime 10000 F'),
-        ('ferie', 'Jour Férié', '+100% + prime 15000 F'),
-        ('astreinte', 'Astreinte', '+25% + prime 3000 F'),
+    ws2 = wb.create_sheet("Aide")
+    aide = [
+        ['💊 Modèle de fichier — Rapport de présence Pharmacie', ''],
+        ['', ''],
+        ['Colonne', 'Description'],
+        ['Prénom', 'Prénom du pharmacien'],
+        ['Nom de famille', 'Nom de famille du pharmacien'],
+        ['ID', 'Matricule / identifiant unique (optionnel)'],
+        ['Service', 'Département/service (ex: PHARMACIE GNIMAH)'],
+        ['Date', 'Format YYYY-MM-DD (ex: 2026-05-01)'],
+        ["Heure d'arrivée obligatoire", "Format HH:MM ou décimal Excel (ex: 07:30)"],
+        ['Heure de départ obligatoire', 'Format HH:MM (ex: 20:00)'],
+        ["Heure de contrôle d'arrivée", 'Heure réelle d\'arrivée (badge entrée)'],
+        ['Sortie à', 'Heure réelle de sortie (badge sortie) — "-" si absente'],
+        ['Durée', 'Durée déjà calculée HH:MM — "-" si non disponible'],
+        ['', ''],
+        ['🤖 Détection automatique des types de service :', ''],
+        ['Jour férié', 'Si la date est dans la liste des jours fériés CI'],
+        ['Garde de nuit', "Si l'heure d'arrivée obligatoire ≥ 18:00 ou < 06:00"],
+        ['Garde week-end', 'Si samedi ou dimanche'],
+        ['Service normal', 'Tout le reste'],
+        ['', ''],
+        ['📝 Vous pouvez aussi forcer un type sur certaines dates depuis l\'interface (Étape 4).', ''],
     ]
-    for r, (code, lib, desc) in enumerate(types, 2):
-        ws2.cell(row=r, column=1, value=code)
-        ws2.cell(row=r, column=2, value=lib)
-        ws2.cell(row=r, column=3, value=desc)
-    ws2.column_dimensions['A'].width = 15
-    ws2.column_dimensions['B'].width = 20
-    ws2.column_dimensions['C'].width = 35
+    for r, row in enumerate(aide, 1):
+        for c, val in enumerate(row, 1):
+            cell = ws2.cell(row=r, column=c, value=val)
+            if r == 1:
+                cell.font = Font(bold=True, size=12, color='7b1fa2')
+            elif r == 3 or r == 15:
+                cell.font = Font(bold=True, size=11, color='FFFFFF')
+                cell.fill = PatternFill(start_color='7b1fa2', end_color='7b1fa2', fill_type='solid')
+    ws2.column_dimensions['A'].width = 30
+    ws2.column_dimensions['B'].width = 55
     
     buf = io.BytesIO()
     wb.save(buf)
@@ -15916,7 +16013,7 @@ def pharma_template():
     from flask import Response
     return Response(buf.getvalue(),
                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                   headers={'Content-Disposition': 'attachment; filename="modele_pharmacie.xlsx"'})
+                   headers={'Content-Disposition': 'attachment; filename="modele_presence_pharmacie.xlsx"'})
 
 
 # ============================================================

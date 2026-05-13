@@ -531,21 +531,27 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
         
         # Tableau détail
         # v67 : ajout colonnes Pause début + Pause fin entre Arrivée et Départ
-        # v67 : si beaucoup de records, utiliser styles compacts (police 6pt) pour tenir en 2 pages
+        # v69 : lisibilité prioritaire — police minimum 7pt (au lieu de 6pt en v67)
         nb_recs_for_style = len(enriched)
-        is_dense = nb_recs_for_style > 22
+        is_dense = nb_recs_for_style > 25
         
         if is_dense:
-            # Styles compacts 6pt avec leading très serré (6) — gain ~20% de hauteur
-            s_c = ParagraphStyle('s_c', fontName='Helvetica', fontSize=6, alignment=TA_CENTER, leading=6)
-            s_cb = ParagraphStyle('s_cb', fontName='Helvetica-Bold', fontSize=6, alignment=TA_CENTER, leading=6)
-            s_h = ParagraphStyle('s_h', fontName='Helvetica-Bold', fontSize=6, textColor=white, alignment=TA_CENTER, leading=6.5)
-            s_g = ParagraphStyle('s_g', fontName='Helvetica-Bold', fontSize=6, textColor=GREEN, alignment=TA_CENTER, leading=6)
-            s_r = ParagraphStyle('s_r', fontName='Helvetica-Bold', fontSize=6, textColor=RED, alignment=TA_CENTER, leading=6)
-            s_b = ParagraphStyle('s_b', fontName='Helvetica-Bold', fontSize=6, textColor=BLUE, alignment=TA_CENTER, leading=6)
+            # Mode dense (>25 records) : police 7pt avec leading 7.5 (lisible)
+            s_c = ParagraphStyle('s_c', fontName='Helvetica', fontSize=7, alignment=TA_CENTER, leading=7.5)
+            s_cb = ParagraphStyle('s_cb', fontName='Helvetica-Bold', fontSize=7, alignment=TA_CENTER, leading=7.5)
+            s_h = ParagraphStyle('s_h', fontName='Helvetica-Bold', fontSize=7, textColor=white, alignment=TA_CENTER, leading=8)
+            s_g = ParagraphStyle('s_g', fontName='Helvetica-Bold', fontSize=7, textColor=GREEN, alignment=TA_CENTER, leading=7.5)
+            s_r = ParagraphStyle('s_r', fontName='Helvetica-Bold', fontSize=7, textColor=RED, alignment=TA_CENTER, leading=7.5)
+            s_b = ParagraphStyle('s_b', fontName='Helvetica-Bold', fontSize=7, textColor=BLUE, alignment=TA_CENTER, leading=7.5)
         else:
-            s_c, s_cb, s_h = S['c'], S['cb'], S['h']
-            s_g, s_r, s_b = S['g'], S['r'], S['b']
+            # Mode normal : utilise les styles par défaut (8pt avec leading 10)
+            # v69 : on agrandit aussi les styles par défaut pour meilleure lisibilité
+            s_c = ParagraphStyle('s_c2', fontName='Helvetica', fontSize=8, alignment=TA_CENTER, leading=10)
+            s_cb = ParagraphStyle('s_cb2', fontName='Helvetica-Bold', fontSize=8, alignment=TA_CENTER, leading=10)
+            s_h = ParagraphStyle('s_h2', fontName='Helvetica-Bold', fontSize=8, textColor=white, alignment=TA_CENTER, leading=10)
+            s_g = ParagraphStyle('s_g2', fontName='Helvetica-Bold', fontSize=8, textColor=GREEN, alignment=TA_CENTER, leading=10)
+            s_r = ParagraphStyle('s_r2', fontName='Helvetica-Bold', fontSize=8, textColor=RED, alignment=TA_CENTER, leading=10)
+            s_b = ParagraphStyle('s_b2', fontName='Helvetica-Bold', fontSize=8, textColor=BLUE, alignment=TA_CENTER, leading=10)
         
         hdrs = ["N°","Date","Planning","État","Arrivée","P.<br/>début","P.<br/>fin",
                 "Départ","H.<br/>travail.","Retard",
@@ -3226,635 +3232,804 @@ def gen_session_pages(story, emps_sessions, S, provider_name, provider_info, cli
             S['ft']))
 
 
-# ======================== PHARMACIE (v68+) ========================
-# Excel pharmacie → analyse → calcul majorations → PDF
-# Colonnes attendues : Nom | Date | Type de service | Heure début | Heure fin | Pause (min) | Notes
+
+
+# ======================== PHARMACIE (v69 — refonte présence) ========================
+# Format Excel attendu (vraies colonnes des systèmes de pointage type "Time Doctor", "Jibble"...) :
+#   Prénom | Nom de famille | ID | Service | Date | Heure d'arrivée oblig. | Heure de départ oblig.
+#   | Heure de contrôle d'arrivée | Sortie à | Durée
+#
+# Différences clé avec /dpci :
+#   - 2 colonnes pour le nom (Prénom + Nom famille) -> on les concatène
+#   - Heure d'arrivée obligatoire peut varier par jour (matin 07:30 ou aprem 13:00)
+#   - Pas de colonne pause (durée = sortie - arrivée, pas de pause à soustraire)
+#   - "-" dans Sortie / Durée = badge non sorti (absence ou oubli)
+
+
+def _norm_excel_time(v):
+    """Convertit une valeur Excel en HH:MM. Gère les décimales (0.5416... = 13:00)."""
+    if v is None or v == '':
+        return ''
+    s = str(v).strip()
+    if s == '-' or s == '':
+        return ''
+    # Format décimal Excel (fraction d'un jour)
+    try:
+        f = float(s)
+        if 0 <= f < 1:
+            total_min = int(round(f * 24 * 60))
+            return f'{total_min // 60:02d}:{total_min % 60:02d}'
+        # Si f >= 1, peut être un timestamp Excel
+        if 1 <= f < 100:
+            # Fractionnaire d'un jour avec partie entière
+            day_frac = f - int(f)
+            total_min = int(round(day_frac * 24 * 60))
+            return f'{total_min // 60:02d}:{total_min % 60:02d}'
+    except (ValueError, TypeError):
+        pass
+    # Objet datetime ou time
+    if hasattr(v, 'strftime'):
+        return v.strftime('%H:%M')
+    # Si déjà HH:MM
+    if len(s) >= 5 and s[2] == ':':
+        return s[:5]
+    return s
+
+
+def _norm_excel_date(v):
+    """Convertit en YYYY-MM-DD."""
+    if v is None: return ''
+    if hasattr(v, 'strftime'):
+        return v.strftime('%Y-%m-%d')
+    s = str(v).strip()
+    if len(s) >= 10 and s[4] == '-' and s[7] == '-':
+        return s[:10]
+    if '/' in s:
+        parts = s.split('/')
+        if len(parts) == 3:
+            try:
+                d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
+                if y < 100: y += 2000
+                return f'{y:04d}-{m:02d}-{d:02d}'
+            except: pass
+    return s
+
 
 def parse_pharma_excel(xlsx_path):
-    """Parse un fichier Excel pharmacie.
+    """Parse un Excel de pointage pharmacie.
     
-    Format attendu en ligne 1 (header) :
-      Nom | Date (YYYY-MM-DD) | Type de service | Heure début | Heure fin | Pause (min) | Notes
+    Colonnes attendues :
+      Prénom | Nom de famille | ID | Service | Date | H.arrivée oblig. 
+      | H.départ oblig. | H.contrôle arrivée | Sortie à | Durée
     
     Retourne (emps, period) où :
-      emps = [{'name': str, 'gardes': [{date, type, h_debut, h_fin, pause_min, notes}, ...]}, ...]
-      period = label déduit (ex: '2026-05')
+      emps = [{
+        'name': 'Prénom Nom',
+        'id': 'PHCIE01',
+        'service': 'PHARMACIE GNIMAH',
+        'records': [{
+          'date': '2026-04-30',
+          'sched_start': '07:30',     # heure arrivée oblig.
+          'sched_end': '20:00',       # heure départ oblig.
+          'arrival': '06:24',          # heure réelle arrivée
+          'departure': '13:32',        # heure réelle sortie ('' si "-")
+          'duration': '07:08',         # durée déjà calculée par le système
+        }, ...]
+      }, ...]
+      period = '2026-04' (ou range si chevauche)
     """
     from openpyxl import load_workbook
     wb = load_workbook(xlsx_path, data_only=True)
     ws = wb.active
     
-    # Détection en-têtes : on cherche la ligne contenant "Nom" et "Date" en colonnes
+    # Détection en-têtes (ligne contenant Prénom + Nom + Date)
     header_row = None
-    col_map = {}  # nom_normalisé -> index colonne (1-based)
+    col_map = {}
     for r in range(1, min(10, ws.max_row + 1)):
-        row_vals = [(str(ws.cell(r, c).value or '')).strip().lower() for c in range(1, ws.max_column + 1)]
-        if any('nom' in v for v in row_vals) and any('date' in v for v in row_vals):
-            header_row = r
-            for c, v in enumerate(row_vals, 1):
-                # normaliser
-                if 'nom' in v: col_map['nom'] = c
-                elif 'date' in v: col_map['date'] = c
-                elif 'type' in v: col_map['type'] = c
-                elif 'début' in v or 'debut' in v: col_map['h_debut'] = c
-                elif 'fin' in v: col_map['h_fin'] = c
-                elif 'pause' in v: col_map['pause'] = c
-                elif 'note' in v or 'commentaire' in v: col_map['notes'] = c
-            break
+        vals = [(str(ws.cell(r, c).value or '')).strip().lower() for c in range(1, ws.max_column + 1)]
+        joined = ' | '.join(vals)
+        if 'prénom' in joined or 'prenom' in joined:
+            if 'nom' in joined and 'date' in joined:
+                header_row = r
+                for c, v in enumerate(vals, 1):
+                    if 'prénom' in v or 'prenom' in v: col_map['prenom'] = c
+                    elif 'nom' in v and 'famille' in v: col_map['nom'] = c
+                    elif v == 'nom': col_map['nom'] = c  # si juste "Nom"
+                    elif v == 'id' or 'matricule' in v: col_map['id'] = c
+                    elif 'service' in v or 'département' in v or 'departement' in v: col_map['service'] = c
+                    elif v == 'date': col_map['date'] = c
+                    elif 'arrivée' in v and ('oblig' in v or 'prévue' in v or 'prevue' in v or 'théo' in v): col_map['sched_start'] = c
+                    elif 'départ' in v and ('oblig' in v or 'prévue' in v or 'prevue' in v or 'théo' in v): col_map['sched_end'] = c
+                    elif 'contrôle' in v and 'arrivée' in v: col_map['arrival'] = c
+                    elif 'pointage' in v and 'arrivée' in v: col_map['arrival'] = c
+                    elif v.startswith('arrivée') and 'oblig' not in v and 'prévue' not in v: col_map['arrival'] = c
+                    elif 'sortie' in v: col_map['departure'] = c
+                    elif v == 'durée' or 'durée' in v: col_map['duration'] = c
+                break
     
-    if header_row is None or 'nom' not in col_map or 'date' not in col_map:
-        raise ValueError("Fichier invalide : impossible de trouver les colonnes 'Nom' et 'Date'. "
-                         "Utilisez le modèle Excel.")
+    # Si pas trouvé via "Prénom", chercher au moins "Nom" + "Date"
+    if header_row is None:
+        for r in range(1, min(10, ws.max_row + 1)):
+            vals = [(str(ws.cell(r, c).value or '')).strip().lower() for c in range(1, ws.max_column + 1)]
+            if any('nom' in v for v in vals) and any(v == 'date' for v in vals):
+                header_row = r
+                for c, v in enumerate(vals, 1):
+                    if 'nom' in v and 'prenom' not in v: col_map['nom'] = c
+                    elif v == 'date': col_map['date'] = c
+                    elif 'arrivée' in v and 'oblig' in v: col_map['sched_start'] = c
+                    elif 'départ' in v and 'oblig' in v: col_map['sched_end'] = c
+                    elif 'arrivée' in v: col_map['arrival'] = c
+                    elif 'sortie' in v: col_map['departure'] = c
+                    elif 'durée' in v: col_map['duration'] = c
+                break
     
-    def _norm_time(v):
-        """Convertit une valeur en HH:MM."""
-        if v is None: return ''
-        if hasattr(v, 'strftime'):  # datetime ou time
-            return v.strftime('%H:%M')
-        s = str(v).strip()
-        if not s: return ''
-        # Si HH:MM:SS, raccourcir
-        if len(s) >= 5 and s[2] == ':':
-            return s[:5]
-        # Format Excel décimal (heures fractionnaires)
-        try:
-            f = float(s)
-            if 0 <= f < 1:
-                # Fraction d'un jour
-                total_min = int(round(f * 24 * 60))
-                return f'{total_min // 60:02d}:{total_min % 60:02d}'
-        except: pass
-        return s
+    if header_row is None or 'date' not in col_map:
+        raise ValueError("Fichier Excel invalide : impossible de trouver les colonnes attendues. "
+                         "Le fichier doit contenir au moins : Nom, Date, Heure d'arrivée, Sortie.")
     
-    def _norm_date(v):
-        """Convertit en YYYY-MM-DD."""
-        if v is None: return ''
-        if hasattr(v, 'strftime'):
-            return v.strftime('%Y-%m-%d')
-        s = str(v).strip()
-        # Si déjà YYYY-MM-DD
-        if len(s) >= 10 and s[4] == '-' and s[7] == '-':
-            return s[:10]
-        # Si DD/MM/YYYY
-        if '/' in s:
-            parts = s.split('/')
-            if len(parts) == 3:
-                try:
-                    d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
-                    if y < 100: y += 2000
-                    return f'{y:04d}-{m:02d}-{d:02d}'
-                except: pass
-        return s
+    # Auto-fallback : si pas de "nom" mais on a "prenom", inverser
+    if 'nom' not in col_map and 'prenom' in col_map:
+        col_map['nom'] = col_map['prenom']
+        col_map.pop('prenom', None)
     
-    employees = {}  # name -> {'name', 'gardes': [...]}
+    employees = {}
     dates_seen = set()
     
     for r in range(header_row + 1, ws.max_row + 1):
-        nom = str(ws.cell(r, col_map['nom']).value or '').strip()
-        if not nom: continue
-        date = _norm_date(ws.cell(r, col_map['date']).value)
-        if not date: continue
+        # Construire le nom complet
+        prenom = str(ws.cell(r, col_map.get('prenom', 0)).value or '').strip() if 'prenom' in col_map else ''
+        nom_fam = str(ws.cell(r, col_map['nom']).value or '').strip()
+        if not nom_fam and not prenom: continue
+        full_name = (prenom + ' ' + nom_fam).strip()
+        if not full_name: continue
         
-        tipe = ''
-        if 'type' in col_map:
-            tipe = str(ws.cell(r, col_map['type']).value or '').strip()
-        h_debut = _norm_time(ws.cell(r, col_map.get('h_debut', 999)).value) if 'h_debut' in col_map else ''
-        h_fin = _norm_time(ws.cell(r, col_map.get('h_fin', 999)).value) if 'h_fin' in col_map else ''
+        date = _norm_excel_date(ws.cell(r, col_map['date']).value)
+        if not date or len(date) < 8: continue
         
-        pause_min = 0
-        if 'pause' in col_map:
-            pv = ws.cell(r, col_map['pause']).value
-            try: pause_min = int(float(pv)) if pv is not None else 0
-            except: pause_min = 0
+        ident = str(ws.cell(r, col_map.get('id', 0)).value or '').strip() if 'id' in col_map else ''
+        service = str(ws.cell(r, col_map.get('service', 0)).value or '').strip() if 'service' in col_map else ''
         
-        notes = ''
-        if 'notes' in col_map:
-            notes = str(ws.cell(r, col_map['notes']).value or '').strip()
+        sched_start = _norm_excel_time(ws.cell(r, col_map.get('sched_start', 0)).value) if 'sched_start' in col_map else ''
+        sched_end = _norm_excel_time(ws.cell(r, col_map.get('sched_end', 0)).value) if 'sched_end' in col_map else ''
+        arrival = _norm_excel_time(ws.cell(r, col_map.get('arrival', 0)).value) if 'arrival' in col_map else ''
+        departure = _norm_excel_time(ws.cell(r, col_map.get('departure', 0)).value) if 'departure' in col_map else ''
+        duration = _norm_excel_time(ws.cell(r, col_map.get('duration', 0)).value) if 'duration' in col_map else ''
         
-        if nom not in employees:
-            employees[nom] = {'name': nom, 'gardes': []}
-        employees[nom]['gardes'].append({
-            'date': date, 'type': tipe, 'h_debut': h_debut, 'h_fin': h_fin,
-            'pause_min': pause_min, 'notes': notes,
+        # Si "-" → vide
+        for fld in ['arrival', 'departure', 'duration']:
+            pass  # déjà géré dans _norm_excel_time
+        
+        if full_name not in employees:
+            employees[full_name] = {
+                'name': full_name, 'id': ident, 'service': service,
+                'records': []
+            }
+        if not employees[full_name].get('id') and ident:
+            employees[full_name]['id'] = ident
+        if not employees[full_name].get('service') and service:
+            employees[full_name]['service'] = service
+        
+        employees[full_name]['records'].append({
+            'date': date, 'sched_start': sched_start, 'sched_end': sched_end,
+            'arrival': arrival, 'departure': departure, 'duration': duration,
         })
         dates_seen.add(date)
     
-    # Trier les gardes par date pour chaque employé
+    # Trier par date
     for emp in employees.values():
-        emp['gardes'].sort(key=lambda g: (g['date'], g['h_debut']))
+        emp['records'].sort(key=lambda r: r['date'])
     
-    # Déduire la période
+    # Période
     period = ''
     if dates_seen:
-        sorted_dates = sorted(dates_seen)
-        first = sorted_dates[0]
-        last = sorted_dates[-1]
-        if first[:7] == last[:7]:
-            # Même mois
-            period = first[:7]
+        sd = sorted(dates_seen)
+        if sd[0][:7] == sd[-1][:7]:
+            period = sd[0][:7]
         else:
-            period = f'{first} → {last}'
+            period = f'{sd[0]} → {sd[-1]}'
     
     return list(employees.values()), period
 
 
-def calc_pharma_garde_stats(garde, types_by_key, feries_set, default_hourly_rate=0, employee_rate=0):
-    """Calcule les statistiques d'UNE garde :
-    - duree_min (durée brute - pause)
-    - type_resolu (le type du dict pharma_types_service)
-    - taux_majoration, prime_fixe
-    - is_ferie (forcé même si type 'normal' tombe sur un jour férié)
-    - rate (taux horaire utilisé)
-    - cout_total (heures × taux × (1+maj) + prime)
+def _classify_pharma_day(date_str, sched_start, feries_set, custom_classifications=None):
+    """Classifie un jour : 'normal', 'garde_nuit', 'garde_we', 'ferie', ou 'astreinte'.
+    
+    Priorité :
+      1. Override manuel (custom_classifications)
+      2. Jour férié (date dans feries_set)
+      3. Garde nuit (heure arrivée >= 18h ou < 6h)
+      4. Garde week-end (samedi/dimanche)
+      5. Normal
     """
-    h_debut = garde.get('h_debut') or ''
-    h_fin = garde.get('h_fin') or ''
-    pause_min = garde.get('pause_min', 0) or 0
+    custom_classifications = custom_classifications or {}
+    if date_str in custom_classifications:
+        return custom_classifications[date_str]
     
-    # Durée
-    duree_min = 0
-    franchit_minuit = False
+    # Jour férié
+    if date_str in feries_set:
+        return 'ferie'
+    
+    # Date pour test WE
     try:
-        h1, m1 = map(int, h_debut.split(':'))
-        h2, m2 = map(int, h_fin.split(':'))
-        debut = h1*60 + m1
-        fin = h2*60 + m2
-        if fin <= debut:  # traverse minuit
-            fin += 24*60
-            franchit_minuit = True
-        duree_min = max(0, fin - debut - pause_min)
+        from datetime import datetime as _dt
+        d = _dt.strptime(date_str[:10], '%Y-%m-%d')
+        weekday = d.weekday()
     except:
-        duree_min = 0
+        weekday = 0
     
-    # Résolution du type
-    type_key = (garde.get('type') or '').strip().lower()
-    type_data = types_by_key.get(type_key)
-    
-    # v68 : matching tolérant — chercher par mots-clés si pas de match exact
-    if not type_data and type_key:
-        # Normaliser: enlever espaces/tirets
-        norm_key = type_key.replace(' ', '').replace('-', '').replace('_', '')
-        for k, t in types_by_key.items():
-            norm_k = k.replace(' ', '').replace('-', '').replace('_', '')
-            if norm_key == norm_k:
-                type_data = t; break
-        # Sinon par mot-clé
-        if not type_data:
-            if 'nuit' in type_key:
-                type_data = types_by_key.get('garde_nuit') or types_by_key.get('garde de nuit')
-            elif 'week' in type_key or 'samedi' in type_key or 'dimanche' in type_key or ' we' in type_key:
-                type_data = types_by_key.get('garde_we') or types_by_key.get('garde week-end')
-            elif 'féri' in type_key or 'ferie' in type_key:
-                type_data = types_by_key.get('ferie') or types_by_key.get('jour férié')
-            elif 'astreinte' in type_key:
-                type_data = types_by_key.get('astreinte')
-            elif 'normal' in type_key or 'jour' in type_key:
-                type_data = types_by_key.get('normal') or types_by_key.get('service normal')
-    
-    # Forçage férié : si la date est dans feries_set, on impose le type 'ferie'
-    is_ferie = garde['date'] in feries_set
-    if is_ferie:
-        # Si non déjà férié, basculer
-        ferie_type = types_by_key.get('ferie') or types_by_key.get('jour férié')
-        if ferie_type:
-            type_data = ferie_type
-    
-    # Détection week-end automatique pour 'normal' tombant sur samedi/dimanche
-    if not is_ferie and type_data and type_data.get('code') == 'normal':
+    # Garde de nuit : si l'heure d'arrivée prévue est >= 18:00 ou < 06:00
+    if sched_start:
         try:
-            from datetime import datetime as _dt
-            d = _dt.strptime(garde['date'][:10], '%Y-%m-%d')
-            if d.weekday() >= 5:
-                we_type = types_by_key.get('garde_we') or types_by_key.get('garde week-end')
-                if we_type:
-                    type_data = we_type
+            h = int(sched_start.split(':')[0])
+            if h >= 18 or h < 6:
+                return 'garde_nuit'
         except: pass
     
-    taux_maj = float((type_data or {}).get('taux_majoration', 0) or 0)
-    prime = float((type_data or {}).get('prime_fixe', 0) or 0)
-    type_libelle = (type_data or {}).get('libelle', garde.get('type','-'))
-    type_couleur = (type_data or {}).get('couleur', '#1A7A6D')
+    # Week-end
+    if weekday >= 5:
+        return 'garde_we'
     
-    # Taux horaire utilisé
+    return 'normal'
+
+
+def calc_pharma_employee_stats(emp, types_by_key, feries_set,
+                                 default_hourly_rate=0, employee_rate=0,
+                                 custom_classifications=None,
+                                 hp=8):
+    """Calcule les stats de présence pour un pharmacien.
+    
+    custom_classifications = {date_str: type_code} pour overrider la classif auto
+    hp = heures obligatoires par défaut (utilisé si sched_start/sched_end absents)
+    """
+    custom_classifications = custom_classifications or {}
+    
+    enriched = []
+    by_type = {}
+    total_min_worked = 0    # heures effectivement travaillées (hors majoration)
+    total_min_normal = 0    # heures normales (taux 1.0)
+    total_min_majored = 0   # heures qui ont eu une majoration
+    total_late_min = 0
+    total_required_min = 0
+    days_present = 0
+    days_absent = 0
+    days_late = 0
+    days_no_dep = 0  # jours sans heure de sortie (badge oublié)
+    total_primes = 0
+    total_cost = 0
+    
     rate = employee_rate or default_hourly_rate or 0
     
-    # Coût
-    heures = duree_min / 60.0
-    cout_heures = heures * rate * (1 + taux_maj)
-    cout_total = cout_heures + prime
+    counts_by_type = {'normal': 0, 'garde_nuit': 0, 'garde_we': 0, 'ferie': 0, 'astreinte': 0}
+    
+    for rec in emp['records']:
+        date_str = rec['date']
+        sched_s = rec.get('sched_start', '')
+        sched_e = rec.get('sched_end', '')
+        arrival = rec.get('arrival', '')
+        departure = rec.get('departure', '')
+        duration_str = rec.get('duration', '')
+        
+        # v69 : priorité 1 = _forced_type (programmation manuelle via UI)
+        # priorité 2 = custom_classifications (rétrocompatibilité)
+        # priorité 3 = détection auto (jour férié / WE / nuit)
+        if rec.get('_forced_type'):
+            type_code = rec['_forced_type']
+        else:
+            type_code = _classify_pharma_day(date_str, sched_s, feries_set, custom_classifications)
+        counts_by_type[type_code] = counts_by_type.get(type_code, 0) + 1
+        
+        # Trouver les paramètres du type
+        type_data = types_by_key.get(type_code) or types_by_key.get(type_code.replace('_', ' ')) or {}
+        taux_maj = float(type_data.get('taux_majoration', 0) or 0)
+        prime = float(type_data.get('prime_fixe', 0) or 0)
+        type_libelle = type_data.get('libelle', type_code.replace('_', ' ').title())
+        type_couleur = type_data.get('couleur', '#1A7A6D')
+        
+        # Calcul de la durée requise (en minutes)
+        required_min = 0
+        try:
+            h1, m1 = map(int, sched_s.split(':'))
+            h2, m2 = map(int, sched_e.split(':'))
+            req = (h2 * 60 + m2) - (h1 * 60 + m1)
+            if req < 0: req += 24 * 60  # traverse minuit
+            required_min = req
+        except:
+            required_min = hp * 60 if hp else 0
+        total_required_min += required_min
+        
+        # Statut & calculs
+        worked_min = 0
+        late_min = 0
+        is_present = False
+        is_absent = False
+        no_dep = False
+        
+        if not arrival or arrival == '-':
+            # Absence
+            is_absent = True
+            days_absent += 1
+            state = 'ABS'
+        elif not departure or departure == '-':
+            # Badge non sorti
+            is_present = True
+            no_dep = True
+            days_present += 1
+            days_no_dep += 1
+            state = 'ARR'  # Arrivé mais pas sorti
+            # Si duration fournie, l'utiliser
+            if duration_str:
+                try:
+                    dh, dm = duration_str.split(':')
+                    worked_min = int(dh) * 60 + int(dm)
+                except: pass
+        else:
+            is_present = True
+            days_present += 1
+            state = 'OK'
+            # Durée
+            if duration_str:
+                try:
+                    dh, dm = duration_str.split(':')
+                    worked_min = int(dh) * 60 + int(dm)
+                except: pass
+            if worked_min == 0:
+                # Calculer depuis arrival / departure
+                try:
+                    ah, am = map(int, arrival.split(':'))
+                    dh, dm = map(int, departure.split(':'))
+                    w = (dh * 60 + dm) - (ah * 60 + am)
+                    if w < 0: w += 24 * 60
+                    worked_min = w
+                except: pass
+            
+            # Retard ?
+            if sched_s and arrival:
+                try:
+                    sh, sm = map(int, sched_s.split(':'))
+                    ah, am = map(int, arrival.split(':'))
+                    diff = (ah * 60 + am) - (sh * 60 + sm)
+                    if diff > 5:  # tolérance 5 min
+                        late_min = diff
+                        days_late += 1
+                        state = 'RETARD'
+                except: pass
+        
+        total_min_worked += worked_min
+        total_late_min += late_min
+        
+        # Coût
+        heures = worked_min / 60.0
+        if taux_maj > 0:
+            total_min_majored += worked_min
+        else:
+            total_min_normal += worked_min
+        cout_heures = heures * rate * (1 + taux_maj)
+        cout_jour = cout_heures + (prime if is_present else 0)
+        total_cost += cout_jour
+        if is_present:
+            total_primes += prime
+        
+        # Stats par type
+        if type_libelle not in by_type:
+            by_type[type_libelle] = {'nb': 0, 'duree_min': 0, 'cout': 0,
+                                     'couleur': type_couleur, 'code': type_code,
+                                     'taux_maj': taux_maj}
+        by_type[type_libelle]['nb'] += 1
+        by_type[type_libelle]['duree_min'] += worked_min
+        by_type[type_libelle]['cout'] += cout_jour
+        
+        # Jour de la semaine
+        jour_lbl = ''
+        try:
+            from datetime import datetime as _dt
+            d = _dt.strptime(date_str[:10], '%Y-%m-%d')
+            _DAYS = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim']
+            jour_lbl = _DAYS[d.weekday()]
+        except: pass
+        
+        enriched.append({
+            **rec,
+            'jour': jour_lbl,
+            'type_code': type_code,
+            'type_libelle': type_libelle,
+            'type_couleur': type_couleur,
+            'taux_maj': taux_maj,
+            'prime': prime if is_present else 0,
+            'required_min': required_min,
+            'worked_min': worked_min,
+            'worked_str': f'{worked_min // 60:02d}:{worked_min % 60:02d}' if worked_min > 0 else '00:00',
+            'late_min': late_min,
+            'late_str': f'{late_min // 60:02d}:{late_min % 60:02d}' if late_min > 0 else '',
+            'state': state,
+            'is_present': is_present,
+            'is_absent': is_absent,
+            'no_dep': no_dep,
+            'cout_jour': cout_jour,
+            'rate': rate,
+        })
+    
+    nb_total_jours = len(emp['records'])
     
     return {
-        **garde,
-        'duree_min': duree_min,
-        'duree_str': f'{duree_min // 60:02d}:{duree_min % 60:02d}',
-        'franchit_minuit': franchit_minuit,
-        'type_libelle': type_libelle,
-        'type_couleur': type_couleur,
-        'taux_maj': taux_maj,
-        'prime': prime,
-        'is_ferie': is_ferie,
-        'rate': rate,
-        'heures': heures,
-        'cout_heures': cout_heures,
-        'cout_total': cout_total,
-    }
-
-
-def calc_pharma_employee_stats(emp, types_by_key, feries_set, default_hourly_rate=0, employee_rate=0):
-    """Calcule les stats pour un pharmacien :
-    - liste enrichie des gardes
-    - répartition heures par type
-    - total heures, total primes, total coût
-    """
-    enriched = []
-    by_type = {}  # libelle -> {'nb', 'duree_min', 'cout'}
-    total_min = 0
-    total_primes = 0
-    total_cout = 0
-    nb_nuit = 0
-    nb_we = 0
-    nb_ferie = 0
-    nb_astreinte = 0
-    
-    for g in emp['gardes']:
-        s = calc_pharma_garde_stats(g, types_by_key, feries_set, default_hourly_rate, employee_rate)
-        enriched.append(s)
-        total_min += s['duree_min']
-        total_primes += s['prime']
-        total_cout += s['cout_total']
-        
-        lib = s['type_libelle']
-        if lib not in by_type:
-            by_type[lib] = {'nb': 0, 'duree_min': 0, 'cout': 0, 'couleur': s['type_couleur']}
-        by_type[lib]['nb'] += 1
-        by_type[lib]['duree_min'] += s['duree_min']
-        by_type[lib]['cout'] += s['cout_total']
-        
-        code = ((types_by_key.get((g.get('type') or '').strip().lower()) or {}).get('code') or '').lower()
-        if 'nuit' in lib.lower() or code == 'garde_nuit': nb_nuit += 1
-        if s['is_ferie'] or code == 'ferie' or 'férié' in lib.lower(): nb_ferie += 1
-        if 'week' in lib.lower() or code == 'garde_we': nb_we += 1
-        if 'astreinte' in lib.lower() or code == 'astreinte': nb_astreinte += 1
-    
-    return {
+        'emp': emp,
         'enriched': enriched,
         'by_type': by_type,
-        'nb_gardes': len(enriched),
-        'total_min': total_min,
-        'total_heures': total_min / 60.0,
+        'rate': rate,
+        'nb_total_jours': nb_total_jours,
+        'days_present': days_present,
+        'days_absent': days_absent,
+        'days_late': days_late,
+        'days_no_dep': days_no_dep,
+        'total_min_worked': total_min_worked,
+        'total_min_normal': total_min_normal,
+        'total_min_majored': total_min_majored,
+        'total_late_min': total_late_min,
+        'total_required_min': total_required_min,
         'total_primes': total_primes,
-        'total_cout': total_cout,
-        'nb_nuit': nb_nuit,
-        'nb_we': nb_we,
-        'nb_ferie': nb_ferie,
-        'nb_astreinte': nb_astreinte,
+        'total_cost': total_cost,
+        'taux_presence': round(100 * days_present / nb_total_jours, 1) if nb_total_jours > 0 else 0,
+        'counts_by_type': counts_by_type,
     }
 
 
 def generate_pharma_pdf(emps, output_path, pharmacy_name='PHARMACIE', period='',
                          types_by_key=None, feries_set=None,
-                         default_hourly_rate=0, employee_rates=None, logo_path=None):
-    """Génère le rapport PDF Pharmacie : 1 page par pharmacien + récapitulatif global."""
+                         default_hourly_rate=0, employee_rates=None,
+                         custom_classifications=None,
+                         logo_path=None, hp=8):
+    """Génère le PDF rapport de présence Pharmacie.
+    
+    Police lisible (8pt minimum), 1 page par employé (compactage si nécessaire).
+    """
     if types_by_key is None: types_by_key = {}
     if feries_set is None: feries_set = set()
     if employee_rates is None: employee_rates = {}
+    if custom_classifications is None: custom_classifications = {}
     
     doc = SimpleDocTemplate(output_path, pagesize=A4,
                             leftMargin=10*mm, rightMargin=10*mm,
                             topMargin=10*mm, bottomMargin=10*mm)
     story = []
     
-    # Couleurs
     PURPLE = HexColor('#7b1fa2')
     NIGHT = HexColor('#3949ab')
     WE_COLOR = HexColor('#f29f2f')
     FERIE_COLOR = HexColor('#c53030')
     NORMAL_COLOR = HexColor('#1A7A6D')
     
-    # Styles
-    S = make_styles()
+    # === Styles LISIBLES (taille augmentée v69) ===
+    s_title = ParagraphStyle('s_title', fontSize=15, fontName='Helvetica-Bold', textColor=PURPLE, alignment=TA_CENTER, leading=18)
+    s_subtitle = ParagraphStyle('s_sub', fontSize=11, fontName='Helvetica-Bold', textColor=HexColor('#444'), leading=14)
+    s_emp = ParagraphStyle('s_emp', fontSize=12, fontName='Helvetica-Bold', textColor=PURPLE, leading=15)
+    s_kpi_n = ParagraphStyle('s_kn', fontSize=18, fontName='Helvetica-Bold', textColor=PURPLE, alignment=TA_CENTER, leading=20)
+    s_kpi_l = ParagraphStyle('s_kl', fontSize=8, textColor=HexColor('#666'), alignment=TA_CENTER, leading=10)
     
-    # Header
-    def make_pharma_header(emp_name=None):
-        """Construit l'en-tête de page."""
-        title_text = '💊 RAPPORT PHARMACIE'
-        if emp_name:
-            title_text += f' — {emp_name}'
-        header_data = []
-        # Ligne 1 : logo + titre + période
+    # Styles tableau (8pt par défaut, 7pt si dense)
+    def build_styles(font_size):
+        leading = font_size + 1.5
+        return {
+            'h': ParagraphStyle('h', fontName='Helvetica-Bold', fontSize=font_size, textColor=white, alignment=TA_CENTER, leading=leading),
+            'c': ParagraphStyle('c', fontName='Helvetica', fontSize=font_size, alignment=TA_CENTER, leading=leading),
+            'cb': ParagraphStyle('cb', fontName='Helvetica-Bold', fontSize=font_size, alignment=TA_CENTER, leading=leading),
+            'cl': ParagraphStyle('cl', fontName='Helvetica', fontSize=font_size, alignment=TA_LEFT, leading=leading),
+            'g': ParagraphStyle('g', fontName='Helvetica-Bold', fontSize=font_size, textColor=HexColor('#2e7d32'), alignment=TA_CENTER, leading=leading),
+            'r': ParagraphStyle('r', fontName='Helvetica-Bold', fontSize=font_size, textColor=FERIE_COLOR, alignment=TA_CENTER, leading=leading),
+            'o': ParagraphStyle('o', fontName='Helvetica-Bold', fontSize=font_size, textColor=HexColor('#b8561f'), alignment=TA_CENTER, leading=leading),
+            'b': ParagraphStyle('b', fontName='Helvetica-Bold', fontSize=font_size, textColor=NIGHT, alignment=TA_CENTER, leading=leading),
+        }
+    
+    def make_header(emp_name=None):
+        title = '💊 RAPPORT DE PRÉSENCE PHARMACIE'
+        if emp_name: title += f' — {emp_name}'
+        cells = []
         left_cell = ''
         if logo_path and os.path.exists(logo_path):
-            from reportlab.platypus import Image
-            try:
-                left_cell = Image(logo_path, width=20*mm, height=20*mm)
+            from reportlab.platypus import Image as _Img
+            try: left_cell = _Img(logo_path, width=22*mm, height=22*mm)
             except: left_cell = ''
-        
-        title_table = Table([[
-            left_cell or '',
-            Paragraph(f"<b>{pharmacy_name}</b><br/><font size='10' color='#666'>Rapport gardes & heures — {period}</font>",
-                     ParagraphStyle('hd', fontSize=14, fontName='Helvetica-Bold', textColor=PURPLE)),
-        ]], colWidths=[25*mm, 165*mm])
-        title_table.setStyle(TableStyle([
+        title_cell = Paragraph(
+            f"<b>{pharmacy_name}</b><br/><font size='10' color='#666'>{title}</font><br/>"
+            f"<font size='10' color='#666'>Période : {period}</font>",
+            ParagraphStyle('hd', fontSize=15, fontName='Helvetica-Bold', textColor=PURPLE, leading=18))
+        ht = Table([[left_cell or '', title_cell]], colWidths=[28*mm, 162*mm])
+        ht.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('LEFTPADDING', (0,0), (-1,-1), 0),
             ('RIGHTPADDING', (0,0), (-1,-1), 0),
         ]))
-        return title_table
+        return ht
     
-    total_emps = len(emps)
-    global_total_heures = 0
-    global_total_cout = 0
-    global_by_type = {}
-    
-    # Calculer stats pour chaque pharmacien
+    # Calculs stats
     all_stats = []
     for emp in emps:
-        rate = employee_rates.get(emp['name'], default_hourly_rate)
+        emp_rate = employee_rates.get(emp['name'], default_hourly_rate)
         stats = calc_pharma_employee_stats(emp, types_by_key, feries_set,
                                             default_hourly_rate=default_hourly_rate,
-                                            employee_rate=rate)
+                                            employee_rate=emp_rate,
+                                            custom_classifications=custom_classifications,
+                                            hp=hp)
         all_stats.append(stats)
-        global_total_heures += stats['total_heures']
-        global_total_cout += stats['total_cout']
-        for lib, info in stats['by_type'].items():
-            if lib not in global_by_type:
-                global_by_type[lib] = {'nb': 0, 'duree_min': 0, 'cout': 0, 'couleur': info['couleur']}
-            global_by_type[lib]['nb'] += info['nb']
-            global_by_type[lib]['duree_min'] += info['duree_min']
-            global_by_type[lib]['cout'] += info['cout']
     
-    # === PAGE PAR PHARMACIEN ===
+    # === UNE PAGE PAR PHARMACIEN ===
+    total_emps = len(emps)
     for idx, (emp, stats) in enumerate(zip(emps, all_stats)):
         if idx > 0:
             story.append(PageBreak())
         
-        story.append(make_pharma_header(emp['name']))
+        story.append(make_header(emp['name']))
         story.append(Spacer(1, 3*mm))
         
-        rate_label = ''
-        rate = employee_rates.get(emp['name'], default_hourly_rate)
-        if rate > 0:
-            rate_label = f' &nbsp;&nbsp; Taux horaire : <b>{rate:,.0f} F/h</b>'
+        nb_jours = stats['nb_total_jours']
+        # Choisir taille de police selon densité
+        # v69 : police minimum 7pt même en mode dense (lisibilité prioritaire)
+        is_dense = nb_jours > 22
+        font_size = 7 if is_dense else 8
+        S2 = build_styles(font_size)
         
-        story.append(Paragraph(
-            f"<b>Pharmacien :</b> {emp['name']}{rate_label}",
-            ParagraphStyle('si', fontSize=11, fontName='Helvetica-Bold', textColor=PURPLE)))
+        # === Bloc identification ===
+        rate = stats['rate']
+        rate_str = f"{rate:,.0f} F/h" if rate > 0 else '—'
+        info_data = [[
+            Paragraph(f"<b>Pharmacien :</b> {emp['name']}", s_emp),
+            Paragraph(f"<b>ID :</b> {emp.get('id','—')}<br/><b>Service :</b> {emp.get('service','—')[:40]}",
+                     ParagraphStyle('si', fontSize=9, leading=12)),
+            Paragraph(f"<b>Taux horaire :</b> {rate_str}",
+                     ParagraphStyle('si2', fontSize=10, fontName='Helvetica-Bold', textColor=NORMAL_COLOR, alignment=TA_RIGHT, leading=13)),
+        ]]
+        info_t = Table(info_data, colWidths=[70*mm, 75*mm, 45*mm])
+        info_t.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOX', (0,0), (-1,-1), 0.6, PURPLE),
+            ('BACKGROUND', (0,0), (-1,-1), HexColor('#faf4fc')),
+            ('TOPPADDING', (0,0), (-1,-1), 5),('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ]))
+        story.append(info_t)
         story.append(Spacer(1, 3*mm))
         
         # === BANDEAU KPIs ===
-        kpi_data = [
+        kpis = [
             [
-                Paragraph(f"<b>{stats['nb_gardes']}</b><br/><font size='8'>Gardes</font>",
-                         ParagraphStyle('k1', fontSize=14, fontName='Helvetica-Bold', textColor=PURPLE, alignment=TA_CENTER)),
-                Paragraph(f"<b>{stats['total_min']//60}h{stats['total_min']%60:02d}</b><br/><font size='8'>Total heures</font>",
-                         ParagraphStyle('k2', fontSize=14, fontName='Helvetica-Bold', textColor=NORMAL_COLOR, alignment=TA_CENTER)),
-                Paragraph(f"<b>{stats['nb_nuit']}</b><br/><font size='8'>Gardes nuit</font>",
-                         ParagraphStyle('k3', fontSize=14, fontName='Helvetica-Bold', textColor=NIGHT, alignment=TA_CENTER)),
-                Paragraph(f"<b>{stats['nb_we']}</b><br/><font size='8'>Gardes WE</font>",
-                         ParagraphStyle('k4', fontSize=14, fontName='Helvetica-Bold', textColor=WE_COLOR, alignment=TA_CENTER)),
-                Paragraph(f"<b>{stats['nb_ferie']}</b><br/><font size='8'>Jours fériés</font>",
-                         ParagraphStyle('k5', fontSize=14, fontName='Helvetica-Bold', textColor=FERIE_COLOR, alignment=TA_CENTER)),
-                Paragraph(f"<b>{stats['total_cout']:,.0f} F</b><br/><font size='8'>Coût estimé</font>",
-                         ParagraphStyle('k6', fontSize=12, fontName='Helvetica-Bold', textColor=PURPLE, alignment=TA_CENTER)),
+                Paragraph(f"<b>{stats['nb_total_jours']}</b>", s_kpi_n),
+                Paragraph(f"<b>{stats['days_present']}</b>",
+                         ParagraphStyle('k2', fontSize=18, fontName='Helvetica-Bold', textColor=NORMAL_COLOR, alignment=TA_CENTER, leading=20)),
+                Paragraph(f"<b>{stats['days_absent']}</b>",
+                         ParagraphStyle('k3', fontSize=18, fontName='Helvetica-Bold', textColor=FERIE_COLOR, alignment=TA_CENTER, leading=20)),
+                Paragraph(f"<b>{stats['days_late']}</b>",
+                         ParagraphStyle('k4', fontSize=18, fontName='Helvetica-Bold', textColor=WE_COLOR, alignment=TA_CENTER, leading=20)),
+                Paragraph(f"<b>{stats['total_min_worked']//60}h{stats['total_min_worked']%60:02d}</b>",
+                         ParagraphStyle('k5', fontSize=16, fontName='Helvetica-Bold', textColor=NORMAL_COLOR, alignment=TA_CENTER, leading=20)),
+                Paragraph(f"<b>{stats['taux_presence']}%</b>",
+                         ParagraphStyle('k6', fontSize=18, fontName='Helvetica-Bold', textColor=PURPLE, alignment=TA_CENTER, leading=20)),
+                Paragraph(f"<b>{stats['total_cost']:,.0f} F</b>",
+                         ParagraphStyle('k7', fontSize=13, fontName='Helvetica-Bold', textColor=PURPLE, alignment=TA_CENTER, leading=18)),
+            ],
+            [
+                Paragraph("Jours<br/>enregistrés", s_kpi_l),
+                Paragraph("Présent(e)", s_kpi_l),
+                Paragraph("Absent(e)", s_kpi_l),
+                Paragraph("En retard", s_kpi_l),
+                Paragraph("Heures<br/>travaillées", s_kpi_l),
+                Paragraph("Taux<br/>présence", s_kpi_l),
+                Paragraph("Paie<br/>estimée", s_kpi_l),
             ]
         ]
-        kpi_table = Table(kpi_data, colWidths=[32*mm]*6)
-        kpi_table.setStyle(TableStyle([
+        kpi_t = Table(kpis, colWidths=[27*mm]*7)
+        kpi_t.setStyle(TableStyle([
             ('BOX', (0,0), (-1,-1), 0.8, PURPLE),
-            ('INNERGRID', (0,0), (-1,-1), 0.4, colors.grey),
+            ('INNERGRID', (0,0), (-1,-1), 0.3, HexColor('#ccc')),
             ('BACKGROUND', (0,0), (-1,-1), HexColor('#f3e5f5')),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING', (0,0), (-1,-1), 6),('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('TOPPADDING', (0,0), (-1,-1), 5),('BOTTOMPADDING', (0,0), (-1,-1), 5),
         ]))
-        story.append(kpi_table)
+        story.append(kpi_t)
         story.append(Spacer(1, 4*mm))
         
         # === RÉPARTITION PAR TYPE ===
         if stats['by_type']:
-            story.append(Paragraph("<b>Répartition par type de service</b>",
-                                  ParagraphStyle('rh', fontSize=10, fontName='Helvetica-Bold', textColor=PURPLE)))
+            story.append(Paragraph("<b>📊 Répartition par type de service</b>", s_subtitle))
             story.append(Spacer(1, 1*mm))
             rep_data = [[
-                Paragraph('<b>Type</b>', S['h']),
-                Paragraph('<b>Nb gardes</b>', S['h']),
-                Paragraph('<b>Heures</b>', S['h']),
-                Paragraph('<b>Majoration</b>', S['h']),
-                Paragraph('<b>Coût estimé</b>', S['h']),
+                Paragraph('<b>Type</b>', S2['h']),
+                Paragraph('<b>Jours</b>', S2['h']),
+                Paragraph('<b>Heures travaillées</b>', S2['h']),
+                Paragraph('<b>Majoration</b>', S2['h']),
+                Paragraph('<b>Coût</b>', S2['h']),
             ]]
             for lib, info in sorted(stats['by_type'].items(), key=lambda x: -x[1]['duree_min']):
-                # Récupérer taux maj du type (heuristique : lib match dans types_by_key)
-                lib_lower = lib.lower()
-                type_data = types_by_key.get(lib_lower) or {}
-                maj = float(type_data.get('taux_majoration', 0) or 0)
+                maj = info.get('taux_maj', 0)
                 rep_data.append([
                     Paragraph(f'<font color="{info["couleur"]}"><b>● {lib}</b></font>',
-                             ParagraphStyle('r1', fontSize=9, leading=11)),
-                    Paragraph(f"{info['nb']}", S['c']),
-                    Paragraph(f"{info['duree_min']//60}h{info['duree_min']%60:02d}", S['c']),
-                    Paragraph(f"+{int(maj*100)}%" if maj > 0 else '—', S['c']),
-                    Paragraph(f"{info['cout']:,.0f} F", S['cb']),
+                             ParagraphStyle('rl', fontSize=font_size+1, leading=font_size+3)),
+                    Paragraph(str(info['nb']), S2['c']),
+                    Paragraph(f"{info['duree_min']//60}h{info['duree_min']%60:02d}", S2['cb']),
+                    Paragraph(f"+{int(maj*100)}%" if maj > 0 else '—', S2['c']),
+                    Paragraph(f"{info['cout']:,.0f} F", S2['cb']),
                 ])
-            rep_table = Table(rep_data, colWidths=[60*mm, 25*mm, 30*mm, 30*mm, 45*mm])
-            rep_table.setStyle(TableStyle([
+            rep_t = Table(rep_data, colWidths=[60*mm, 25*mm, 35*mm, 28*mm, 42*mm])
+            rep_t.setStyle(TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), PURPLE),
-                ('GRID', (0,0), (-1,-1), 0.3, colors.grey),
+                ('GRID', (0,0), (-1,-1), 0.3, HexColor('#ccc')),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('ALIGN', (1,0), (-1,-1), 'CENTER'),
-                ('TOPPADDING', (0,0), (-1,-1), 3),('BOTTOMPADDING', (0,0), (-1,-1), 3),
+                ('TOPPADDING', (0,0), (-1,-1), 4),('BOTTOMPADDING', (0,0), (-1,-1), 4),
             ]))
-            story.append(rep_table)
+            story.append(rep_t)
             story.append(Spacer(1, 4*mm))
         
-        # === DÉTAIL DES GARDES ===
-        story.append(Paragraph("<b>Détail des gardes</b>",
-                              ParagraphStyle('dh', fontSize=10, fontName='Helvetica-Bold', textColor=PURPLE)))
+        # === DÉTAIL DES JOURS ===
+        story.append(Paragraph("<b>📅 Détail des présences</b>", s_subtitle))
         story.append(Spacer(1, 1*mm))
         
-        # Si beaucoup de gardes, version compacte
-        nb_g = len(stats['enriched'])
-        is_dense = nb_g > 18
+        # 11 colonnes : N° | Date | J | Type | H.oblig | Arrivée | Sortie | Durée | Retard | Statut | Coût
+        det_hdrs = ['N°','Date','J','Type','H.oblig.','Arrivée','Sortie','Durée','Retard','Statut','Coût']
+        det_cw = [8*mm, 18*mm, 10*mm, 28*mm, 19*mm, 14*mm, 14*mm, 14*mm, 14*mm, 14*mm, 27*mm]
         
-        detail_hdrs = ["N°","Date","Jour","Type","Début","Fin","Pause","Durée","Maj.","Prime","Coût"]
-        detail_cw = [6*mm, 18*mm, 14*mm, 32*mm, 13*mm, 13*mm, 12*mm, 14*mm, 12*mm, 18*mm, 28*mm]
+        det_data = [[Paragraph(x, S2['h']) for x in det_hdrs]]
         
-        if is_dense:
-            font_size = 6
-            leading = 7
-        else:
-            font_size = 7
-            leading = 9
-        
-        s_hp = ParagraphStyle('s_hp', fontName='Helvetica-Bold', fontSize=font_size, textColor=white, alignment=TA_CENTER, leading=leading)
-        s_cp = ParagraphStyle('s_cp', fontName='Helvetica', fontSize=font_size, alignment=TA_CENTER, leading=leading)
-        s_cpb = ParagraphStyle('s_cpb', fontName='Helvetica-Bold', fontSize=font_size, alignment=TA_CENTER, leading=leading)
-        
-        detail_data = [[Paragraph(x, s_hp) for x in detail_hdrs]]
-        
-        from datetime import datetime as _dt
-        _DAYS = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim']
-        
-        for i, g in enumerate(stats['enriched'], 1):
-            # Jour de la semaine
-            jour_lbl = ''
-            try:
-                d = _dt.strptime(g['date'][:10], '%Y-%m-%d')
-                jour_lbl = _DAYS[d.weekday()]
-                if d.weekday() >= 5:
-                    jour_lbl = f'<font color="#f29f2f"><b>{jour_lbl}</b></font>'
-                if g['is_ferie']:
-                    jour_lbl = f'<font color="#c53030"><b>{_DAYS[d.weekday()]}*</b></font>'
-            except: pass
+        for i, r in enumerate(stats['enriched'], 1):
+            # Jour avec couleur weekend
+            jour_str = r['jour']
+            if r['jour'] in ('Sam','Dim'):
+                jour_str = f'<font color="#f29f2f"><b>{r["jour"]}</b></font>'
+            if r['type_code'] == 'ferie':
+                jour_str = f'<font color="#c53030"><b>{r["jour"]}*</b></font>'
             
-            type_color = g.get('type_couleur', '#1A7A6D')
-            type_disp = f'<font color="{type_color}"><b>● {g["type_libelle"]}</b></font>'
+            # Type coloré
+            type_str = f'<font color="{r["type_couleur"]}"><b>● {r["type_libelle"]}</b></font>'
             
-            maj_str = f'+{int(g["taux_maj"]*100)}%' if g['taux_maj'] > 0 else '—'
+            # Heure oblig (start - end)
+            hoblig_str = f"{r['sched_start']}<br/>{r['sched_end']}" if r['sched_start'] and r['sched_end'] else '—'
             
-            detail_data.append([
-                Paragraph(str(i), s_cp),
-                Paragraph(g['date'], s_cp),
-                Paragraph(jour_lbl, s_cp),
-                Paragraph(type_disp, s_cp),
-                Paragraph(g['h_debut'], s_cp),
-                Paragraph(g['h_fin'] + ('+' if g['franchit_minuit'] else ''), s_cp),
-                Paragraph(f"{g['pause_min']}min" if g['pause_min'] else '—', s_cp),
-                Paragraph(g['duree_str'], s_cpb),
-                Paragraph(maj_str, s_cp),
-                Paragraph(f"{g['prime']:,.0f} F" if g['prime'] else '—', s_cp),
-                Paragraph(f"{g['cout_total']:,.0f} F", s_cpb),
+            # Arrivée / Sortie
+            arr_str = r['arrival'] or '—'
+            dep_str = r['departure'] or '—'
+            
+            # Durée
+            dur_str = r['worked_str'] if r['worked_min'] > 0 else '—'
+            
+            # Retard
+            late_str = r['late_str'] if r['late_min'] > 0 else '—'
+            
+            # Statut
+            if r['state'] == 'OK':
+                statut = Paragraph('OK', S2['g'])
+            elif r['state'] == 'RETARD':
+                statut = Paragraph('RETARD', S2['o'])
+            elif r['state'] == 'ABS':
+                statut = Paragraph('ABSENT', S2['r'])
+            elif r['state'] == 'ARR':
+                statut = Paragraph('NON<br/>SORTI', S2['o'])
+            else:
+                statut = Paragraph(r['state'], S2['c'])
+            
+            det_data.append([
+                Paragraph(str(i), S2['c']),
+                Paragraph(r['date'], S2['c']),
+                Paragraph(jour_str, S2['c']),
+                Paragraph(type_str, ParagraphStyle('tc', fontSize=font_size, alignment=TA_LEFT, leading=font_size+2)),
+                Paragraph(hoblig_str, S2['c']),
+                Paragraph(arr_str, S2['c']),
+                Paragraph(dep_str, S2['c']),
+                Paragraph(dur_str, S2['cb']),
+                Paragraph(late_str, S2['o'] if r['late_min'] > 0 else S2['c']),
+                statut,
+                Paragraph(f"{r['cout_jour']:,.0f} F" if r['cout_jour'] > 0 else '—', S2['cb']),
             ])
         
-        detail_table = Table(detail_data, colWidths=detail_cw, repeatRows=1)
-        tpad = 0 if is_dense else 2
-        detail_table.setStyle(TableStyle([
+        tpad = 2 if is_dense else 3
+        det_t = Table(det_data, colWidths=det_cw, repeatRows=1)
+        det_t.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), PURPLE),
-            ('GRID', (0,0), (-1,-1), 0.3, colors.grey),
+            ('GRID', (0,0), (-1,-1), 0.3, HexColor('#ccc')),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('TOPPADDING', (0,0), (-1,-1), tpad),
             ('BOTTOMPADDING', (0,0), (-1,-1), tpad),
-            ('LEFTPADDING', (0,0), (-1,-1), 1),
-            ('RIGHTPADDING', (0,0), (-1,-1), 1),
+            ('LEFTPADDING', (0,0), (-1,-1), 2),
+            ('RIGHTPADDING', (0,0), (-1,-1), 2),
         ]))
         # Alternance lignes
-        for i in range(2, len(detail_data), 2):
-            detail_table.setStyle(TableStyle([('BACKGROUND', (0,i), (-1,i), HexColor('#fafafa'))]))
-        story.append(detail_table)
+        for i in range(2, len(det_data), 2):
+            det_t.setStyle(TableStyle([('BACKGROUND', (0,i), (-1,i), HexColor('#fafafa'))]))
+        story.append(det_t)
         story.append(Spacer(1, 3*mm))
         
         # === TOTAUX ===
         total_data = [[
-            Paragraph(f"<b>TOTAL HEURES : {stats['total_min']//60}h{stats['total_min']%60:02d}</b>",
-                     ParagraphStyle('t1', fontSize=9, fontName='Helvetica-Bold', textColor=NORMAL_COLOR, alignment=TA_CENTER)),
-            Paragraph(f"<b>TOTAL PRIMES : {stats['total_primes']:,.0f} F</b>",
-                     ParagraphStyle('t2', fontSize=9, fontName='Helvetica-Bold', textColor=WE_COLOR, alignment=TA_CENTER)),
-            Paragraph(f"<b>TOTAL PAIE ESTIMÉE : {stats['total_cout']:,.0f} F</b>",
-                     ParagraphStyle('t3', fontSize=10, fontName='Helvetica-Bold', textColor=PURPLE, alignment=TA_CENTER)),
+            Paragraph(f"<b>HEURES TRAVAILLÉES : {stats['total_min_worked']//60}h{stats['total_min_worked']%60:02d}</b>",
+                     ParagraphStyle('t1', fontSize=10, fontName='Helvetica-Bold', textColor=NORMAL_COLOR, alignment=TA_CENTER, leading=12)),
+            Paragraph(f"<b>RETARDS : {stats['total_late_min']//60}h{stats['total_late_min']%60:02d}</b>",
+                     ParagraphStyle('t2', fontSize=10, fontName='Helvetica-Bold', textColor=WE_COLOR, alignment=TA_CENTER, leading=12)),
+            Paragraph(f"<b>PRIMES : {stats['total_primes']:,.0f} F</b>",
+                     ParagraphStyle('t3', fontSize=10, fontName='Helvetica-Bold', textColor=NIGHT, alignment=TA_CENTER, leading=12)),
+            Paragraph(f"<b>PAIE ESTIMÉE : {stats['total_cost']:,.0f} F</b>",
+                     ParagraphStyle('t4', fontSize=11, fontName='Helvetica-Bold', textColor=PURPLE, alignment=TA_CENTER, leading=13)),
         ]]
-        total_table = Table(total_data, colWidths=[60*mm, 60*mm, 70*mm])
-        total_table.setStyle(TableStyle([
-            ('BOX', (0,0), (-1,-1), 1, PURPLE),
+        total_t = Table(total_data, colWidths=[48*mm, 40*mm, 42*mm, 60*mm])
+        total_t.setStyle(TableStyle([
+            ('BOX', (0,0), (-1,-1), 1.2, PURPLE),
             ('INNERGRID', (0,0), (-1,-1), 0.4, PURPLE),
             ('BACKGROUND', (0,0), (-1,-1), HexColor('#fff3e0')),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING', (0,0), (-1,-1), 4),('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 5),('BOTTOMPADDING', (0,0), (-1,-1), 5),
         ]))
-        story.append(total_table)
+        story.append(total_t)
         story.append(Spacer(1, 2*mm))
         
         # Légende
         story.append(Paragraph(
-            "<font size='6' color='#888'><i>* Jour férié | + Garde traversant minuit | "
-            "Coût = (heures × taux × (1 + majoration)) + prime fixe</i></font>",
-            ParagraphStyle('lg', fontSize=6, textColor=HexColor('#888'))))
-        
-        story.append(Spacer(1, 2*mm))
+            "<font size='7' color='#888'><i>* = Jour férié | RETARD = arrivée &gt; 5 min après l'heure obligatoire | "
+            "NON SORTI = badge de sortie non enregistré | Coût = heures × taux × (1+majoration) + prime fixe</i></font>",
+            ParagraphStyle('lg', fontSize=7, textColor=HexColor('#888'))))
+        story.append(Spacer(1, 1*mm))
         story.append(Paragraph(
-            f"<font size='7' color='#888'>Page {idx+1}/{total_emps} — Pharmacien {idx+1}/{total_emps}</font>",
-            ParagraphStyle('pg', fontSize=7, textColor=HexColor('#888'), alignment=TA_RIGHT)))
+            f"<font size='8' color='#888'>Pharmacien {idx+1}/{total_emps}</font>",
+            ParagraphStyle('pg', fontSize=8, textColor=HexColor('#888'), alignment=TA_RIGHT)))
     
     # === PAGE RÉCAPITULATIF GLOBAL ===
     if len(emps) > 1:
         story.append(PageBreak())
-        story.append(make_pharma_header())
-        story.append(Spacer(1, 4*mm))
+        story.append(make_header())
+        story.append(Spacer(1, 5*mm))
         story.append(Paragraph("📊 RÉCAPITULATIF GLOBAL",
-                              ParagraphStyle('rg', fontSize=16, fontName='Helvetica-Bold',
-                                            textColor=PURPLE, alignment=TA_CENTER)))
+                              ParagraphStyle('rg', fontSize=18, fontName='Helvetica-Bold',
+                                            textColor=PURPLE, alignment=TA_CENTER, leading=22)))
         story.append(Spacer(1, 5*mm))
         
-        # Tableau récap par pharmacien
-        recap_hdrs = ["Pharmacien","Gardes","H. total","Nuit","WE","Férié","Astreinte","Primes","Coût total"]
-        recap_data = [[Paragraph(f"<b>{x}</b>", S['h']) for x in recap_hdrs]]
+        S3 = build_styles(8)
         
-        for emp, stats in zip(emps, all_stats):
+        # Tableau récap par employé
+        recap_hdrs = ['Pharmacien','Jours','Prés.','Abs.','Retards','H. travail.','Taux','Primes','Paie estimée']
+        recap_data = [[Paragraph(f"<b>{x}</b>", S3['h']) for x in recap_hdrs]]
+        
+        tot_jours = tot_pres = tot_abs = tot_late = 0
+        tot_min = tot_primes = tot_cost = 0
+        
+        for emp, st in zip(emps, all_stats):
             recap_data.append([
-                Paragraph(emp['name'], ParagraphStyle('rn', fontSize=8, fontName='Helvetica-Bold', leading=10)),
-                Paragraph(str(stats['nb_gardes']), S['c']),
-                Paragraph(f"{stats['total_min']//60}h{stats['total_min']%60:02d}", S['cb']),
-                Paragraph(str(stats['nb_nuit']), S['c']),
-                Paragraph(str(stats['nb_we']), S['c']),
-                Paragraph(str(stats['nb_ferie']), S['c']),
-                Paragraph(str(stats['nb_astreinte']), S['c']),
-                Paragraph(f"{stats['total_primes']:,.0f} F", S['c']),
-                Paragraph(f"{stats['total_cout']:,.0f} F", S['cb']),
+                Paragraph(emp['name'][:30], ParagraphStyle('rn', fontSize=9, fontName='Helvetica-Bold', leading=11)),
+                Paragraph(str(st['nb_total_jours']), S3['c']),
+                Paragraph(str(st['days_present']), S3['g']),
+                Paragraph(str(st['days_absent']), S3['r']),
+                Paragraph(str(st['days_late']), S3['o']),
+                Paragraph(f"{st['total_min_worked']//60}h{st['total_min_worked']%60:02d}", S3['cb']),
+                Paragraph(f"{st['taux_presence']}%", S3['cb']),
+                Paragraph(f"{st['total_primes']:,.0f} F", S3['c']),
+                Paragraph(f"{st['total_cost']:,.0f} F", S3['cb']),
             ])
+            tot_jours += st['nb_total_jours']
+            tot_pres += st['days_present']
+            tot_abs += st['days_absent']
+            tot_late += st['days_late']
+            tot_min += st['total_min_worked']
+            tot_primes += st['total_primes']
+            tot_cost += st['total_cost']
+        
         # Ligne TOTAL
-        total_min_all = sum(s['total_min'] for s in all_stats)
-        total_primes_all = sum(s['total_primes'] for s in all_stats)
         recap_data.append([
-            Paragraph("<b>TOTAL</b>", ParagraphStyle('rt', fontSize=9, fontName='Helvetica-Bold', textColor=PURPLE)),
-            Paragraph(f"<b>{sum(s['nb_gardes'] for s in all_stats)}</b>", S['cb']),
-            Paragraph(f"<b>{total_min_all//60}h{total_min_all%60:02d}</b>", S['cb']),
-            Paragraph(f"<b>{sum(s['nb_nuit'] for s in all_stats)}</b>", S['cb']),
-            Paragraph(f"<b>{sum(s['nb_we'] for s in all_stats)}</b>", S['cb']),
-            Paragraph(f"<b>{sum(s['nb_ferie'] for s in all_stats)}</b>", S['cb']),
-            Paragraph(f"<b>{sum(s['nb_astreinte'] for s in all_stats)}</b>", S['cb']),
-            Paragraph(f"<b>{total_primes_all:,.0f} F</b>", S['cb']),
-            Paragraph(f"<b>{global_total_cout:,.0f} F</b>",
+            Paragraph("<b>TOTAL</b>", ParagraphStyle('rt', fontSize=10, fontName='Helvetica-Bold', textColor=PURPLE)),
+            Paragraph(f"<b>{tot_jours}</b>", S3['cb']),
+            Paragraph(f"<b>{tot_pres}</b>", S3['cb']),
+            Paragraph(f"<b>{tot_abs}</b>", S3['cb']),
+            Paragraph(f"<b>{tot_late}</b>", S3['cb']),
+            Paragraph(f"<b>{tot_min//60}h{tot_min%60:02d}</b>", S3['cb']),
+            Paragraph(f"<b>{round(100*tot_pres/tot_jours,1) if tot_jours else 0}%</b>", S3['cb']),
+            Paragraph(f"<b>{tot_primes:,.0f} F</b>", S3['cb']),
+            Paragraph(f"<b>{tot_cost:,.0f} F</b>",
                      ParagraphStyle('rtc', fontSize=10, fontName='Helvetica-Bold', textColor=PURPLE, alignment=TA_CENTER)),
         ])
         
-        recap_cw = [40*mm, 14*mm, 18*mm, 14*mm, 14*mm, 14*mm, 18*mm, 22*mm, 30*mm]
-        recap_table = Table(recap_data, colWidths=recap_cw)
-        recap_table.setStyle(TableStyle([
+        recap_cw = [42*mm, 14*mm, 14*mm, 14*mm, 18*mm, 22*mm, 16*mm, 22*mm, 28*mm]
+        recap_t = Table(recap_data, colWidths=recap_cw)
+        recap_t.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), PURPLE),
             ('BACKGROUND', (0,-1), (-1,-1), HexColor('#fff3e0')),
-            ('GRID', (0,0), (-1,-1), 0.4, colors.grey),
+            ('GRID', (0,0), (-1,-1), 0.4, HexColor('#ccc')),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING', (0,0), (-1,-1), 3),('BOTTOMPADDING', (0,0), (-1,-1), 3),
-            ('BOX', (0,-1), (-1,-1), 1.2, PURPLE),
+            ('TOPPADDING', (0,0), (-1,-1), 5),('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('BOX', (0,-1), (-1,-1), 1.5, PURPLE),
         ]))
-        story.append(recap_table)
-        story.append(Spacer(1, 6*mm))
-        
-        # Répartition globale par type
-        if global_by_type:
-            story.append(Paragraph("<b>Répartition globale par type de service</b>",
-                                  ParagraphStyle('gh', fontSize=11, fontName='Helvetica-Bold', textColor=PURPLE)))
-            story.append(Spacer(1, 2*mm))
-            gbl_data = [[
-                Paragraph('<b>Type</b>', S['h']),
-                Paragraph('<b>Nb gardes</b>', S['h']),
-                Paragraph('<b>Total heures</b>', S['h']),
-                Paragraph('<b>Coût total</b>', S['h']),
-            ]]
-            for lib, info in sorted(global_by_type.items(), key=lambda x: -x[1]['duree_min']):
-                gbl_data.append([
-                    Paragraph(f'<font color="{info["couleur"]}"><b>● {lib}</b></font>',
-                             ParagraphStyle('g1', fontSize=9, leading=11)),
-                    Paragraph(str(info['nb']), S['c']),
-                    Paragraph(f"{info['duree_min']//60}h{info['duree_min']%60:02d}", S['cb']),
-                    Paragraph(f"{info['cout']:,.0f} F", S['cb']),
-                ])
-            gbl_table = Table(gbl_data, colWidths=[80*mm, 30*mm, 35*mm, 45*mm])
-            gbl_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), PURPLE),
-                ('GRID', (0,0), (-1,-1), 0.3, colors.grey),
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('TOPPADDING', (0,0), (-1,-1), 3),('BOTTOMPADDING', (0,0), (-1,-1), 3),
-            ]))
-            story.append(gbl_table)
+        story.append(recap_t)
     
     doc.build(story)
     return output_path
