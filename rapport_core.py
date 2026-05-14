@@ -433,7 +433,7 @@ def make_header(S, provider_name, provider_info, client_name, client_info=""):
 
 # ======================== PAGE 1-N : RAPPORTS INDIVIDUELS ========================
 
-def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now):
+def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now, show_pause=True):
     """Génère les pages de rapport individuel."""
     total_emps = len(emps)
     
@@ -557,10 +557,18 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
             s_r = ParagraphStyle('s_r2', fontName='Helvetica-Bold', fontSize=8, textColor=RED, alignment=TA_CENTER, leading=10)
             s_b = ParagraphStyle('s_b2', fontName='Helvetica-Bold', fontSize=8, textColor=BLUE, alignment=TA_CENTER, leading=10)
         
-        hdrs = ["N°","Date","Planning","État","Arrivée","P.<br/>début","P.<br/>fin",
-                "Départ","H.<br/>travail.","Retard",
-                "H.<br/>obligat.","H.<br/>Respectée","H. sup."]
-        cw = [6*mm,15*mm,18*mm,15*mm,12*mm,11*mm,11*mm,12*mm,14*mm,12*mm,14*mm,17*mm,14*mm]
+        # v73 : Colonnes Pause masquées si show_pause=False
+        if show_pause:
+            hdrs = ["N°","Date","Planning","État","Arrivée","P.<br/>début","P.<br/>fin",
+                    "Départ","H.<br/>travail.","Retard",
+                    "H.<br/>obligat.","H.<br/>Respectée","H. sup."]
+            cw = [6*mm,15*mm,18*mm,15*mm,12*mm,11*mm,11*mm,12*mm,14*mm,12*mm,14*mm,17*mm,14*mm]
+        else:
+            hdrs = ["N°","Date","Planning","État","Arrivée",
+                    "Départ","H.<br/>travail.","Retard",
+                    "H.<br/>obligat.","H.<br/>Respectée","H. sup."]
+            # Largeurs élargies (gain ~22mm distribué)
+            cw = [7*mm,17*mm,21*mm,17*mm,15*mm,15*mm,16*mm,14*mm,16*mm,19*mm,16*mm]
         
         td = [[Paragraph(x, s_h) for x in hdrs]]
         
@@ -582,20 +590,34 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
             ps_val = rec.get('pause_start', '') or '-'
             pe_val = rec.get('pause_end', '') or '-'
             
-            td.append([
-                Paragraph(str(i), s_c),
-                Paragraph(rec['date'], s_c),
-                Paragraph(rec['schedule'], s_c),
-                Paragraph(rec['state'], s_cb),
-                Paragraph(rec['arrival'], s_c),
-                Paragraph(ps_val, s_c),
-                Paragraph(pe_val, s_c),
-                Paragraph(rec['departure'], s_c),
-                Paragraph(rec['worked'], s_cb),
-                Paragraph(rec['late'], s_c),
-                Paragraph(rec['required'], s_cb),
-                rp, ot
-            ])
+            if show_pause:
+                td.append([
+                    Paragraph(str(i), s_c),
+                    Paragraph(rec['date'], s_c),
+                    Paragraph(rec['schedule'], s_c),
+                    Paragraph(rec['state'], s_cb),
+                    Paragraph(rec['arrival'], s_c),
+                    Paragraph(ps_val, s_c),
+                    Paragraph(pe_val, s_c),
+                    Paragraph(rec['departure'], s_c),
+                    Paragraph(rec['worked'], s_cb),
+                    Paragraph(rec['late'], s_c),
+                    Paragraph(rec['required'], s_cb),
+                    rp, ot
+                ])
+            else:
+                td.append([
+                    Paragraph(str(i), s_c),
+                    Paragraph(rec['date'], s_c),
+                    Paragraph(rec['schedule'], s_c),
+                    Paragraph(rec['state'], s_cb),
+                    Paragraph(rec['arrival'], s_c),
+                    Paragraph(rec['departure'], s_c),
+                    Paragraph(rec['worked'], s_cb),
+                    Paragraph(rec['late'], s_c),
+                    Paragraph(rec['required'], s_cb),
+                    rp, ot
+                ])
         
         dt = Table(td, colWidths=cw, repeatRows=1)
         # v67 : ajuster les indices BACKGROUND (header indices décalés de 2)
@@ -1324,7 +1346,9 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
                                              pause_minutes=pause_minutes))
     
     # 1. Rapports individuels
-    gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now)
+    # v73 : afficher les colonnes Pause uniquement si la pause est activée
+    show_pause = pause_minutes > 0
+    gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now, show_pause=show_pause)
     
     # 2. Rapport de présence
     gen_rapport_presence(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now)
@@ -2129,7 +2153,7 @@ def calc_dpci_stats(emp, schedule=None, hourly_cost=0, hp=0, hp_weekend=0, sched
     return enriched, stats
 
 
-def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None, employee_costs=None, default_cost=0, hp=0, hp_weekend=0, provider_name='', treated_by='', period_mode='all', rest_days=None, schedules_per_day_map=None):
+def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None, employee_costs=None, default_cost=0, hp=0, hp_weekend=0, provider_name='', treated_by='', period_mode='all', rest_days=None, schedules_per_day_map=None, show_pause=True):
     """Génère le rapport PDF DPCI — design identique à la fiche de présence.
     
     v64 : schedules_per_day_map = {nom_employé: {jour: {start_time, end_time, ...}}} (par jour)
@@ -2255,10 +2279,17 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
             story.extend([t2, Spacer(1, 4 * mm)])
 
             # TABLEAU DETAIL
-            hdrs = ["Jour", "Date", "Emploi du\ntemps", "Heure\nd'arriv\u00e9e",
-                    "D\u00e9but de\npause", "Retour de\npause", "Heure de\nd\u00e9part", "Pause\neffectu\u00e9e",
-                    "H.\nobligatoire", "H.\ntravaill\u00e9es", "Emploi du temps\nrespect\u00e9"]
-            cw_d = [9*mm, 18*mm, 20*mm, 16*mm, 15*mm, 15*mm, 16*mm, 15*mm, 16*mm, 16*mm, 18*mm]
+            # v73 : colonnes pause masquées si show_pause=False
+            if show_pause:
+                hdrs = ["Jour", "Date", "Emploi du\ntemps", "Heure\nd'arriv\u00e9e",
+                        "D\u00e9but de\npause", "Retour de\npause", "Heure de\nd\u00e9part", "Pause\neffectu\u00e9e",
+                        "H.\nobligatoire", "H.\ntravaill\u00e9es", "Emploi du temps\nrespect\u00e9"]
+                cw_d = [9*mm, 18*mm, 20*mm, 16*mm, 15*mm, 15*mm, 16*mm, 15*mm, 16*mm, 16*mm, 18*mm]
+            else:
+                hdrs = ["Jour", "Date", "Emploi du\ntemps", "Heure\nd'arriv\u00e9e",
+                        "Heure de\nd\u00e9part",
+                        "H.\nobligatoire", "H.\ntravaill\u00e9es", "Emploi du temps\nrespect\u00e9"]
+                cw_d = [10*mm, 22*mm, 26*mm, 22*mm, 22*mm, 22*mm, 22*mm, 26*mm]
 
             td = [[Paragraph(x.replace("\n", "<br/>"), th) for x in hdrs]]
 
@@ -2279,19 +2310,31 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
                 # Track pause total
                 total_pause_mins += t2m(rec.get('pause', '00:00'))
 
-                td.append([
-                    Paragraph(str(i), tc),
-                    Paragraph(rec['date'], tc),
-                    Paragraph(f"({sched_str.replace('-', '_')})", tc),
-                    Paragraph(rec['arrival'] if rec['arrival'] != '-' else '-', tcb),
-                    Paragraph(rec['pause_start'] if rec['pause_start'] != '-' else '-', tc),
-                    Paragraph(rec['pause_end'] if rec['pause_end'] != '-' else '-', tc),
-                    Paragraph(rec['departure'] if rec['departure'] != '-' else '-', tcb),
-                    Paragraph(rec.get('pause', '00:00'), tc),
-                    Paragraph(req_display, tc),
-                    Paragraph(rec['worked'], tcb),
-                    rp,
-                ])
+                if show_pause:
+                    td.append([
+                        Paragraph(str(i), tc),
+                        Paragraph(rec['date'], tc),
+                        Paragraph(f"({sched_str.replace('-', '_')})", tc),
+                        Paragraph(rec['arrival'] if rec['arrival'] != '-' else '-', tcb),
+                        Paragraph(rec['pause_start'] if rec['pause_start'] != '-' else '-', tc),
+                        Paragraph(rec['pause_end'] if rec['pause_end'] != '-' else '-', tc),
+                        Paragraph(rec['departure'] if rec['departure'] != '-' else '-', tcb),
+                        Paragraph(rec.get('pause', '00:00'), tc),
+                        Paragraph(req_display, tc),
+                        Paragraph(rec['worked'], tcb),
+                        rp,
+                    ])
+                else:
+                    td.append([
+                        Paragraph(str(i), tc),
+                        Paragraph(rec['date'], tc),
+                        Paragraph(f"({sched_str.replace('-', '_')})", tc),
+                        Paragraph(rec['arrival'] if rec['arrival'] != '-' else '-', tcb),
+                        Paragraph(rec['departure'] if rec['departure'] != '-' else '-', tcb),
+                        Paragraph(req_display, tc),
+                        Paragraph(rec['worked'], tcb),
+                        rp,
+                    ])
 
             dt = Table(td, colWidths=cw_d, repeatRows=1)
             sc = [

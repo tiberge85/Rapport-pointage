@@ -1555,6 +1555,19 @@ def traitement_generate():
     hp_we_str = request.form.get('required_hours_weekend', '0').strip()
     hourly_cost_str = request.form.get('hourly_cost', '0').strip()
     employee_costs_json = request.form.get('employee_costs_json', '{}')
+    
+    # v73 : Pause globale optionnelle
+    global_has_pause = request.form.get('global_has_pause') == '1'
+    global_pause_minutes = 0
+    if global_has_pause:
+        try:
+            gps = request.form.get('global_pause_start', '12:00')
+            gpe = request.form.get('global_pause_end', '13:00')
+            sh, sm = map(int, gps.split(':'))
+            eh, em = map(int, gpe.split(':'))
+            global_pause_minutes = max(0, (eh*60 + em) - (sh*60 + sm))
+        except:
+            global_pause_minutes = 60
 
     
     # Auto-fill from client database
@@ -1813,7 +1826,8 @@ def traitement_generate():
                          employee_rest_days=employee_rest_days,
                          days_required_default=days_required_default,
                          employee_days_required=employee_days_required,
-                         employee_hours=employee_hours)
+                         employee_hours=employee_hours,
+                         pause_minutes=global_pause_minutes)
         
         if not os.path.exists(output_path):
             flash("Erreur génération PDF", "error")
@@ -2963,6 +2977,19 @@ def dpci_generate():
     except:
         employee_costs = {}
     
+    # v73 : Pause globale optionnelle
+    global_has_pause = request.form.get('global_has_pause') == '1'
+    global_pause_minutes = 0
+    if global_has_pause:
+        try:
+            gps = request.form.get('global_pause_start', '12:00')
+            gpe = request.form.get('global_pause_end', '13:00')
+            sh, sm = map(int, gps.split(':'))
+            eh, em = map(int, gpe.split(':'))
+            global_pause_minutes = max(0, (eh*60 + em) - (sh*60 + sm))
+        except:
+            global_pause_minutes = 60
+    
     # Save file
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(app.config['UPLOAD_FOLDER'], f'dpci_{job_id}')
@@ -3121,12 +3148,37 @@ def dpci_generate():
         user = get_user_by_id(session['user_id'])
         treated_by = user['full_name'] if user else 'Admin'
         
+        # v73 : Si pause globale activée, injecter break_start/end dans tous les schedules
+        if global_has_pause and global_pause_minutes > 0:
+            gps_v = request.form.get('global_pause_start', '12:00')
+            gpe_v = request.form.get('global_pause_end', '13:00')
+            for emp in emps:
+                if emp['name'] not in schedules_map:
+                    # Créer un schedule minimal avec juste la pause
+                    schedules_map[emp['name']] = {
+                        'employee_name': emp['name'],
+                        'start_time': '', 'end_time': '',
+                        'break_start': gps_v, 'break_end': gpe_v,
+                    }
+                else:
+                    # Override pause sur schedule existant
+                    schedules_map[emp['name']] = dict(schedules_map[emp['name']])
+                    schedules_map[emp['name']]['break_start'] = gps_v
+                    schedules_map[emp['name']]['break_end'] = gpe_v
+            # Aussi sur les per-day overrides
+            for name, per_day in schedules_per_day_map.items():
+                for dn, day_s in per_day.items():
+                    if not day_s.get('break_start'):
+                        day_s['break_start'] = gps_v
+                        day_s['break_end'] = gpe_v
+        
         generate_dpci_pdf(emps, output_path, client_name, period_str,
                          schedules_map=schedules_map, employee_costs=employee_costs,
                          default_cost=default_cost, hp=hp, hp_weekend=hp_weekend,
                          provider_name=provider_name, treated_by=treated_by, period_mode=period_mode,
                          rest_days=request.form.getlist('rest_days'),
-                         schedules_per_day_map=schedules_per_day_map)  # v64
+                         schedules_per_day_map=schedules_per_day_map,
+                         show_pause=global_has_pause)  # v73 : colonnes pause selon checkbox
         
         if not os.path.exists(output_path):
             flash("Erreur de génération PDF", "error")
@@ -16133,52 +16185,55 @@ def pharma_generate():
             pause_minutes=global_pause_minutes,
         )
         
-        # === AJOUT : page Pharmacie spécifique (paie estimée avec majorations) ===
-        try:
-            types_service = pharma_list_types_service()
-            types_by_key = {}
-            for t in types_service:
-                t_dict = dict(t)
-                code = (t_dict.get('code') or '').lower()
-                lib = (t_dict.get('libelle') or '').lower()
-                if code: types_by_key[code] = t_dict
-                if lib: types_by_key[lib] = t_dict
-                # Variantes
-                if code == 'garde_nuit':
-                    types_by_key['garde nuit'] = t_dict
-                    types_by_key['nuit'] = t_dict
-                if code == 'garde_we':
-                    types_by_key['garde we'] = t_dict
-                    types_by_key['week-end'] = t_dict
-                if code == 'normal':
-                    types_by_key['service normal'] = t_dict
-            
-            feries_set = set(fr['date'] for fr in pharma_list_jours_feries(year=None))
-            
-            # Fusionner classifications
-            emps_classifications = {}
-            for emp in emps:
-                merged = dict(manual_classifications_global)
-                if emp['name'] in manual_classifications_emp:
-                    merged.update(manual_classifications_emp[emp['name']])
-                emps_classifications[emp['name']] = merged
-            
-            # Générer page Pharmacie en append
-            generate_pharma_recap_page(
-                tmp_out, emps,
-                pharmacy_name=pharmacy_name,
-                period=period_str,
-                types_by_key=types_by_key,
-                feries_set=feries_set,
-                default_hourly_rate=default_hourly_rate,
-                employee_rates=employee_rates,
-                emps_classifications=emps_classifications,
-                logo_path=logo_path,
-            )
-        except Exception as ex_pharma:
-            import traceback
-            traceback.print_exc()
-            print(f"[pharma_generate] Avertissement : page Pharmacie non ajoutée : {ex_pharma}", flush=True)
+        # === v73 : Récap Pharmacie OPTIONNEL (checkbox dans le formulaire) ===
+        include_pharma_recap = request.form.get('include_pharma_recap') == '1'
+        
+        if include_pharma_recap:
+            try:
+                types_service = pharma_list_types_service()
+                types_by_key = {}
+                for t in types_service:
+                    t_dict = dict(t)
+                    code = (t_dict.get('code') or '').lower()
+                    lib = (t_dict.get('libelle') or '').lower()
+                    if code: types_by_key[code] = t_dict
+                    if lib: types_by_key[lib] = t_dict
+                    # Variantes
+                    if code == 'garde_nuit':
+                        types_by_key['garde nuit'] = t_dict
+                        types_by_key['nuit'] = t_dict
+                    if code == 'garde_we':
+                        types_by_key['garde we'] = t_dict
+                        types_by_key['week-end'] = t_dict
+                    if code == 'normal':
+                        types_by_key['service normal'] = t_dict
+                
+                feries_set = set(fr['date'] for fr in pharma_list_jours_feries(year=None))
+                
+                # Fusionner classifications
+                emps_classifications = {}
+                for emp in emps:
+                    merged = dict(manual_classifications_global)
+                    if emp['name'] in manual_classifications_emp:
+                        merged.update(manual_classifications_emp[emp['name']])
+                    emps_classifications[emp['name']] = merged
+                
+                # Générer page Pharmacie en append
+                generate_pharma_recap_page(
+                    tmp_out, emps,
+                    pharmacy_name=pharmacy_name,
+                    period=period_str,
+                    types_by_key=types_by_key,
+                    feries_set=feries_set,
+                    default_hourly_rate=default_hourly_rate,
+                    employee_rates=employee_rates,
+                    emps_classifications=emps_classifications,
+                    logo_path=logo_path,
+                )
+            except Exception as ex_pharma:
+                import traceback
+                traceback.print_exc()
+                print(f"[pharma_generate] Avertissement : page Pharmacie non ajoutée : {ex_pharma}", flush=True)
         
         if not os.path.exists(tmp_out):
             flash("Erreur génération PDF", "error")
