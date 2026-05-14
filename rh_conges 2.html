@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}WannyGest - {% if page == 'notifications' %}Notifications{% elif page == 'absences' %}Absences{% else %}Congés{% endif %}{% endblock %}
+{% block content %}
+{% if page == 'notifications' %}
+{% set fs = filter_state or 'all' %}
+{% set nc = notif_counts or {'total':0,'unread':0,'read':0} %}
+<!-- Auto-refresh : poll toutes les 20 secondes pour voir les nouvelles notifs -->
+<script>
+function refreshNotifCounter() {
+    fetch('/api/notifications/count').then(r => r.json()).then(d => {
+        var elt = document.getElementById('liveUnreadCount');
+        if (elt) elt.textContent = d.unread;
+        // Si on est sur le filtre "non lu" et qu'il y a un changement, recharger
+        var cur = document.getElementById('curUnreadInit');
+        if (cur && d.unread !== parseInt(cur.value)) {
+            cur.value = d.unread;
+            // Si l'utilisateur est sur l'onglet 'unread' et qu'une nouvelle notif arrive, recharger
+            if ('{{ fs }}' === 'unread' && d.unread > parseInt(cur.dataset.initial || 0)) {
+                window.location.reload();
+            }
+        }
+    }).catch(() => {});
+}
+setInterval(refreshNotifCounter, 20000);
+</script>
+<input type="hidden" id="curUnreadInit" value="{{ nc.unread }}" data-initial="{{ nc.unread }}">
+
+<div class="page-header">
+    <h1>🔔 Notifications <span style="font-size:12px;color:#888;font-weight:normal">· <span id="liveUnreadCount">{{ nc.unread }}</span> non lue(s) sur {{ nc.total }}</span></h1>
+    {% if nc.unread > 0 %}
+    <a href="/notifications/mark-all-read" class="btn btn-sm" style="background:#1A7A6D;color:#fff" onclick="return confirm('Marquer toutes les notifications comme lues ?')">✅ Tout marquer lu</a>
+    {% endif %}
+</div>
+
+<!-- Filtres -->
+<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+    <a href="/notifications?filter=all" class="btn btn-sm {% if fs == 'all' %}btn-primary{% else %}btn-outline{% endif %}">📋 Toutes <span style="background:rgba(0,0,0,0.1);padding:1px 7px;border-radius:8px;margin-left:4px;font-size:10px">{{ nc.total }}</span></a>
+    <a href="/notifications?filter=unread" class="btn btn-sm {% if fs == 'unread' %}btn-primary{% else %}btn-outline{% endif %}" style="{% if fs == 'unread' %}{% else %}border-color:#e8672a;color:#e8672a{% endif %}">🔴 Non lues <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:8px;margin-left:4px;font-size:10px">{{ nc.unread }}</span></a>
+    <a href="/notifications?filter=read" class="btn btn-sm {% if fs == 'read' %}btn-primary{% else %}btn-outline{% endif %}">✅ Lues <span style="background:rgba(0,0,0,0.1);padding:1px 7px;border-radius:8px;margin-left:4px;font-size:10px">{{ nc.read }}</span></a>
+</div>
+
+{% if notifs %}
+{% for n in notifs %}
+<div class="card" style="border-left:4px solid {% if n.type == 'bulletin' %}#1A7A6D{% elif n.type == 'signature' %}#7b1fa2{% else %}#e8672a{% endif %};margin-bottom:8px;{% if not n.read %}background:#fffaf3{% endif %}">
+    <div class="card-body" style="padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="font-size:24px">{% if n.type == 'bulletin' %}💵{% elif n.type == 'signature' %}✍️{% else %}🔔{% endif %}</div>
+        <div style="flex:1;min-width:200px">
+            <div style="font-size:13px;font-weight:700;color:#1a3a5c">{{ n.title }}</div>
+            <div style="font-size:12px;color:#666;margin-top:2px">{{ n.message }}</div>
+            <div style="font-size:10px;color:#aaa;margin-top:4px">{{ n.created_at[:16] if n.created_at else '' }}</div>
+        </div>
+        {% if n.link %}
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <a href="/notifications/read/{{ n.id }}" class="btn btn-sm" style="background:#1A7A6D;color:#fff">👁️ Voir</a>
+            {% if n.type == 'bulletin' %}
+            <a href="{{ n.link|replace('/view','/sign') }}" class="btn btn-sm" style="background:#7b1fa2;color:#fff">✍️ Signer</a>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% if not n.read %}
+        <a href="/notifications/{{ n.id }}/mark-read" class="btn btn-sm btn-outline" style="font-size:10px" title="Marquer lue">✓</a>
+        <span style="width:8px;height:8px;border-radius:50%;background:#e8672a;flex-shrink:0" title="Non lu"></span>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:30px">
+    {% if fs == 'unread' %}🎉 Aucune notification non lue !
+    {% elif fs == 'read' %}Aucune notification lue
+    {% else %}Aucune notification{% endif %}
+</div></div>
+{% endif %}
+
+{% elif page == 'absences' %}
+<div class="page-header"><h1>📋 Gestion des absences {% if pending_count %}<span class="badge" style="background:#e8672a;color:#fff;padding:2px 10px;border-radius:12px;font-size:12px">{{ pending_count }} en attente</span>{% endif %}</h1>
+<button class="btn btn-primary btn-sm" onclick="document.getElementById('addA').classList.add('active')">+ Déclarer une absence</button></div>
+<div class="card"><div class="card-body" style="padding:0">
+{% if absences %}<div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchAbs" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchAbs','absTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><div class="table-wrap"><table id="absTable">
+<thead><tr><th>Date</th><th>Employé</th><th>Type</th><th>Durée</th><th>Motif</th><th>Justif.</th><th>Statut</th>{% if is_rh %}<th>Actions</th>{% endif %}</tr></thead>
+<tbody>{% for a in absences %}<tr>
+<td style="font-weight:600">{{ a.date }}</td>
+<td><strong>{{ a.employee_name }}</strong></td>
+<td><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;{% if a.type == 'injustifiee' %}background:#fde8e8;color:#c53030{% elif a.type == 'justifiee' %}background:#e8f5e9;color:#2e7d32{% elif a.type == 'retard' %}background:#fff3e0;color:#e8672a{% else %}background:#f5f5f5;color:#888{% endif %}">{{ a.type|replace('_',' ')|capitalize }}</span></td>
+<td>{{ a.duree|replace('journee','Journée')|replace('demi_journee','½ journée')|replace('heure','Heure(s)') }}</td>
+<td style="font-size:11px">{{ a.motif or '-' }}</td>
+<td>{% if a.justificatif %}<span style="color:#2e7d32">✅</span>{% else %}<span style="color:#c53030">❌</span>{% endif %}</td>
+<td>{% if a.status == 'approuve' %}<span class="badge-status sent">✅ Approuvé</span>{% elif a.status == 'refuse' %}<span class="badge-status" style="background:#fde8e8;color:#c53030">❌ Refusé</span>{% else %}<span class="badge-status pending">⏳ En attente</span>{% endif %}</td>
+{% if is_rh %}<td style="white-space:nowrap">{% if a.status != 'approuve' and a.status != 'refuse' %}<a href="/rh/absences/approve/{{ a.id }}/approuve" class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;font-size:9px">✅</a> <a href="/rh/absences/approve/{{ a.id }}/refuse" class="btn btn-sm" style="background:#fde8e8;color:#c53030;font-size:9px">❌</a>{% endif %} <a href="/rh/absences/delete/{{ a.id }}" class="btn btn-sm" style="color:#c53030;font-size:9px" onclick="return confirm('Supprimer ?')">🗑️</a></td>{% endif %}
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucune absence enregistrée</p>{% endif %}
+</div></div>
+<div class="modal-bg" id="addA"><div class="modal" style="max-width:500px"><h3>📋 Déclarer une absence</h3>
+<form method="post" action="/rh/absences/add">
+{% if is_rh %}<div class="form-group"><label>Employé *</label><select name="employee_id" required>{% for e in employees %}<option value="{{ e.id }}">{{ e.first_name }} {{ e.last_name }}</option>{% endfor %}</select></div>{% endif %}
+<div class="form-row"><div class="form-group"><label>Date *</label><input type="date" name="date" required></div>
+<div class="form-group"><label>Type</label><select name="type"><option value="injustifiee">Injustifiée</option><option value="justifiee">Justifiée</option><option value="retard">Retard</option><option value="maladie">Maladie</option><option value="autre">Autre</option></select></div></div>
+<div class="form-row"><div class="form-group"><label>Durée</label><select name="duree"><option value="journee">Journée entière</option><option value="demi_journee">½ journée</option><option value="heure">Heure(s)</option></select></div>
+<div class="form-group"><label>Motif *</label><input type="text" name="motif" required placeholder="Motif..."></div></div>
+<div class="form-group"><label><input type="checkbox" name="justificatif" value="1"> Justificatif fourni</label></div>
+<div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px"></textarea></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Enregistrer</button></div>
+</form></div></div>
+{% else %}
+<div class="page-header"><h1>🏖️ Gestion des congés</h1></div>
+<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+    {% for t,l in [('en_attente','⏳ En attente'),('approuve','✅ Approuvés'),('refuse','❌ Refusés'),('all','📋 Tous')] %}
+    <a href="/rh/conges?tab={{ t }}" class="btn {% if tab==t %}btn-primary{% else %}btn-outline{% endif %}">{{ l }}</a>{% endfor %}
+    <button class="btn btn-orange" onclick="document.getElementById('addLeave').classList.add('active')">+ Nouvelle demande</button>
+</div>
+<div class="card"><div class="card-body">
+{% if leaves %}<div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchLeave" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchLeave','leaveTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><div class="table-wrap"><table id="leaveTable">
+<thead><tr><th>Employé</th><th>Type</th><th>Du</th><th>Au</th><th>Jours</th><th>Motif</th><th>Statut</th><th>Actions</th></tr></thead>
+<tbody>{% for l in leaves %}<tr>
+<td><strong>{{ l.employee_name }}</strong></td><td>{{ l.leave_type }}</td><td>{{ l.start_date }}</td><td>{{ l.end_date }}</td><td>{{ l.days }}</td>
+<td style="font-size:12px">{{ l.reason or '-' }}</td>
+<td>{% if l.status=='en_attente' %}<span class="badge-status pending">⏳</span>{% elif l.status=='approuve' %}<span class="badge-status sent">✅</span>{% else %}<span class="badge-status" style="background:#fde8e8;color:#c53030">❌</span>{% endif %}</td>
+<td>{% if l.status=='en_attente' %}<a href="/rh/conges/approve/{{ l.id }}/approuve" class="btn btn-sm" style="background:#2e7d32;color:#fff">✅</a> <a href="/rh/conges/approve/{{ l.id }}/refuse" class="btn btn-danger btn-sm">❌</a>{% endif %}</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucune demande</p>{% endif %}
+</div></div>
+<div class="modal-bg" id="addLeave"><div class="modal"><h3>🏖️ Nouvelle demande de congé</h3>
+<form method="post" action="/rh/conges/add">
+    <div class="form-group"><label>Employé</label><select name="employee_id" required>{% for e in employees %}<option value="{{ e.id }}">{{ e.first_name }} {{ e.last_name }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Type</label><select name="leave_type"><option value="conge_annuel">Congé annuel</option><option value="maladie">Maladie</option><option value="maternite">Maternité</option><option value="sans_solde">Sans solde</option><option value="exceptionnel">Exceptionnel</option></select></div>
+    <div class="form-row"><div class="form-group"><label>Du</label><input type="date" name="start_date" required></div><div class="form-group"><label>Au</label><input type="date" name="end_date" required></div><div class="form-group"><label>Jours</label><input type="number" name="days" value="1" min="1"></div></div>
+    <div class="form-group"><label>Motif</label><textarea name="reason" rows="2" style="width:100%;padding:9px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:14px"></textarea></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Soumettre</button></div>
+</form></div></div>
+{% endif %}
+{% endblock %}

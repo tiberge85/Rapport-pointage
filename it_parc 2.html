@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% block title %}WannyGest - Parc IT{% endblock %}{% block content %}
+<div class="page-header"><h1>🖥️ Parc informatique</h1>
+<button class="btn btn-primary btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Équipement</button></div>
+
+{% if equipment %}
+<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher un équipement..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><table id="dataTable">
+<thead><tr><th>Nom</th><th>Type</th><th>Marque / Modèle</th><th>N° Série</th><th>Affecté à</th><th>Lieu</th><th>Statut</th><th>Garantie</th></tr></thead>
+<tbody>{% for e in equipment %}<tr>
+<td><strong>{{ e.name }}</strong></td><td>{{ e.type or '-' }}</td>
+<td style="font-size:11px">{{ e.brand or '' }} {{ e.model or '' }}</td>
+<td style="font-size:10px">{{ e.serial_number or '-' }}</td>
+<td>{{ e.user_name or '-' }}</td><td style="font-size:11px">{{ e.location or '-' }}</td>
+<td><span class="badge-status {% if e.status=='actif' %}sent{% elif e.status=='maintenance' %}pending{% endif %}">{{ e.status }}</span></td>
+<td style="font-size:10px">{{ e.warranty_end or '-' }}</td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:30px">Aucun équipement. Ajoutez-en un.</div></div>{% endif %}
+
+<div class="modal-bg" id="addM"><div class="modal"><h3>+ Nouvel équipement</h3>
+<form method="post" action="/it/parc/add">
+    <div class="form-row"><div class="form-group"><label>Nom *</label><input type="text" name="name" required></div>
+    <div class="form-group"><label>Type</label><select name="type"><option>PC</option><option>Laptop</option><option>Serveur</option><option>Caméra</option><option>DVR/NVR</option><option>Switch</option><option>Routeur</option><option>Imprimante</option><option>Autre</option></select></div></div>
+    <div class="form-row"><div class="form-group"><label>Marque</label><input type="text" name="brand" placeholder="Hikvision, HP..."></div>
+    <div class="form-group"><label>Modèle</label><input type="text" name="model"></div>
+    <div class="form-group"><label>N° Série</label><input type="text" name="serial_number"></div></div>
+    <div class="form-row"><div class="form-group"><label>Affecté à</label><select name="assigned_to"><option value="">—</option>{% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Lieu</label><input type="text" name="location"></div></div>
+    <div class="form-row"><div class="form-group"><label>Date achat</label><input type="date" name="purchase_date"></div>
+    <div class="form-group"><label>Prix (F)</label><input type="number" name="purchase_price" step="1"></div>
+    <div class="form-group"><label>Fin garantie</label><input type="date" name="warranty_end"></div></div>
+    <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px"></textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Ajouter</button></div>
+</form></div></div>
+{% endblock %}

@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a3a5c">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/static/logo_wannygest.png">
+    <title>{% block title %}WannyGest{% endblock %}</title>
+    <style>
+        /* === BASE === */
+        *{margin:0;padding:0;box-sizing:border-box}
+        html{overflow-x:hidden}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f2f5;color:#333;min-height:100vh;overflow-x:hidden}
+        
+        /* === LAYOUT DESKTOP === */
+        .sidebar{width:260px;background:linear-gradient(180deg,#1e1e2d,#2d2d44);color:#fff;display:flex;flex-direction:column;position:fixed;height:100vh;z-index:130;overflow-y:auto;left:0;top:0}
+        .sidebar-header{padding:14px 16px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.95)}
+        .sidebar-header img{height:38px}
+        .sidebar-user{padding:12px 16px;background:rgba(0,0,0,0.15);font-size:13px}
+        .sidebar-user .name{font-weight:600}
+        .sidebar-user .role{opacity:0.6;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
+        .sidebar-nav{flex:1;padding:8px 0}
+        .sidebar-nav a{display:flex;align-items:center;gap:10px;padding:10px 18px;color:rgba(255,255,255,0.75);text-decoration:none;font-size:13px;transition:all 0.2s;border-left:3px solid transparent}
+        .sidebar-nav a:hover{background:rgba(255,255,255,0.08);color:#fff}
+        .sidebar-nav a.active{background:rgba(232,103,42,0.15);color:#ff9f43;border-left-color:#ff9f43}
+        .sidebar-nav .separator{height:1px;background:rgba(255,255,255,0.08);margin:6px 16px}
+        .sidebar-nav .badge{background:#ff9f43;color:#fff;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:700;margin-left:auto}
+        .nav-section{margin:2px 0}
+        .nav-section-title{display:flex;align-items:center;gap:10px;padding:10px 18px;color:rgba(255,255,255,0.5);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;cursor:pointer;user-select:none}
+        .nav-section-title:hover{color:rgba(255,255,255,0.8)}
+        .nav-section-title .arrow{font-size:9px;margin-left:auto;transition:transform 0.2s}
+        .nav-section.collapsed .nav-section-items{display:none}
+        .nav-section.collapsed .arrow{transform:rotate(-90deg)}
+        .nav-section-items a{padding-left:32px;font-size:12px}
+        .compta-subsection-title{padding:10px 18px 4px 22px;color:#f29f2f;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:0.6px;border-top:1px solid rgba(255,255,255,0.05);margin-top:4px;display:flex;align-items:center;gap:6px}
+        .compta-subsection-title:first-child{border-top:none;margin-top:0}
+        .compta-subsection-title .dot{width:6px;height:6px;border-radius:50%;background:#f29f2f;box-shadow:0 0 0 2px rgba(242,159,47,0.2)}
+        .sidebar-footer{padding:12px 16px;border-top:1px solid rgba(255,255,255,0.08);font-size:12px;margin-top:auto}
+        .sidebar-footer a{color:rgba(255,255,255,0.5);text-decoration:none}
+        .sidebar-footer a:hover{color:#fff}
+        .main{margin-left:260px;padding:24px 28px}
+        .page-header{margin-bottom:22px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+        .page-header h1{font-size:22px;font-weight:700;color:#1e1e2d}
+        
+        /* === MOBILE TOGGLE (hidden on desktop) === */
+        .mobile-toggle{display:none;position:fixed;top:10px;left:10px;z-index:200;background:#1a3a5c;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-size:20px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,0.3)}
+        .mobile-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:120}
+        .mobile-overlay.open{display:block}
+        
+        /* === COMPONENTS === */
+        .card{background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);overflow:hidden;margin-bottom:18px}
+        .card-header{padding:14px 18px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px}
+        .card-header h3{font-size:15px;font-weight:600;color:#1a3a5c}
+        .card-body{padding:18px}
+        .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px}
+        .stat-card{background:#fff;border-radius:12px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,0.06);display:flex;align-items:center;gap:14px}
+        .stat-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+        .stat-icon.teal{background:#e0f0ee}.stat-icon.orange{background:#fff3e0}.stat-icon.red{background:#fde8e8}.stat-icon.blue{background:#e3f2fd}.stat-icon.green{background:#e8f5e9}.stat-icon.purple{background:#f3e5f5}
+        .stat-info .stat-num{font-size:26px;font-weight:700;color:#333}
+        .stat-info .stat-label{font-size:11px;color:#888;margin-top:1px}
+        .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th{background:#f8faf9;padding:9px 12px;text-align:left;font-weight:600;color:#555;border-bottom:2px solid #e0e0e0}
+        td{padding:9px 12px;border-bottom:1px solid #f0f0f0}
+        tr:hover td{background:#f8fffe}
+        .badge-status{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
+        .badge-status.pending{background:#fff8e1;color:#f57f17}
+        .badge-status.sent{background:#e8f5e9;color:#2e7d32}
+        .badge-status.admin{background:#e8672a;color:#fff}
+        .badge-status.rh{background:#1a3a5c;color:#fff}
+        .badge-status.technicien{background:#1A7A6D;color:#fff}
+        .badge-status.commercial{background:#ff9800;color:#fff}
+        .badge-status.comptable{background:#66bb6a;color:#fff}
+        .badge-status.moyens_generaux{background:#8d6e63;color:#fff}
+        .badge-status.informatique{background:#5c6bc0;color:#fff}
+        .form-row{display:flex;gap:12px;margin-bottom:12px}.form-row .form-group{flex:1}
+        .form-group{margin-bottom:12px}
+        .form-group label{display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:4px}
+        .form-group input,.form-group select,.form-group textarea{width:100%;padding:8px 11px;border:1.5px solid #ddd;border-radius:7px;font-size:13px;transition:border-color 0.2s}
+        .form-group input:focus,.form-group select:focus{outline:none;border-color:#1a3a5c;box-shadow:0 0 0 3px rgba(26,58,92,0.1)}
+        .hint{font-size:11px;color:#999;margin-top:2px}
+        .btn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;transition:all 0.2s}
+        .btn-primary{background:#1a3a5c;color:#fff}.btn-primary:hover{background:#153050}
+        .btn-orange{background:#e8672a;color:#fff}.btn-orange:hover{background:#d45a20}
+        .btn-outline{background:#fff;color:#666;border:1.5px solid #ddd}.btn-outline:hover{border-color:#1a3a5c;color:#1a3a5c}
+        .btn-danger{background:#fff;color:#c53030;border:1.5px solid #feb2b2}.btn-danger:hover{background:#fde8e8}
+        .btn-sm{padding:5px 11px;font-size:12px}
+        .btn-block{width:100%;justify-content:center;padding:12px}
+        .flash{padding:11px 16px;border-radius:9px;margin-bottom:14px;font-size:13px}
+        .flash.error{background:#fde8e8;color:#c53030;border:1px solid #feb2b2}
+        .flash.success{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7}
+        .flash.info{background:#e3f2fd;color:#1A7A6D;border:1px solid #90caf9}
+        .upload-zone{border:2px dashed #ccc;border-radius:10px;padding:18px;text-align:center;cursor:pointer;transition:all 0.3s;background:#fafffe}
+        .upload-zone:hover,.upload-zone.dragover{border-color:#1a3a5c;background:#e8f0f5}
+        .upload-zone.has-file{border-color:#1a3a5c;border-style:solid;background:#e8f0f5}
+        .upload-zone.merged{border-color:#1a3a5c;border-style:solid;background:#d4e8f0;pointer-events:none}
+        .upload-zone.small-zone{padding:14px}
+        .upload-zone input[type="file"]{display:none}
+        .upload-text{color:#666;font-size:13px}.upload-text strong{color:#1a3a5c}
+        .file-name{color:#1a3a5c;font-weight:600;font-size:13px;margin-top:4px}
+        .step-optional{font-size:10px;color:#999;background:#f0f0f0;padding:2px 7px;border-radius:4px;margin-left:5px}
+        .merge-status{margin-top:8px;padding:10px 14px;border-radius:7px;font-size:12px;font-weight:500}
+        .merge-status.loading{background:#fff8e1;color:#f57f17}.merge-status.success{background:#e8f5e9;color:#2e7d32}.merge-status.error{background:#fde8e8;color:#c53030}
+        .merge-dl-btn{display:inline-block;margin-top:6px;padding:6px 14px;background:#1a3a5c;color:#fff!important;text-decoration:none;border-radius:6px;font-size:12px;font-weight:600}
+        .preview-box{background:#f0f5f8;border:1px solid #d0dfe8;border-radius:9px;padding:12px;margin-top:10px;display:none}
+        .preview-box.visible{display:block}
+        .preview-box h4{color:#1a3a5c;font-size:13px;margin-bottom:5px}
+        .preview-badge{display:inline-block;background:#1a3a5c;color:#fff;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;margin-left:5px}
+        .emp-list{font-size:11px;color:#555;line-height:1.5;max-height:140px;overflow-y:auto}
+        .step{margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid #eee}.step:last-of-type{border-bottom:none}
+        .step-label{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+        .step-num{width:26px;height:26px;background:#1a3a5c;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+        .step-title{font-size:14px;font-weight:600;color:#1a3a5c}
+        .spinner{display:none}.spinner.active{display:inline-block}
+        .spinner::after{content:'';width:16px;height:16px;border:2.5px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;display:inline-block;vertical-align:middle;margin-right:6px;animation:spin 0.8s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .modal-bg{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center}
+        .modal-bg.active{display:flex}
+        .modal{background:#fff;border-radius:14px;padding:24px;width:520px;max-width:90%;max-height:80vh;overflow-y:auto}
+        .modal h3{font-size:17px;color:#1a3a5c;margin-bottom:14px}
+        
+        /* === GRID UTILITIES === */
+        .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+        .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+        .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+        .g5{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+        .g2g{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+        .g21{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+        
+        /* === RESPONSIVE MOBILE ≤768px === */
+        @media screen and (max-width:768px){
+            html,body{overflow-x:hidden!important;max-width:100vw!important}
+            body{display:block!important}
+            .mobile-toggle{display:block!important}
+            .sidebar{transform:translateX(-100%)!important;transition:transform 0.3s ease!important}
+            .sidebar.open{transform:translateX(0)!important}
+            .sidebar,.sidebar.open{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;padding-bottom:60px!important}
+            .nav-section-title{padding:12px 18px!important;min-height:44px!important}
+            .main{margin-left:0!important;padding:12px 8px!important;width:100%!important;max-width:100vw!important;overflow-x:hidden!important}
+            .sidebar-nav a{padding:12px 18px!important;font-size:13px!important;min-height:44px!important;display:flex!important;align-items:center!important}
+            .nav-section-items a{padding-left:32px!important;min-height:40px!important}
+            .stats-grid{grid-template-columns:1fr 1fr!important}
+            .g3,.g4,.g5,.g21,.rg{grid-template-columns:1fr 1fr!important}
+            .form-row{flex-direction:column!important;gap:0!important}
+            .page-header{flex-direction:column!important;align-items:flex-start!important;gap:6px!important}
+            .page-header h1{font-size:16px!important}
+            .table-wrap table{min-width:500px}
+            th,td{padding:5px 6px!important;font-size:11px!important}
+            .card{border-radius:8px!important;margin-bottom:10px!important}
+            .card-header{padding:10px 12px!important}
+            .card-body{padding:10px!important}
+            .modal{max-width:96vw!important;width:96vw!important;max-height:90vh!important;padding:12px!important}
+            .modal h3{font-size:14px!important}
+            .emp-tabs{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;display:flex!important;flex-wrap:nowrap!important}
+            .emp-tab{flex-shrink:0!important;padding:7px 10px!important;font-size:10px!important}
+            .chat-app{flex-direction:column!important;height:auto!important}
+            .chat-sb{width:100%!important;max-height:35vh!important;border-right:none!important}
+            .kanban{grid-template-columns:1fr!important}
+            #championBanner{flex-direction:column!important;text-align:center!important;gap:6px!important;padding:10px!important}
+            .stat-card{padding:10px!important}
+            .stat-info .stat-num{font-size:18px!important}
+            .btn{padding:5px 10px!important;font-size:11px!important}
+            .btn-sm{padding:3px 6px!important;font-size:10px!important}
+            .upload-zone{padding:10px!important}
+            .step{margin-bottom:10px!important;padding-bottom:10px!important}
+            .slip{max-width:100%!important}
+            .emp-grid,.info-grid{grid-template-columns:1fr!important}
+        }
+        
+        /* === RESPONSIVE SMALL ≤480px === */
+        @media screen and (max-width:480px){
+            .stats-grid,.g2,.g3,.g4,.g5,.g2g,.g21,.rg{grid-template-columns:1fr!important}
+            .main{padding:6px 4px!important}
+            table{font-size:10px!important}
+            .page-header h1{font-size:14px!important}
+            .sidebar{width:85vw!important;max-width:260px!important}
+        }
+
+        /* === PRINT === */
+        @media print{
+            .sidebar,.mobile-toggle,.mobile-overlay,.chat-fab,.notif-toast,#championBanner,.no-print{display:none!important}
+            [style*="ticker"]{display:none!important}
+            body{display:block!important;background:#fff!important}
+            .main{margin-left:0!important;padding:10px!important;width:100%!important}
+            .page-header{margin-bottom:10px!important}
+            .card{box-shadow:none!important;break-inside:avoid}
+        }
+    </style>
+</head>
+<body>
+    <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open');document.querySelector('.mobile-overlay').classList.toggle('open')">☰</button>
+    <div class="mobile-overlay" onclick="document.querySelector('.sidebar').classList.remove('open');this.classList.remove('open')"></div>
+    {% if current_user %}
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <img src="/static/logo_wannygest.png" alt="WannyGest" onerror="this.parentElement.innerHTML='<h2 style=color:#fff>WannyGest</h2>'">
+        </div>
+        <div class="sidebar-user">
+            <div class="name">{{ current_user.full_name }}</div>
+            <div class="role">{{ current_user.role }}</div>
+        </div>
+        <div class="sidebar-nav">
+            {% if user_role != 'concierge' %}
+            <a href="/dashboard" class="{% if page == 'dashboard' %}active{% endif %}">📊 Tableau de bord</a>
+            {% if 'pointage' in permissions %}
+            <a href="/pointage" class="{% if page == 'pointage_employee' %}active{% endif %}" style="background:linear-gradient(135deg,#1A7A6D,#0d5b50);color:#fff !important;font-weight:600">⏱️ Mon pointage</a>
+            {% endif %}
+            {% endif %}
+            <a href="/notifications" class="{% if page == 'notifications' %}active{% endif %}" style="position:relative">🔔 Notifications{% if notif_count %} <span class="badge">{{ notif_count }}</span>{% endif %}</a>
+            {% if 'dashboard_general' in permissions %}
+            <a href="/dashboard-general" class="{% if page == 'dashboard_general' %}active{% endif %}">🌐 Tableau de bord général</a>
+            {% endif %}
+            {% if 'rapports_j' in permissions %}
+            <a href="/rapports-journaliers" class="{% if page == 'rapports_j' %}active{% endif %}">📝 Rapport journalier</a>
+            {% endif %}
+            
+            {% if 'traitement' in permissions %}
+            <!-- Gestion du temps -->
+            <div class="nav-section" id="sec-temps">
+                <div class="nav-section-title" onclick="toggleSection('sec-temps')">⏱️ GESTION DU TEMPS <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/traitement" class="{% if page == 'traitement' %}active{% endif %}">Calcul d'heures</a>
+                    <a href="/dpci" class="{% if page == 'dpci' %}active{% endif %}">🏢 Calcul d'heures DPCI</a>
+                    <a href="/pharma" class="{% if page == 'pharma' %}active{% endif %}">💊 Calcul d'heures Pharmacie</a>
+                    <a href="/emploi-du-temps" class="{% if page == 'schedule' %}active{% endif %}">📅 Emploi du temps</a>
+                    <a href="/alertes" class="{% if page == 'alertes' %}active{% endif %}">Alertes assiduité</a>
+                    <a href="/comparaison" class="{% if page == 'comparaison' %}active{% endif %}">Comparaison</a>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if 'visites' in permissions or 'proforma' in permissions or 'clients' in permissions %}
+            <!-- CRM -->
+            <div class="nav-section" id="sec-crm">
+                <div class="nav-section-title" onclick="toggleSection('sec-crm')">🎯 CRM <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    {% if 'clients' in permissions %}<a href="/clients" class="{% if page == 'clients' %}active{% endif %}">Relation client</a>{% endif %}
+                    {% if 'clients' in permissions %}<a href="/prospects" class="{% if page == 'prospects' %}active{% endif %}">Prospects</a>{% endif %}
+                    {% if 'visites' in permissions %}<a href="/visites" class="{% if page == 'visites' %}active{% endif %}" style="position:relative">Gestion d'interventions{% if new_visites_count and new_visites_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ new_visites_count }}</span>{% endif %}</a>{% endif %}
+                    {% if 'proforma' in permissions %}<a href="/devis" class="{% if page == 'devis' %}active{% endif %}">Devis / Proformas</a>{% endif %}
+                    {% if 'proforma' in permissions %}<a href="/devis/templates" class="{% if page == 'devis_tpl' %}active{% endif %}">Modèles de devis</a>{% endif %}
+                    {% if 'contrats' in permissions %}<a href="/contrats" class="{% if page == 'contrats' %}active{% endif %}">Contrats</a>{% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if 'resp_projet' in permissions or 'admin' in permissions or 'controle_qualite' in permissions or 'livraison_intervention' in permissions %}
+            <div class="nav-section" id="sec-resp-proj">
+                <div class="nav-section-title" onclick="toggleSection('sec-resp-proj')">📁 GESTION DE PROJETS <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/resp-projet" class="{% if page == 'resp_projet' %}active{% endif %}">📊 Tableau de bord</a>
+                    <a href="/resp-projet/projets" class="{% if page == 'resp_projets' %}active{% endif %}">📁 Projets</a>
+                    <a href="/kanban" class="{% if page == 'kanban' %}active{% endif %}">📋 Tâches (Kanban)</a>
+                    <a href="/resp-projet/planning" class="{% if page == 'resp_planning' %}active{% endif %}">📅 Planning</a>
+                    <a href="/interventions" class="{% if page == 'interventions' %}active{% endif %}" style="position:relative">🔧 Interventions{% if new_interventions_count and new_interventions_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ new_interventions_count }}</span>{% endif %}</a>
+                    {% if 'centre_technique' in permissions or 'controle_qualite' in permissions or 'livraison_intervention' in permissions or 'admin' in permissions %}
+                    <a href="/centre-technique/mes-interventions" class="{% if page == 'tech_my_interventions' %}active{% endif %}">📜 Historique &amp; filtres</a>
+                    {% endif %}
+                    {% if 'controle_qualite' in permissions or 'admin' in permissions %}
+                    <a href="/gestion-projets/controle-qualite" class="{% if page == 'controle_qualite' %}active{% endif %}">🔍 Contrôle qualité{% if pending_cq_count and pending_cq_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ pending_cq_count }}</span>{% endif %}</a>
+                    {% endif %}
+                    {% if 'livraison_intervention' in permissions or 'admin' in permissions %}
+                    <a href="/gestion-projets/livraisons" class="{% if page == 'gestion_livraisons' %}active{% endif %}">📦 Livraisons{% if pending_deliv_count and pending_deliv_count > 0 %} <span style="background:#1a7a6d;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ pending_deliv_count }}</span>{% endif %}</a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if 'tracking' in permissions or 'admin' in permissions %}
+            <!-- Tracking GPS -->
+            <div class="nav-section" id="sec-tracking">
+                <div class="nav-section-title" onclick="toggleSection('sec-tracking')">📡 TRACKING GPS <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/tracking" class="{% if page == 'tracking' %}active{% endif %}">📊 Dashboard</a>
+                    <a href="/tracking/vehicules" class="{% if page == 'tracking_vehicules' %}active{% endif %}">🚗 Véhicules</a>
+                    <a href="/tracking/carte" class="{% if page == 'tracking_carte' %}active{% endif %}">🗺️ Carte</a>
+                    <a href="/tracking/alertes" class="{% if page == 'tracking_alertes' %}active{% endif %}">🔔 Alertes</a>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if 'fichiers' in permissions %}
+            <!-- Gestion RH -->
+            <div class="nav-section" id="sec-rh">
+                <div class="nav-section-title" onclick="toggleSection('sec-rh')">👥 GESTION RH <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/rh" class="{% if page == 'rh' %}active{% endif %}">Tableau de bord RH</a>
+                    <a href="/rh/personnel" class="{% if page == 'personnel' %}active{% endif %}">Personnel</a>
+                    <a href="/rh/postes" class="{% if page == 'postes' %}active{% endif %}">Descriptions d'emploi</a>
+                    <a href="/rh/conges" class="{% if page == 'conges' %}active{% endif %}">Congés</a>
+                    <a href="/rh/absences" class="{% if page == 'absences' %}active{% endif %}">Absences{% if pending_absences %} <span class="badge">{{ pending_absences }}</span>{% endif %}</a>
+                    <a href="/rh/calendrier" class="{% if page == 'rh_calendrier' %}active{% endif %}">📅 Calendrier</a>
+                    <a href="/rh/paie" class="{% if page == 'paie' %}active{% endif %}">Paie</a>
+                    <a href="/rh/formations" class="{% if page == 'formations' %}active{% endif %}">Formations</a>
+                    <a href="/rh/contrats-rh" class="{% if page == 'contrats_rh' %}active{% endif %}">Contrats personnel</a>
+                    <a href="/rh/organigramme" class="{% if page == 'organigramme' %}active{% endif %}">Organigramme</a>
+                    <a href="/rh/annonces" class="{% if page == 'annonces' %}active{% endif %}">Annonces</a>
+                    {% if 'pointage_admin' in permissions or 'pointage_dept' in permissions or 'admin' in permissions %}
+                    <a href="/admin/pointage" class="{% if page == 'pointage_admin' %}active{% endif %}">⏱️ Dashboard pointage</a>
+                    {% endif %}
+                    {% if 'pointage_edit' in permissions or 'admin' in permissions %}
+                    <a href="/admin/pointage/planning" class="{% if page == 'pointage_planning' %}active{% endif %}">⚙️ Plannings pointage</a>
+                    <a href="/admin/pointage/zones" class="{% if page == 'pointage_zones' %}active{% endif %}">📍 Zones GPS pointage</a>
+                    <a href="/pointage/qr" class="{% if page == 'pointage_qr' %}active{% endif %}">🔗 QR codes pointage</a>
+                    <a href="/admin/pointage/penalites" class="{% if page == 'pointage_penalites' %}active{% endif %}">💰 Pénalités retard</a>
+                    <a href="/admin/pointage/absences" class="{% if page == 'pointage_absences' %}active{% endif %}">⚠️ Absences détectées</a>
+                    <a href="/admin/pointage/graphiques" class="{% if page == 'pointage_graphiques' %}active{% endif %}">📊 Graphiques présence</a>
+                    <a href="/admin/pointage/companies" class="{% if page == 'pointage_companies' or page == 'pointage_company_detail' %}active{% endif %}">🏢 Entreprises pointage</a>
+                    <a href="/admin/hr-modules" class="{% if page == 'hr_modules' %}active{% endif %}">🎛️ Modules RH</a>
+                    {% endif %}
+                    <a href="/fichiers" class="{% if page == 'fichiers' %}active{% endif %}">
+                        Fichiers à envoyer
+                        {% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+            
+            {# ═══════════════════════════════════════════════════════════════ #}
+            {# 💰 COMPTABILITÉ : normes comptables, états, lettrage, écritures   #}
+            {# ═══════════════════════════════════════════════════════════════ #}
+            {% if 'compta_pro' in permissions or 'comptabilite' in permissions or 'admin' in permissions %}
+            <div class="nav-section" id="sec-compta">
+                <div class="nav-section-title" onclick="toggleSection('sec-compta')">💰 COMPTABILITÉ <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    
+                    {# SAISIE & TRAITEMENT #}
+                    {% if 'compta_pro' in permissions or 'admin' in permissions %}
+                    <div class="compta-subsection-title"><span class="dot"></span>SAISIE & TRAITEMENT</div>
+                    {% if 'compta_pro_edit' in permissions or 'admin' in permissions %}
+                    <a href="/compta-pro/saisie" class="{% if page == 'compta_pro' and section|default('') == 'saisie' %}active{% endif %}">✏️ Saisie écriture</a>
+                    {% endif %}
+                    <a href="/compta-pro/ecritures" class="{% if page == 'compta_pro' and section|default('') in ('ecritures','ecriture_detail') %}active{% endif %}">📋 Écritures</a>
+                    {% if 'compta_pro_edit' in permissions or 'admin' in permissions %}
+                    <a href="/compta-pro/lettrage" class="{% if page == 'compta_pro' and section|default('') == 'lettrage' %}active{% endif %}">🔗 Lettrage</a>
+                    {% endif %}
+                    {% endif %}
+                    
+                    {# PARAMÉTRAGE #}
+                    {% if 'compta_pro' in permissions or 'admin' in permissions %}
+                    <div class="compta-subsection-title"><span class="dot"></span>PARAMÉTRAGE</div>
+                    <a href="/compta-pro/comptes" class="{% if page == 'compta_pro' and section|default('') == 'comptes' %}active{% endif %}">📚 Plan comptable</a>
+                    <a href="/compta-pro/journaux" class="{% if page == 'compta_pro' and section|default('') == 'journaux' %}active{% endif %}">📖 Journaux</a>
+                    {% if 'compta_pro_cloture' in permissions or 'admin' in permissions %}
+                    <a href="/compta-pro/periodes" class="{% if page == 'compta_pro' and section|default('') == 'periodes' %}active{% endif %}">📅 Périodes</a>
+                    {% endif %}
+                    {% endif %}
+                    
+                    {# ÉTATS COMPTABLES #}
+                    {% if 'compta_pro' in permissions or 'comptabilite' in permissions or 'admin' in permissions %}
+                    <div class="compta-subsection-title"><span class="dot"></span>ÉTATS COMPTABLES</div>
+                    <a href="/compta-pro" class="{% if page == 'compta_pro' and section|default('') == 'dashboard' %}active{% endif %}">📊 Tableau de bord</a>
+                    <a href="/compta-pro/grand-livre" class="{% if page == 'compta_pro' and section|default('') == 'grand_livre' %}active{% endif %}">📒 Grand Livre</a>
+                    <a href="/compta-pro/balance" class="{% if page == 'compta_pro' and section|default('') == 'balance' %}active{% endif %}">⚖️ Balance</a>
+                    <a href="/compta-pro/bilan" class="{% if page == 'compta_pro' and section|default('') == 'bilan' %}active{% endif %}">🏛️ Bilan SYSCOHADA</a>
+                    <a href="/compta-pro/resultat" class="{% if page == 'compta_pro' and section|default('') == 'resultat' %}active{% endif %}">💹 Compte de résultat</a>
+                    {% endif %}
+                    
+                    {# SUIVI TIERS #}
+                    {% if 'comptabilite' in permissions or 'admin' in permissions %}
+                    <div class="compta-subsection-title"><span class="dot"></span>SUIVI TIERS</div>
+                    <a href="/comptabilite/factures" class="{% if page == 'factures' %}active{% endif %}">🧾 Factures</a>
+                    <a href="/comptabilite/creances" class="{% if page == 'creances' %}active{% endif %}">📥 Créances clients</a>
+                    <a href="/comptabilite/dettes" class="{% if page == 'dettes' %}active{% endif %}">📤 Dettes fournisseurs</a>
+                    <a href="/comptabilite/validation-paie" class="{% if page == 'compta_paie' %}active{% endif %}">💵 Validation paie</a>
+                    {% endif %}
+                    
+                </div>
+            </div>
+            {% endif %}
+            
+            {# ═══════════════════════════════════════════════════════════════ #}
+            {# 💵 TRÉSORERIE : caisse, banque, virements, rapprochement         #}
+            {# ═══════════════════════════════════════════════════════════════ #}
+            {% if 'tresorerie' in permissions or 'comptabilite' in permissions or 'caisse_sortie' in permissions or 'admin' in permissions %}
+            <div class="nav-section" id="sec-tresorerie">
+                <div class="nav-section-title" onclick="toggleSection('sec-tresorerie')">💵 TRÉSORERIE <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    
+                    <a href="/tresorerie/dashboard" class="{% if page == 'tresorerie_dashboard' %}active{% endif %}">📊 Tableau de bord</a>
+                    
+                    {# CAISSE #}
+                    <div class="compta-subsection-title"><span class="dot"></span>CAISSE</div>
+                    <a href="/tresorerie/caisse" class="{% if page == 'tresorerie_caisse' %}active{% endif %}">💰 Journal de caisse</a>
+                    {% if 'caisse_sortie' in permissions or 'comptabilite' in permissions or 'admin' in permissions %}
+                    <a href="/caisse-sortie" class="{% if page == 'caisse_sortie' %}active{% endif %}">📤 Sorties caisse{% if caisse_pending %} <span class="badge">{{ caisse_pending }}</span>{% endif %}</a>
+                    {% endif %}
+                    <a href="/comptabilite/pieces" class="{% if page == 'pieces' %}active{% endif %}">🧾 Pièces de caisse</a>
+                    {% if 'caisse_multi' in permissions or 'comptabilite' in permissions or 'admin' in permissions %}
+                    <a href="/comptabilite/caisses" class="{% if page == 'caisses' or page == 'caisse_detail' %}active{% endif %}">🏪 Multi-caisses</a>
+                    {% endif %}
+                    <a href="/comptabilite/rapport-caisse" class="{% if page == 'rapport_caisse' %}active{% endif %}">📋 Rapport caisse</a>
+                    
+                    {# BANQUE #}
+                    <div class="compta-subsection-title"><span class="dot"></span>BANQUE</div>
+                    <a href="/tresorerie/banque" class="{% if page == 'tresorerie_banque' %}active{% endif %}">🏦 Comptes bancaires</a>
+                    <a href="/comptabilite/virements" class="{% if page == 'virements_list' %}active{% endif %}">💸 Virements banque{% if pending_virements_count and pending_virements_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ pending_virements_count }}</span>{% endif %}</a>
+                    
+                    {# CONTRÔLE #}
+                    <div class="compta-subsection-title"><span class="dot"></span>CONTRÔLE</div>
+                    <a href="/tresorerie/rapprochement" class="{% if page == 'tresorerie_rapprochement' %}active{% endif %}">🔍 Rapprochement bancaire</a>
+                    <a href="/depenses" class="{% if page == 'depenses' %}active{% endif %}">📉 Suivi dépenses</a>
+                    
+                </div>
+            </div>
+            {% endif %}
+            
+            {# Section Budgets départements (séparée) #}
+            {% if 'budget_view' in permissions or 'budget_view_own' in permissions or 'admin' in permissions %}
+            <div class="nav-section" id="sec-budget">
+                <div class="nav-section-title" onclick="toggleSection('sec-budget')">💼 BUDGETS <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/budgets" class="{% if page == 'budgets' %}active{% endif %}">💼 Budgets départements</a>
+                </div>
+            </div>
+            {% endif %}
+            
+            {# Section budget standalone : pour les responsables qui ont budget_view_own mais PAS comptabilite #}
+            {% if ('budget_view' in permissions or 'budget_view_own' in permissions) and 'comptabilite' not in permissions and 'admin' not in permissions %}
+            <div class="nav-section" id="sec-budget">
+                <div class="nav-section-title" onclick="toggleSection('sec-budget')">💼 BUDGET <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/budgets" class="{% if page == 'budgets' %}active{% endif %}">💼 Mon budget département</a>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if 'centre_technique' in permissions or 'admin' in permissions %}
+            <!-- Centre Technique -->
+            <div class="nav-section" id="sec-tech">
+                <div class="nav-section-title" onclick="toggleSection('sec-tech')">🔧 CENTRE TECHNIQUE <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/interventions/tech" class="{% if page == 'interventions_tech' %}active{% endif %}" style="position:relative">🔧 Mes interventions{% if my_interventions_count and my_interventions_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ my_interventions_count }}</span>{% endif %}</a>
+                    <a href="/centre-technique/mes-interventions" class="{% if page == 'tech_my_interventions' %}active{% endif %}">📜 Historique &amp; filtres</a>
+                    <a href="/interventions/programme" class="{% if page == 'programme_jour' %}active{% endif %}">📋 Programme du jour</a>
+                    <a href="/visites" class="{% if page == 'visites' %}active{% endif %}">📋 Rapports de visite</a>
+                    <a href="/centre-technique" class="{% if page == 'tech_center' %}active{% endif %}">🏗️ Équipements clients</a>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if 'informatique' in permissions or 'admin' in permissions %}
+            <!-- IT -->
+            <div class="nav-section" id="sec-info">
+                <div class="nav-section-title" onclick="toggleSection('sec-info')">🖥️ IT <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/it" class="{% if page == 'it' %}active{% endif %}">📊 Dashboard IT</a>
+                    <a href="/it/parc" class="{% if page == 'it_parc' %}active{% endif %}">🖥️ Parc informatique</a>
+                    <a href="/it/tickets" class="{% if page == 'it_tickets' %}active{% endif %}">🛠️ Helpdesk</a>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if 'moyens_generaux' in permissions or 'comptabilite' in permissions or 'mg_view' in permissions or 'admin' in permissions %}
+            <!-- Moyens Généraux (UNIFIÉ v59) -->
+            <div class="nav-section" id="sec-moyens">
+                <div class="nav-section-title" onclick="toggleSection('sec-moyens')">
+                    🏠 MOYENS GÉNÉRAUX
+                    {% if mg_pending_count and mg_pending_count > 0 %}
+                        <span style="background:#c53030;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px;margin-left:4px">{{ mg_pending_count }}</span>
+                    {% endif %}
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="nav-section-items">
+                    <a href="/mg" class="{% if page == 'mg' %}active{% endif %}">📊 Tableau de bord MG</a>
+                    <a href="/mg/demandes" class="{% if page in ('mg_demandes',) %}active{% endif %}">
+                        📋 Demandes internes
+                        {% if mg_pending_count and mg_pending_count > 0 %}
+                            <span style="background:#c53030;color:#fff;padding:1px 5px;border-radius:8px;font-size:9px;margin-left:2px">{{ mg_pending_count }}</span>
+                        {% endif %}
+                    </a>
+                    {% if 'fournisseurs' in permissions or 'admin' in permissions or 'mg_view' in permissions %}
+                    <a href="/fournisseurs" class="{% if page in ('fournisseurs_list','fournisseur_detail','purchase_detail') %}active{% endif %}">🏭 Fournisseurs &amp; Paiements</a>
+                    {% endif %}
+                    <a href="/mg/fournisseurs-dashboard" class="{% if page == 'mg_fournisseurs' %}active{% endif %}">💰 Suivi financier fournisseurs</a>
+                    <a href="/achats?tab=stock" class="{% if page == 'achats' or page == 'stock' %}active{% endif %}">🛒 Stock &amp; Articles</a>
+                    <a href="/achats?tab=commandes" class="{% if page == 'commandes' %}active{% endif %}">🚚 Bons de commande</a>
+                    <a href="/mg/receptions" class="{% if page == 'mg_receptions' %}active{% endif %}">📦 Réceptions</a>
+                    <a href="/mg/paiements" class="{% if page == 'mg_paiements' %}active{% endif %}">💵 Paiements fournisseurs</a>
+                    <a href="/mg/equipements" class="{% if page == 'mg_equipements' %}active{% endif %}">🖥️ Équipements</a>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if 'concierge' in permissions or 'admin' in permissions %}
+            <!-- Conciergerie -->
+            <div class="nav-section" id="sec-concierge">
+                <div class="nav-section-title" onclick="toggleSection('sec-concierge')">🔑 CONCIERGERIE <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/concierge" class="{% if page == 'concierge' and tab == 'accueil' %}active{% endif %}">📊 Accueil</a>
+                    <a href="/concierge?tab=visiteurs" class="{% if tab == 'visiteurs' %}active{% endif %}">👥 Visiteurs</a>
+                    <a href="/concierge?tab=courrier" class="{% if tab == 'courrier' %}active{% endif %}">📬 Courrier</a>
+                    <a href="/concierge?tab=colis" class="{% if tab == 'colis' %}active{% endif %}">📦 Colis</a>
+                    <a href="/concierge?tab=cles" class="{% if tab == 'cles' %}active{% endif %}">🔑 Clés & badges</a>
+                    <a href="/concierge?tab=salles" class="{% if tab == 'salles' %}active{% endif %}">🏢 Salles</a>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Outils communs -->
+            <div style="padding:4px 0">
+                <a href="/rh/calendrier" class="{% if page == 'rh_calendrier' %}active{% endif %}" style="display:block;padding:8px 18px;color:rgba(255,255,255,0.85);text-decoration:none;font-size:13px">📅 Calendrier</a>
+            </div>
+            
+            {% if 'admin' in permissions %}
+            <!-- Administration -->
+            <div class="nav-section" id="sec-admin">
+                <div class="nav-section-title" onclick="toggleSection('sec-admin')">⚙️ ADMINISTRATION <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/admin" class="{% if page == 'admin' %}active{% endif %}">Utilisateurs & rôles</a>
+                    <a href="/admin/client-requests" class="{% if page == 'client_requests' %}active{% endif %}" style="position:relative">📩 Demandes clients{% if pending_requests_count and pending_requests_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ pending_requests_count }}</span>{% endif %}</a>
+                    <a href="/admin/client-users" class="{% if page == 'client_users' %}active{% endif %}">👤 Portail clients</a>
+                    <a href="/admin/client-users/pending" class="{% if page == 'client_users_pending' %}active{% endif %}" style="position:relative">⏳ Comptes à valider{% if pending_clients_count and pending_clients_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ pending_clients_count }}</span>{% endif %}</a>
+                    <a href="/admin/modules" class="{% if page == 'admin_modules' %}active{% endif %}">⚙️ Modules</a>
+                    <a href="/historique" class="{% if page == 'historique' %}active{% endif %}">🕓 Historique</a>
+                    <a href="/admin/security-logs" class="{% if page == 'security_logs' %}active{% endif %}">🛡️ Journal de sécurité</a>
+                    <a href="/admin/2fa/setup" class="{% if page == '2fa_setup' %}active{% endif %}">🔐 Configuration 2FA</a>
+                    <a href="/admin/backup/list" class="{% if page == 'backup_list' %}active{% endif %}">💾 Sauvegardes BDD</a>
+                    <a href="/executif" class="{% if page == 'executif' %}active{% endif %}">📊 Tableau exécutif</a>
+                    <a href="/logs" class="{% if page == 'logs' %}active{% endif %}">Logs d'activité</a>
+                    <a href="/admin/backup">Sauvegarde BDD</a>
+                    <a href="/export/stats">Export statistiques</a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        <div class="sidebar-footer">
+            <a href="/guide" style="display:block;margin-bottom:6px">🎓 Guide</a>
+            <a href="/logout">🚪 Déconnexion</a>
+        </div>
+    </nav>
+    {% endif %}
+    
+    <div class="main" {% if not current_user %}style="margin-left:0"{% endif %}>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}{% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}{% endif %}{% endwith %}
+        
+        {% if weekly_champion %}
+        <div id="championBanner" style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 40%,#0f3460 100%);border-radius:14px;padding:14px 18px;margin-bottom:8px;display:flex;align-items:center;gap:14px;position:relative;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.15);flex-wrap:wrap">
+            <div style="position:absolute;top:-20px;right:-10px;font-size:80px;opacity:0.08;transform:rotate(15deg)">🏆</div>
+            <div style="min-width:48px;height:48px;background:linear-gradient(135deg,#B8860B,#DAA520);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 4px 12px rgba(184,134,11,0.4)">🏆</div>
+            <div style="flex:1;min-width:150px">
+                <div style="font-size:9px;text-transform:uppercase;letter-spacing:2px;color:#DAA520;font-weight:700">★ Employé le plus assidu de la semaine ★</div>
+                <div style="font-size:16px;font-weight:800;color:#fff">{{ weekly_champion.full_name }}</div>
+                <div style="font-size:10px;color:#8899aa">{{ weekly_champion.role }} · Semaine du {{ weekly_champion.week_start }} au {{ weekly_champion.week_end }}</div>
+            </div>
+            <div style="text-align:center;min-width:60px"><div style="font-size:24px;font-weight:900;color:#DAA520">{{ weekly_champion.nb_rapports }}</div><div style="font-size:9px;color:#8899aa">rapports</div></div>
+            <div style="text-align:center;min-width:60px"><div style="font-size:18px;font-weight:800;color:#2ecc71">{{ weekly_champion.avg_completion|int }}%</div><div style="font-size:9px;color:#8899aa">réalisation</div></div>
+            <a href="/rapports-journaliers/assiduite" style="padding:5px 12px;background:linear-gradient(135deg,#B8860B,#DAA520);color:#1a1a2e;border-radius:8px;font-size:10px;font-weight:700;text-decoration:none;white-space:nowrap">Voir le classement →</a>
+        </div>
+        {% endif %}
+        {% if 'dashboard_general' in permissions %}
+        <!-- Ticker appels d'offres — toujours visible -->
+        <div style="background:linear-gradient(135deg,#0d1b2a,#1b2838);border-radius:10px;padding:6px 14px;margin-bottom:14px;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:12px;flex-shrink:0">📡</span>
+                <div style="overflow:hidden;flex:1;white-space:nowrap">
+                    <div style="display:inline-block;animation:ticker {{ (active_tenders|length * 8 + 35)|int }}s linear infinite;white-space:nowrap">
+                        <span style="color:#DAA520;font-size:10px;font-weight:600;margin-right:40px">🔔 Appels d'offres sécurité électronique</span>
+                        {% if active_tenders %}
+                        {% for t in active_tenders %}
+                        <a href="{{ t.url }}" target="_blank" style="color:#4fc3f7;font-size:10px;text-decoration:none;margin-right:40px">📋 {{ t.title }}{% if t.source %} — {{ t.source }}{% endif %}{% if t.deadline %} ⏰ {{ t.deadline }}{% endif %}</a>
+                        {% endfor %}
+                        {% endif %}
+                        <a href="https://sigomap.gouv.ci/" target="_blank" style="color:#aaa;font-size:10px;text-decoration:none;margin-right:40px">🌐 SIGOMAP</a>
+                        <a href="https://www.marchespublics.ci/appel_offre" target="_blank" style="color:#aaa;font-size:10px;text-decoration:none;margin-right:40px">🌐 DGMP</a>
+                        <a href="https://arcop.ci/" target="_blank" style="color:#aaa;font-size:10px;text-decoration:none;margin-right:40px">🌐 ARCOP</a>
+                        <a href="https://www.bceao.int/fr/appels-offres/appels-offres-marches-publics-achats" target="_blank" style="color:#aaa;font-size:10px;text-decoration:none;margin-right:40px">🌐 BCEAO</a>
+                        {% if not active_tenders %}
+                        <span style="color:#888;font-size:10px;margin-right:40px">Aucun appel d'offres — <a href="/admin/appels-offres" style="color:#DAA520">Ajouter →</a></span>
+                        {% endif %}
+                        {# === INTERVENTIONS DU JOUR DANS LE MEME TICKER === #}
+                        {% if today_interventions %}
+                        <span style="color:#2ecc71;font-size:10px;font-weight:600;margin-right:40px">📋 Programme du jour</span>
+                        {% for ti in today_interventions %}
+                        <a href="/interventions/{{ ti.id }}/fiche" style="color:#fff;font-size:10px;text-decoration:none;margin-right:40px">
+                            {% if ti.type == 'entretien' %}🔧{% elif ti.type in ('depannage','dépannage','panne') %}⚡{% elif ti.type == 'visite' %}📍{% else %}🏗️{% endif %}
+                            {{ ti.client_name|default('-') }}{% if ti.title %} — {{ ti.title[:50] }}{% endif %}
+                            {% set s = ti.status|default('planifiee') %}
+                            <span style="color:{% if s == 'en_cours' %}#fbbf24{% elif s in ('travaux_termines','controle_qualite') %}#34d399{% elif s == 'livre' %}#60a5fa{% else %}#aaa{% endif %};margin-left:6px">[{{ s }}{% if ti.progress %} {{ ti.progress }}%{% endif %}]</span>
+                        </a>
+                        {% endfor %}
+                        {% endif %}
+                        <span style="color:#DAA520;font-size:10px;font-weight:600;margin-right:40px">🔔 Appels d'offres sécurité électronique</span>
+                        {% for t in active_tenders %}
+                        <a href="{{ t.url }}" target="_blank" style="color:#4fc3f7;font-size:10px;text-decoration:none;margin-right:40px">📋 {{ t.title }}{% if t.deadline %} ⏰ {{ t.deadline }}{% endif %}</a>
+                        {% endfor %}
+                        {% if today_interventions %}
+                        <span style="color:#2ecc71;font-size:10px;font-weight:600;margin-right:40px">📋 Programme du jour</span>
+                        {% for ti in today_interventions %}
+                        <a href="/interventions/{{ ti.id }}/fiche" style="color:#fff;font-size:10px;text-decoration:none;margin-right:40px">
+                            {% if ti.type == 'entretien' %}🔧{% elif ti.type in ('depannage','dépannage','panne') %}⚡{% elif ti.type == 'visite' %}📍{% else %}🏗️{% endif %}
+                            {{ ti.client_name|default('-') }}{% if ti.title %} — {{ ti.title[:50] }}{% endif %}
+                            <span style="color:#aaa;margin-left:6px">[{{ ti.status|default('planifiee') }}]</span>
+                        </a>
+                        {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                {% if 'admin' in permissions %}
+                <a href="/admin/appels-offres" style="color:#DAA520;font-size:10px;text-decoration:none;flex-shrink:0">⚙️</a>
+                {% endif %}
+            </div>
+        </div>
+        <style>@keyframes ticker{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}</style>
+        {% endif %}
+        
+        {% block content %}{% endblock %}
+    </div>
+    
+    <script>
+    function toggleSection(id) {
+        document.getElementById(id).classList.toggle('collapsed');
+        // Save state
+        try { localStorage.setItem('nav_'+id, document.getElementById(id).classList.contains('collapsed') ? '1' : '0'); } catch(e) {}
+    }
+    // Restore states
+    document.querySelectorAll('.nav-section').forEach(s => {
+        try { if(localStorage.getItem('nav_'+s.id)==='1') s.classList.add('collapsed'); } catch(e) {}
+    });
+    
+    // Universal table filter
+    function filterTable(inputId, tableId) {
+        var f = document.getElementById(inputId).value.toLowerCase();
+        document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function(r) {
+            r.style.display = r.textContent.toLowerCase().includes(f) ? '' : 'none';
+        });
+    }
+    
+    // Mobile responsive handler
+    function applyMobile() {
+        var w = window.innerWidth;
+        var isMobile = w <= 768;
+        var isSmall = w <= 480;
+        document.body.classList.toggle('is-mobile', isMobile);
+        document.body.classList.toggle('is-small', isSmall);
+        
+        if (isMobile) {
+            // Force all inline grids to responsive
+            document.querySelectorAll('[style]').forEach(function(el) {
+                var s = el.getAttribute('style') || '';
+                if (s.indexOf('grid-template-columns') > -1 && !el.dataset.origGrid) {
+                    el.dataset.origGrid = el.style.gridTemplateColumns;
+                    el.style.gridTemplateColumns = isSmall ? '1fr' : '1fr 1fr';
+                }
+                // Force flex wrap
+                if (s.indexOf('display:flex') > -1 || s.indexOf('display: flex') > -1) {
+                    el.style.flexWrap = 'wrap';
+                }
+            });
+        } else {
+            // Restore original grids on desktop
+            document.querySelectorAll('[data-orig-grid]').forEach(function(el) {
+                el.style.gridTemplateColumns = el.dataset.origGrid;
+                delete el.dataset.origGrid;
+            });
+        }
+    }
+    applyMobile();
+    window.addEventListener('resize', applyMobile);
+    
+    // Auto-close sidebar on mobile when clicking a link
+    document.querySelectorAll('.sidebar-nav a:not(.nav-section-title)').forEach(function(link) {
+        link.addEventListener('click', function() {
+            if (window.innerWidth <= 768) {
+                document.querySelector('.sidebar').classList.remove('open');
+                var ov = document.querySelector('.mobile-overlay');
+                if (ov) ov.classList.remove('open');
+            }
+        });
+    });
+    
+    // Make nav-section-title touch-friendly
+    document.querySelectorAll('.nav-section-title').forEach(function(title) {
+        title.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            var sec = this.closest('.nav-section');
+            if (sec) sec.classList.toggle('collapsed');
+        });
+    });
+    </script>
+    
+    {% if current_user %}
+    <!-- Floating Chat Button -->
+    <style>
+    .chat-fab{position:fixed;bottom:24px;right:24px;z-index:999;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+    .chat-fab-btn{width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#ff9f43,#e8672a);color:#fff;border:none;
+        box-shadow:0 6px 20px rgba(232,103,42,0.4);cursor:pointer;font-size:24px;display:flex;align-items:center;justify-content:center;
+        transition:all 0.3s;position:relative}
+    .chat-fab-btn:hover{transform:scale(1.1);box-shadow:0 8px 28px rgba(232,103,42,0.5)}
+    .chat-fab-badge{position:absolute;top:-4px;right:-4px;background:#c53030;color:#fff;font-size:11px;font-weight:700;
+        min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+        border:2px solid #fff;animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+    .notif-toast{position:fixed;top:20px;right:20px;z-index:1000;background:#fff;border-radius:12px;
+        box-shadow:0 8px 30px rgba(0,0,0,0.15);padding:14px 18px;display:none;max-width:320px;
+        border-left:4px solid #ff9f43;animation:slideIn 0.3s ease}
+    @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+    .notif-toast .nt-title{font-weight:700;font-size:13px;color:#1e1e2d}.notif-toast .nt-msg{font-size:12px;color:#666;margin-top:2px}
+    .notif-toast .nt-close{position:absolute;top:8px;right:10px;cursor:pointer;color:#999;font-size:14px}
+    </style>
+    <div class="chat-fab">
+        <a href="/chat" class="chat-fab-btn" title="Ouvrir le chat">💬
+            <span class="chat-fab-badge" id="chatBadge" style="{% if not unread_messages %}display:none{% endif %}">{{ unread_messages or 0 }}</span>
+        </a>
+    </div>
+    <div class="notif-toast" id="notifToast"><span class="nt-close" onclick="this.parentElement.style.display='none'">✕</span>
+        <div class="nt-title" id="ntTitle"></div><div class="nt-msg" id="ntMsg"></div>
+    </div>
+    <script>
+    // Real-time notification polling (every 8s)
+    setInterval(function(){
+        // Get unread count from server
+        fetch('/chat/unread').then(r=>r.json()).then(function(data){
+            var badge = document.getElementById('chatBadge');
+            var count = data.unread || 0;
+            if(count > 0){
+                badge.textContent = count;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }).catch(function(){});
+        
+        // Check for new messages for toast notification
+        fetch('/chat/api?channel=general').then(r=>r.json()).then(function(msgs){
+            if(msgs.length > 0){
+                var last = msgs[msgs.length-1];
+                var lastShown = localStorage.getItem('wg_last_notif_id') || '0';
+                if(last.id > parseInt(lastShown) && last.sender_id !== {{ current_user.id }}){
+                    document.getElementById('ntTitle').textContent = '💬 ' + last.sender;
+                    document.getElementById('ntMsg').textContent = last.content.substring(0,80);
+                    var toast = document.getElementById('notifToast');
+                    toast.style.display = 'block';
+                    setTimeout(function(){toast.style.display='none'},5000);
+                    localStorage.setItem('wg_last_notif_id', last.id.toString());
+                }
+            }
+        }).catch(function(){});
+    }, 8000);
+    
+    // ======================== INCOMING CALL DETECTION ========================
+    var callCheckInterval = setInterval(function(){
+        fetch('/call/check').then(function(r){return r.json()}).then(function(data){
+            var banner = document.getElementById('callBanner');
+            if(data.incoming){
+                document.getElementById('callCallerName').textContent = data.caller;
+                document.getElementById('callType').textContent = data.type === 'video' ? '📹 Appel vidéo' : '📞 Appel audio';
+                banner.dataset.callId = data.call_id;
+                banner.dataset.url = data.url;
+                banner.style.display = 'flex';
+                // Play ringtone
+                try{
+                    if(!window._ringAudio){
+                        window._ringAudio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1rZ2JoZmpxfYOEhoSBe3V0d39/fH17eHZ4fYCBhIWDfnp3d3d3eXt+goaIh4N+eXV0dXh8gIWJi4mFf3l0cXJ1en+FioyLiIN8dnFxdHl/hYuNjIiCe3VxcXR5gIaLjYyHgXt1cXF0eYCGjI6Mh4F7dXBxdHqAh42PjYeCfHVwcHN5gIiOj42HgXt0cHBzeYGIjpCOiIJ8dXBwc3mBiI+QjoiCfHVwcHN5gYmQkY+IgXt0b3B0eoKKkZGPiIF7dG9vc3qCipKSkI+IgHpzbm9zeoKLk5KQj4d/eXJubnJ5gYuTk5GPh395cm1ucnmBi5SUkY+Hf3lybi4=');
+                        window._ringAudio.loop = true;
+                    }
+                    window._ringAudio.play().catch(function(){});
+                }catch(e){}
+            } else {
+                banner.style.display = 'none';
+                if(window._ringAudio){try{window._ringAudio.pause();window._ringAudio.currentTime=0}catch(e){}}
+            }
+        }).catch(function(){});
+    }, 3000);
+    
+    function acceptCall(){
+        var banner = document.getElementById('callBanner');
+        var cid = banner.dataset.callId;
+        var url = banner.dataset.url;
+        if(window._ringAudio){try{window._ringAudio.pause();window._ringAudio.currentTime=0}catch(e){}}
+        banner.style.display = 'none';
+        
+        // IMPORTANT: Open Jitsi FIRST in the click context (before fetch)
+        // Browsers block window.open inside async callbacks
+        if(url){
+            var config = '#config.prejoinPageEnabled=false&config.disableDeepLinking=true';
+            window.open(url + config, '_blank');
+        }
+        
+        // Then notify server (fire and forget)
+        fetch('/call/'+cid+'/accept').catch(function(){});
+    }
+    function rejectCall(){
+        var banner = document.getElementById('callBanner');
+        var cid = banner.dataset.callId;
+        if(window._ringAudio){try{window._ringAudio.pause();window._ringAudio.currentTime=0}catch(e){}}
+        banner.style.display = 'none';
+        fetch('/call/'+cid+'/reject').catch(function(){});
+    }
+    </script>
+    
+    <!-- Incoming call banner -->
+    <div id="callBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#1a7a6d,#0d6b5e);color:#fff;padding:16px 24px;align-items:center;justify-content:center;gap:16px;box-shadow:0 4px 20px rgba(0,0,0,0.3);animation:callPulse 1.5s infinite">
+        <div style="font-size:20px" id="callType">📞 Appel audio</div>
+        <div style="font-weight:700;font-size:16px"><span id="callCallerName"></span> vous appelle...</div>
+        <button onclick="acceptCall()" style="background:#4caf50;color:#fff;border:none;padding:10px 24px;border-radius:20px;font-size:14px;font-weight:700;cursor:pointer;animation:btnPulse 1s infinite">✅ Décrocher</button>
+        <button onclick="rejectCall()" style="background:#ef5350;color:#fff;border:none;padding:10px 24px;border-radius:20px;font-size:14px;font-weight:700;cursor:pointer">❌ Refuser</button>
+    </div>
+    <style>
+    @keyframes callPulse{0%,100%{opacity:1}50%{opacity:0.85}}
+    @keyframes btnPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+    </style>
+    {% endif %}
+<script>
+// Force responsive grids on mobile
+function fixMobileGrids(){
+    if(window.innerWidth<=768){
+        document.querySelectorAll('[style]').forEach(function(el){
+            var s=el.style;
+            if(s.gridTemplateColumns && s.gridTemplateColumns.indexOf('repeat')>=0){
+                var cols=parseInt(s.gridTemplateColumns.match(/repeat\((\d+)/)?.[1]||0);
+                if(cols>=4) s.gridTemplateColumns='repeat(2,1fr)';
+                if(cols>=3 && window.innerWidth<=480) s.gridTemplateColumns='1fr';
+            }
+            if(s.gridTemplateColumns==='1fr 1fr' && s.gap && parseInt(s.gap)>=14){
+                s.gridTemplateColumns='1fr';
+            }
+        });
+    }
+}
+fixMobileGrids();
+window.addEventListener('resize',fixMobileGrids);
+</script>
+
+<!-- Notification alert -->
+<script>
+var lastNotifCount = {{ notif_count|default(0) }};
+setInterval(function(){
+    fetch('/api/notif-count').then(r=>r.json()).then(d=>{
+        var badge = document.querySelector('.badge');
+        if(d.count > lastNotifCount){
+            // New notification!
+            if(badge) badge.textContent = d.count;
+            else {
+                var notifLink = document.querySelector('a[href="/notifications"]');
+                if(notifLink){
+                    var b = document.createElement('span');
+                    b.className = 'badge';
+                    b.textContent = d.count;
+                    notifLink.appendChild(b);
+                }
+            }
+            // Flash effect
+            var notifLink = document.querySelector('a[href="/notifications"]');
+            if(notifLink){
+                notifLink.style.background = '#fff3e0';
+                setTimeout(function(){ notifLink.style.background = ''; }, 2000);
+            }
+        }
+        lastNotifCount = d.count;
+    }).catch(function(){});
+}, 15000);
+</script>
+
+<!-- Sort tables -->
+<script>
+function sortTable(tableId, colIndex, type){
+    var table=document.getElementById(tableId);
+    if(!table)return;
+    var tbody=table.querySelector('tbody');
+    var rows=Array.from(tbody.querySelectorAll('tr'));
+    var asc=table.dataset.sortDir!='asc';
+    table.dataset.sortDir=asc?'asc':'desc';
+    table.dataset.sortCol=colIndex;
+    rows.sort(function(a,b){
+        var ca=a.cells[colIndex],cb=b.cells[colIndex];
+        if(!ca||!cb)return 0;
+        var va=ca.textContent.trim(),vb=cb.textContent.trim();
+        if(type=='num'){
+            va=parseFloat(va.replace(/[^0-9.-]/g,''))||0;
+            vb=parseFloat(vb.replace(/[^0-9.-]/g,''))||0;
+        }else{
+            va=va.toLowerCase();vb=vb.toLowerCase();
+        }
+        if(va<vb)return asc?-1:1;
+        if(va>vb)return asc?1:-1;
+        return 0;
+    });
+    rows.forEach(function(r){tbody.appendChild(r)});
+    // Update header arrows
+    table.querySelectorAll('th .sort-arrow').forEach(function(s){s.textContent='⇅'});
+    var th=table.querySelectorAll('th')[colIndex];
+    if(th){var arrow=th.querySelector('.sort-arrow');if(arrow)arrow.textContent=asc?'▲':'▼'}
+}
+</script>
+
+<!-- ============ CSRF AUTO-INJECTION ============ -->
+<script>
+(function(){
+    // Lit le token CSRF depuis le cookie csrftoken (posé par le serveur)
+    function getCsrfToken(){
+        var match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+        return match ? decodeURIComponent(match[1]) : '';
+    }
+    // 1. Ajoute un input hidden _csrf dans tous les forms POST avant submit
+    document.addEventListener('submit', function(e){
+        var form = e.target;
+        if (!form || form.method.toLowerCase() !== 'post') return;
+        // Si form a déjà _csrf, ne pas dupliquer
+        if (form.querySelector('input[name="_csrf"]')) return;
+        var token = getCsrfToken();
+        if (!token) return;
+        var inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = '_csrf';
+        inp.value = token;
+        form.appendChild(inp);
+    }, true);
+    // 2. Monkey-patch fetch pour ajouter X-CSRFToken header
+    if (window.fetch) {
+        var _origFetch = window.fetch;
+        window.fetch = function(input, init){
+            init = init || {};
+            var method = (init.method || 'GET').toUpperCase();
+            if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+                init.headers = init.headers || {};
+                if (!init.headers['X-CSRFToken'] && !init.headers['x-csrftoken']) {
+                    init.headers['X-CSRFToken'] = getCsrfToken();
+                }
+            }
+            return _origFetch.call(this, input, init);
+        };
+    }
+    // 3. Monkey-patch XHR pour same thing
+    if (window.XMLHttpRequest) {
+        var _origOpen = XMLHttpRequest.prototype.open;
+        var _origSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function(method, url){
+            this._wgMethod = method.toUpperCase();
+            return _origOpen.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.send = function(){
+            if (this._wgMethod && this._wgMethod !== 'GET' && this._wgMethod !== 'HEAD') {
+                try { this.setRequestHeader('X-CSRFToken', getCsrfToken()); } catch(e){}
+            }
+            return _origSend.apply(this, arguments);
+        };
+    }
+})();
+</script>
+</body>
+</html>

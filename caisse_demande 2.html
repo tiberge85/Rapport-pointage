@@ -1,0 +1,96 @@
+{% extends "base.html" %}{% block title %}WannyGest - Demande sortie caisse{% endblock %}{% block content %}
+<style>
+.sig-pad{border:2px dashed #ddd;border-radius:10px;cursor:crosshair;touch-action:none;background:#fafafa}
+.sig-pad.signed{border-color:#2e7d32;border-style:solid}
+</style>
+<div class="page-header"><h1>💸 Demande de sortie de caisse</h1><p>Cette demande sera envoyée au DG pour validation</p></div>
+<div class="card" style="max-width:620px"><div class="card-body">
+<form method="post" id="caisseForm">
+    <div class="form-group"><label>Date</label><input type="date" name="date" value="{{ now }}" required></div>
+    <div class="form-group"><label>💰 Caisse à débiter *</label>
+        <select name="caisse_id" required>
+            <option value="">— Choisir une caisse —</option>
+            {% for c in caisses %}<option value="{{ c.id }}">{{ c.name }}{% if c.responsible_name %} ({{ c.responsible_name }}){% endif %} — Solde : {{ '{:,.0f}'.format(c.solde_actuel or 0) }} F</option>{% endfor %}
+        </select>
+        {% if not caisses %}<div style="font-size:11px;color:#c53030;margin-top:4px">⚠️ Aucune caisse active. <a href="/comptabilite/caisses" style="color:#1a7a6d">Créez-en une d'abord →</a></div>{% endif %}
+    </div>
+    <div class="form-group"><label>A l'ordre de (bénéficiaire) *</label><input type="text" name="beneficiaire" required placeholder="Nom du bénéficiaire"></div>
+    <div class="form-group"><label>Type de bénéficiaire</label>
+        <div style="display:flex;gap:16px;margin-top:4px">
+            <label style="font-size:13px;cursor:pointer"><input type="radio" name="type_beneficiaire" value="entreprise"> Entreprise</label>
+            <label style="font-size:13px;cursor:pointer"><input type="radio" name="type_beneficiaire" value="particulier" checked> Particulier</label>
+            <label style="font-size:13px;cursor:pointer"><input type="radio" name="type_beneficiaire" value="autre"> Autre</label>
+        </div></div>
+    <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="montant" step="1" min="1" required placeholder="0"></div>
+    <div class="form-group"><label>Nature du paiement</label>
+        <div style="display:flex;gap:16px;margin-top:4px">
+            <label style="font-size:13px;cursor:pointer"><input type="radio" name="nature" value="espece" checked> 💵 Espèce</label>
+            <label style="font-size:13px;cursor:pointer"><input type="radio" name="nature" value="cheque"> 📝 Chèque</label>
+            <label style="font-size:13px;cursor:pointer"><input type="radio" name="nature" value="virement"> 🏦 Virement</label>
+        </div></div>
+    <div class="form-group"><label>Motif de la sortie *</label><textarea name="motif" rows="3" style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px" required placeholder="Ex: Achat fournitures bureau, transport..."></textarea></div>
+    
+    <!-- Signature du bénéficiaire -->
+    <div style="border:1px solid #eee;border-radius:10px;padding:14px;margin-bottom:14px;background:#f8faf9">
+        <label style="font-size:13px;font-weight:700;color:#1e1e2d;display:block;margin-bottom:6px">✍️ Signature du bénéficiaire</label>
+        <canvas id="sigPad" class="sig-pad" width="540" height="120"></canvas>
+        <input type="hidden" name="sig_beneficiaire" id="sigData">
+        <div style="display:flex;gap:6px;margin-top:6px">
+            <button type="button" class="btn btn-outline btn-sm" onclick="clearSig()">🗑️ Effacer</button>
+            <span style="font-size:11px;color:#888;padding-top:6px" id="sigStatus">Dessinez votre signature ci-dessus</span>
+        </div>
+    </div>
+    
+    <div style="background:#fff3e0;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#e8672a">
+        ⚠️ Cette demande sera soumise à la validation du <strong>Directeur Général</strong> avant d'être transmise à la comptabilité.
+    </div>
+    <div style="display:flex;gap:10px">
+        <a href="/caisse-sortie" class="btn btn-outline">Annuler</a>
+        <button type="submit" class="btn btn-primary" style="flex:1">📤 Envoyer la demande</button>
+    </div>
+</form></div></div>
+
+<script>
+var canvas = document.getElementById('sigPad');
+var ctx = canvas.getContext('2d');
+var drawing = false, lastX, lastY, hasSigned = false;
+
+canvas.width = canvas.offsetWidth || 540;
+canvas.height = 120;
+
+function getPos(e){
+    var rect = canvas.getBoundingClientRect();
+    var t = e.touches ? e.touches[0] : e;
+    return {x: t.clientX - rect.left, y: t.clientY - rect.top};
+}
+canvas.addEventListener('mousedown', function(e){ drawing=true; var p=getPos(e); lastX=p.x; lastY=p.y; });
+canvas.addEventListener('touchstart', function(e){ e.preventDefault(); drawing=true; var p=getPos(e); lastX=p.x; lastY=p.y; });
+canvas.addEventListener('mousemove', draw);
+canvas.addEventListener('touchmove', function(e){ e.preventDefault(); draw(e); });
+canvas.addEventListener('mouseup', stopDraw);
+canvas.addEventListener('touchend', stopDraw);
+
+function draw(e){
+    if(!drawing) return;
+    var p=getPos(e);
+    ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(p.x,p.y);
+    ctx.strokeStyle='#1e1e2d'; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.stroke();
+    lastX=p.x; lastY=p.y; hasSigned=true;
+}
+function stopDraw(){
+    drawing=false;
+    if(hasSigned){
+        document.getElementById('sigData').value = canvas.toDataURL('image/png');
+        document.getElementById('sigStatus').textContent = '✅ Signature enregistrée';
+        canvas.classList.add('signed');
+    }
+}
+function clearSig(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    document.getElementById('sigData').value = '';
+    document.getElementById('sigStatus').textContent = 'Dessinez votre signature ci-dessus';
+    canvas.classList.remove('signed');
+    hasSigned = false;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}{% block title %}WannyGest - Planning Projets{% endblock %}{% block content %}
+<div class="page-header"><h1>📅 Planning & Calendrier</h1>
+<div style="display:flex;gap:6px">
+<a href="/resp-projet" class="btn btn-outline btn-sm">← Dashboard</a>
+<button class="btn btn-sm" style="background:#1a3a5c;color:#fff" onclick="window.print()">🖨️ Imprimer</button>
+</div></div>
+
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+<a href="/resp-projet/planning?month={{ prev_month }}" class="btn btn-outline btn-sm">◀</a>
+<span style="font-size:16px;font-weight:700;color:#1a3a5c">{{ month_name }} {{ year }}</span>
+<a href="/resp-projet/planning?month={{ next_month }}" class="btn btn-outline btn-sm">▶</a>
+</div>
+
+<div class="card" style="margin-bottom:14px"><div class="card-body" style="padding:0;overflow-x:auto">
+<div id="planGrid" style="display:grid;grid-template-columns:repeat(7,1fr);border:1px solid #e0e0e0"></div>
+</div></div>
+
+<script>
+(function(){
+    var tasks = {{ tasks_json|safe }};
+    var projects = {{ projects_json|safe }};
+    var year = {{ year }}, month = {{ month }};
+    var days = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+    var grid = document.getElementById('planGrid');
+    days.forEach(function(d){var h=document.createElement('div');h.style.cssText='padding:8px;text-align:center;font-weight:700;font-size:11px;background:#1a3a5c;color:#fff;border:1px solid #ccc';h.textContent=d;grid.appendChild(h)});
+    var fd=new Date(year,month-1,1).getDay();fd=fd===0?6:fd-1;var dm=new Date(year,month,0).getDate();var td=new Date();
+    for(var i=0;i<fd;i++){var c=document.createElement('div');c.style.cssText='min-height:80px;background:#f5f5f5;border:1px solid #eee';grid.appendChild(c)}
+    for(var d=1;d<=dm;d++){
+        var cell=document.createElement('div');var ds=year+'-'+String(month).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+        var isT=td.getFullYear()==year&&td.getMonth()+1==month&&td.getDate()==d;
+        cell.style.cssText='min-height:80px;padding:3px;border:1px solid #eee;font-size:10px;'+(isT?'background:#e8f5e9;border-color:#1A7A6D':'');
+        var num=document.createElement('div');num.style.cssText='font-weight:700;font-size:12px;margin-bottom:2px;'+(isT?'color:#1A7A6D':'color:#333');num.textContent=d;cell.appendChild(num);
+        tasks.forEach(function(t){if(t.due==ds){var tag=document.createElement('div');tag.style.cssText='padding:1px 3px;margin-bottom:1px;border-radius:3px;font-size:8px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:'+(t.status=='terminee'?'#2e7d32':t.status=='en_cours'?'#1A7A6D':'#e8672a');tag.textContent='📋 '+t.title;tag.title=t.project+' — '+t.title;cell.appendChild(tag)}});
+        projects.forEach(function(p){if(p.start==ds){var t=document.createElement('div');t.style.cssText='padding:1px 3px;margin-bottom:1px;border-radius:3px;font-size:8px;color:#fff;background:#1a3a5c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';t.textContent='▶ '+p.name;cell.appendChild(t)}if(p.end==ds){var t=document.createElement('div');t.style.cssText='padding:1px 3px;margin-bottom:1px;border-radius:3px;font-size:8px;color:#fff;background:#7b1fa2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';t.textContent='⏹ '+p.name;cell.appendChild(t)}});
+        grid.appendChild(cell);
+    }
+})();
+</script>
+
+<div class="card"><div class="card-header"><h3>📊 Vue Gantt</h3></div><div class="card-body">
+{% if projects %}
+<div style="overflow-x:auto">{% for p in projects %}
+<div style="display:flex;align-items:center;margin-bottom:8px;font-size:12px">
+    <div style="min-width:180px;font-weight:600"><a href="/resp-projet/projet/{{ p.id }}" style="color:#1a3a5c">{{ p.name }}</a></div>
+    <div style="flex:1;position:relative;height:24px;background:#f0f0f0;border-radius:4px;overflow:hidden">
+        <div style="position:absolute;left:0;top:0;height:100%;width:{% if p.status=='termine' %}100{% elif p.status=='en_cours' %}50{% else %}10{% endif %}%;background:{% if p.status=='termine' %}#2e7d32{% elif p.status=='en_cours' %}#1A7A6D{% else %}#ccc{% endif %};border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700">{{ p.start_date or '?' }} → {{ p.end_date or '?' }}</div>
+    </div>
+    <div style="min-width:80px;text-align:right"><span style="padding:2px 6px;border-radius:8px;font-size:9px;{% if p.status=='termine' %}background:#e8f5e9;color:#2e7d32{% elif p.status=='en_cours' %}background:#e3f2fd;color:#1A7A6D{% else %}background:#f0f0f0;color:#555{% endif %}">{{ p.status }}</span></div>
+</div>{% endfor %}</div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucun projet</p>{% endif %}
+</div></div>
+
+<div class="card" style="margin-top:14px"><div class="card-header"><h3>📋 Tâches du mois</h3></div><div class="card-body" style="padding:0">
+{% if tasks %}<div class="table-wrap"><table>
+<thead><tr><th>Échéance</th><th>Tâche</th><th>Projet</th><th>Assigné</th><th>Statut</th></tr></thead>
+<tbody>{% for t in tasks %}<tr>
+<td style="font-weight:600;color:{% if t.due_date and t.due_date < today %}#c53030{% else %}#1a3a5c{% endif %}">{{ t.due_date or '-' }}</td>
+<td><strong>{{ t.title }}</strong></td><td style="font-size:11px">{{ t.project_name or '-' }}</td>
+<td style="font-size:11px">{{ t.assigned_name or '-' }}</td>
+<td><span style="padding:2px 6px;border-radius:8px;font-size:9px;{% if t.status=='terminee' %}background:#e8f5e9;color:#2e7d32{% elif t.status=='en_cours' %}background:#e3f2fd;color:#1A7A6D{% else %}background:#fff3e0;color:#e8672a{% endif %}">{{ t.status }}</span></td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucune tâche</p>{% endif %}
+</div></div>
+{% endblock %}

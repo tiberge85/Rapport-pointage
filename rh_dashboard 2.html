@@ -1,0 +1,144 @@
+{% extends "base.html" %}{% block title %}WannyGest - Gestion RH{% endblock %}{% block content %}
+<div class="page-header"><h1>👥 Tableau de bord RH</h1></div>
+
+<!-- KPIs like the image -->
+<div class="stats-grid" style="margin-bottom:16px">
+    <div class="card" style="padding:14px;border-left:4px solid #2e7d32">
+        <div style="font-size:10px;font-weight:600;color:#2e7d32;text-transform:uppercase">✅ Effectif total</div>
+        <div style="font-size:28px;font-weight:800;color:#2e7d32;margin-top:4px">{{ emp_total_all }}</div>
+        <div style="height:4px;background:#e8f5e9;border-radius:2px;margin-top:6px"><div style="height:100%;width:100%;background:#2e7d32;border-radius:2px"></div></div>
+    </div>
+    <div class="card" style="padding:14px;border-left:4px solid #888">
+        <div style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase">📝 Nouveaux embauchés ce mois</div>
+        <div style="font-size:28px;font-weight:800;color:#555;margin-top:4px">{{ new_hires }}</div>
+        <div style="height:4px;background:#f0f0f0;border-radius:2px;margin-top:6px"><div style="height:100%;width:{% if emp_total_all %}{{ (new_hires / emp_total_all * 100)|int }}{% else %}0{% endif %}%;background:#888;border-radius:2px"></div></div>
+    </div>
+    <div class="card" style="padding:14px;border-left:4px solid #1A7A6D">
+        <div style="font-size:10px;font-weight:600;color:#1A7A6D;text-transform:uppercase">✉️ Actif</div>
+        <div style="font-size:28px;font-weight:800;color:#1A7A6D;margin-top:4px">{{ emp_actif }}</div>
+        <div style="height:4px;background:#e3f2fd;border-radius:2px;margin-top:6px"><div style="height:100%;width:{% if emp_total_all %}{{ (emp_actif / emp_total_all * 100)|int }}{% else %}0{% endif %}%;background:#1A7A6D;border-radius:2px"></div></div>
+    </div>
+    <div class="card" style="padding:14px;border-left:4px solid #c53030">
+        <div style="font-size:10px;font-weight:600;color:#c53030;text-transform:uppercase">✖ Contrat expiré</div>
+        <div style="font-size:28px;font-weight:800;color:#c53030;margin-top:4px">{{ expired_contracts|length }}</div>
+        <div style="height:4px;background:#fde8e8;border-radius:2px;margin-top:6px"><div style="height:100%;width:{% if expired_contracts %}{{ (expired_contracts|length * 5)|int }}{% else %}0{% endif %}%;background:#c53030;border-radius:2px"></div></div>
+    </div>
+    <div class="card" style="padding:14px;border-left:4px solid #e8672a">
+        <div style="font-size:10px;font-weight:600;color:#e8672a;text-transform:uppercase">⚠ Sur le point d'expirer</div>
+        <div style="font-size:28px;font-weight:800;color:#555;margin-top:4px">{{ expiring_soon|length }}</div>
+        <div style="height:4px;background:#fff3e0;border-radius:2px;margin-top:6px"><div style="height:100%;width:{% if expiring_soon %}{{ (expiring_soon|length * 5)|int }}{% else %}0{% endif %}%;background:#e8672a;border-radius:2px"></div></div>
+    </div>
+</div>
+
+<!-- Expired contracts table -->
+{% if expired_contracts %}
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3>📋 Contrats expirés à prolonger</h3><a href="/rh/contrats-rh" class="btn btn-outline btn-sm" style="font-size:10px">Voir tout →</a></div><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<thead><tr><th>Personnel</th><th>Département</th><th>Type</th><th>Fin validité</th><th>Expiré depuis</th><th>Actions</th></tr></thead>
+<tbody>{% for c in expired_contracts %}
+<tr style="background:#fef9e7">
+<td><strong>{{ c.employee_name }}</strong></td>
+<td>{{ c.department or '-' }}</td>
+<td>{{ c.contract_type or c.code or '-' }}</td>
+<td style="color:#c53030;font-weight:600">{{ c.end_date }}</td>
+<td><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:#fde8e8;color:#c53030">{{ c.days_remaining }} j</span></td>
+<td><a href="/rh/contrats-rh/edit/{{ c.id }}" class="btn btn-outline btn-sm" style="font-size:10px">✏️ Prolonger</a></td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% endif %}
+
+{% if expiring_soon %}
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3>⚠️ Contrats sur le point d'expirer</h3><a href="/rh/contrats-rh" class="btn btn-outline btn-sm" style="font-size:10px">Voir tout →</a></div><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<thead><tr><th>Personnel</th><th>Département</th><th>Type</th><th>Fin contrat</th><th>Jours restants</th><th>Actions</th></tr></thead>
+<tbody>{% for c in expiring_soon %}
+{% set days_left = ((c.end_date|string)[:10]) %}
+<tr>
+<td><strong>{{ c.employee_name }}</strong></td>
+<td>{{ c.department or '-' }}</td>
+<td>{{ c.contract_type or '-' }}</td>
+<td style="font-weight:600;color:#e8672a">{{ c.end_date }}</td>
+<td><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:#fff3e0;color:#e8672a">{{ c.days_remaining }} j</span></td>
+<td><a href="/rh/contrats-rh/edit/{{ c.id }}" class="btn btn-outline btn-sm" style="font-size:10px">✏️ Renouveler</a></td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% endif %}
+
+<div class="g2g" style="margin-bottom:14px">
+<!-- Congés recap -->
+<div class="card"><div class="card-header"><h3>🏖️ Récapitulatif des congés</h3><a href="/rh/conges" class="btn btn-outline btn-sm" style="font-size:10px">Voir tout →</a></div><div class="card-body">
+    <div class="g2" style="gap:8px;margin-bottom:12px">
+        <div style="text-align:center;padding:8px;background:#fff3e0;border-radius:8px"><div style="font-size:20px;font-weight:800;color:#e8672a">{{ emp_stats.pending_leaves }}</div><div style="font-size:9px;color:#888">En attente</div></div>
+        <div style="text-align:center;padding:8px;background:#e8f5e9;border-radius:8px"><div style="font-size:20px;font-weight:800;color:#2e7d32">{{ leaves_approved }}</div><div style="font-size:9px;color:#888">Approuvés</div></div>
+        <div style="text-align:center;padding:8px;background:#fde8e8;border-radius:8px"><div style="font-size:20px;font-weight:800;color:#c53030">{{ leaves_refused }}</div><div style="font-size:9px;color:#888">Refusés</div></div>
+        <div style="text-align:center;padding:8px;background:#f5f7fa;border-radius:8px"><div style="font-size:20px;font-weight:800;color:#555">{{ leaves_total }}</div><div style="font-size:9px;color:#888">Total</div></div>
+    </div>
+    {% if leaves_pending %}
+    <div style="font-size:11px;font-weight:600;color:#1a3a5c;margin-bottom:6px">⏳ Demandes en attente</div>
+    {% for l in leaves_pending %}
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:12px">
+        <div style="flex:1"><strong>{{ l.employee_name or '?' }}</strong><br><span style="font-size:10px;color:#888">{{ l.leave_type|replace('_',' ')|capitalize }} · {{ l.start_date }} → {{ l.end_date }}</span></div>
+        <a href="/rh/conges/approve/{{ l.id }}/approuve" class="btn btn-sm" style="font-size:9px;padding:2px 6px;background:#e8f5e9;color:#2e7d32">✅</a>
+        <a href="/rh/conges/approve/{{ l.id }}/refuse" class="btn btn-sm" style="font-size:9px;padding:2px 6px;background:#fde8e8;color:#c53030">❌</a>
+    </div>{% endfor %}
+    {% else %}<p style="text-align:center;color:#999;font-size:12px;padding:10px">Aucune demande en attente</p>{% endif %}
+</div></div>
+
+<!-- Birthdays + Status -->
+<div class="card"><div class="card-header"><h3>🎂 Anniversaires à venir</h3></div><div class="card-body">
+    {% if birthdays %}
+    {% for e in birthdays %}
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f5f5f5">
+        <div style="width:36px;height:36px;border-radius:50%;background:{% if e.days_until == 0 %}#ffd700{% else %}#f3e5f5{% endif %};display:flex;align-items:center;justify-content:center;font-size:18px">🎂</div>
+        <div style="flex:1">
+            <strong style="font-size:13px">{{ e.first_name }} {{ e.last_name }}</strong>
+            <div style="font-size:10px;color:#888">{{ e.position or '' }} · {{ e.age }} ans</div>
+        </div>
+        <div style="text-align:right">
+            {% if e.days_until == 0 %}<span style="background:#ffd700;color:#333;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">🎉 Aujourd'hui !</span>
+            {% elif e.days_until == 1 %}<span style="color:#e8672a;font-size:11px;font-weight:600">Demain</span>
+            {% else %}<span style="color:#888;font-size:11px">Dans {{ e.days_until }} jours</span>{% endif %}
+            <div style="font-size:10px;color:#aaa">{{ e.birthday }}</div>
+        </div>
+    </div>{% endfor %}
+    {% else %}<p style="text-align:center;color:#999;font-size:12px;padding:20px">Aucun anniversaire dans les 30 prochains jours</p>{% endif %}
+</div></div>
+</div>
+
+<!-- Activités RH récentes -->
+{% if rh_activities %}
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3>🕐 Dernières activités RH</h3></div>
+<div class="card-body" style="padding:0;max-height:250px;overflow-y:auto">
+{% for log in rh_activities %}
+<div style="padding:6px 14px;border-bottom:1px solid #f5f5f5;display:flex;gap:8px;align-items:center;font-size:11px">
+    <span style="color:#aaa;min-width:100px">{{ log.created_at[:16] if log.created_at else '' }}</span>
+    <strong style="min-width:80px;color:#1a3a5c">{{ log.user_name or '' }}</strong>
+    <span style="background:{% if 'Paie' in (log.action or '') %}#e8f5e9{% elif 'Personnel' in (log.action or '') %}#f3e5f5{% elif 'Connexion' in (log.action or '') %}#e3f2fd{% else %}#fff3e0{% endif %};padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">{{ log.action or '' }}</span>
+    <span style="flex:1;color:#555">{{ (log.detail or '')[:50] }}</span>
+</div>
+{% endfor %}
+</div></div>
+{% endif %}
+
+<!-- Résumé Conciergerie -->
+{% if concierge_stats %}
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3>🔑 Conciergerie — Aujourd'hui</h3><a href="/concierge" class="btn btn-outline btn-sm" style="font-size:10px">Voir tout →</a></div>
+<div class="card-body">
+<div class="g3" style="text-align:center">
+    <div style="padding:10px;background:#e3f2fd;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1A7A6D">{{ concierge_stats.visiteurs_jour }}</div><div style="font-size:10px;color:#888">Visiteurs aujourd'hui</div></div>
+    <div style="padding:10px;background:#fff3e0;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ concierge_stats.colis_attente }}</div><div style="font-size:10px;color:#888">Colis en attente</div></div>
+    <div style="padding:10px;background:#e8f5e9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#2e7d32">{{ concierge_stats.courrier_jour }}</div><div style="font-size:10px;color:#888">Courriers aujourd'hui</div></div>
+</div>
+</div></div>
+{% endif %}
+
+<!-- Quick links -->
+<div class="stats-grid">
+    <a href="/rh/personnel" class="card" style="text-decoration:none;padding:14px;text-align:center;border-left:4px solid #1A7A6D">
+        <div style="font-size:24px">👤</div><div style="font-size:13px;font-weight:700;color:#1a3a5c">Personnel</div></a>
+    <a href="/rh/conges" class="card" style="text-decoration:none;padding:14px;text-align:center;border-left:4px solid #e8672a">
+        <div style="font-size:24px">🏖️</div><div style="font-size:13px;font-weight:700;color:#1a3a5c">Congés</div></a>
+    <a href="/rh/paie" class="card" style="text-decoration:none;padding:14px;text-align:center;border-left:4px solid #2e7d32">
+        <div style="font-size:24px">💵</div><div style="font-size:13px;font-weight:700;color:#1a3a5c">Paie</div></a>
+    <a href="/rh/absences" class="card" style="text-decoration:none;padding:14px;text-align:center;border-left:4px solid #c53030">
+        <div style="font-size:24px">📋</div><div style="font-size:13px;font-weight:700;color:#1a3a5c">Absences</div></a>
+    <a href="/rh/contrats-rh" class="card" style="text-decoration:none;padding:14px;text-align:center;border-left:4px solid #7b1fa2">
+        <div style="font-size:24px">📄</div><div style="font-size:13px;font-weight:700;color:#1a3a5c">Contrats</div></a>
+</div>
+{% endblock %}

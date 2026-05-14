@@ -1,0 +1,1005 @@
+{% extends "base.html" %}
+{% block title %}RAMYA - Traitement{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>⚙️ Traitement des rapports</h1>
+    <p>Fusionnez les fichiers et générez le rapport PDF</p>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form id="reportForm" action="/traitement/generate" method="post" enctype="multipart/form-data">
+            <input type="hidden" name="merge_id" id="mergeId" value="">
+            
+            <!-- Step 1: Enregistrement -->
+            <div class="step">
+                <div class="step-label">
+                    <span class="step-num">1</span>
+                    <span class="step-title">Fichier Enregistrement des arrivées et départs</span>
+                    <span class="step-optional">optionnel</span>
+                </div>
+                <div class="upload-zone small-zone" id="dropZoneEnr" onclick="document.getElementById('enrFile').click()">
+                    <input type="file" id="enrFile" accept=".xlsx,.xls">
+                    <div class="upload-text"><strong>Cliquez</strong> ou glissez le fichier Enregistrement .xlsx</div>
+                    <div class="file-name" id="enrFileName"></div>
+                </div>
+            </div>
+            
+            <!-- Step 2: Transactions -->
+            <div class="step">
+                <div class="step-label">
+                    <span class="step-num">2</span>
+                    <span class="step-title">Fichier Transactions</span>
+                    <span class="step-optional">optionnel</span>
+                </div>
+                <div class="upload-zone small-zone" id="dropZoneTrans" onclick="document.getElementById('transFile').click()">
+                    <input type="file" id="transFile" accept=".xlsx,.xls">
+                    <div class="upload-text"><strong>Cliquez</strong> ou glissez le fichier Transactions .xlsx</div>
+                    <div class="file-name" id="transFileName"></div>
+                </div>
+                <div id="mergeStatus" class="merge-status" style="display:none;"></div>
+            </div>
+            
+            <!-- Step 3: Présence -->
+            <div class="step">
+                <div class="step-label">
+                    <span class="step-num">3</span>
+                    <span class="step-title">Fichier Excel de présence</span>
+                </div>
+                <div class="upload-zone" id="dropZone" onclick="if(!document.getElementById('mergeId').value) document.getElementById('excelFile').click()">
+                    <input type="file" id="excelFile" name="excel_file" accept=".xlsx,.xls">
+                    <div style="font-size:28px;margin-bottom:6px">📁</div>
+                    <div class="upload-text" id="presenceText"><strong>Cliquez</strong> ou glissez votre fichier .xlsx</div>
+                    <div class="file-name" id="fileName"></div>
+                </div>
+                <div class="hint" style="margin-top:6px">Importez directement, ou il sera généré par la fusion (étapes 1-2).</div>
+                <div class="preview-box" id="previewBox">
+                    <h4>✅ Fichier analysé <span class="preview-badge" id="empCount"></span></h4>
+                    <div>Client détecté : <strong id="detectedClient"></strong></div>
+                    <div class="emp-list" id="empList"></div>
+                </div>
+            </div>
+            
+            <!-- Step 4: Client -->
+            <div class="step">
+                <div class="step-label">
+                    <span class="step-num">4</span>
+                    <span class="step-title">Informations entreprises</span>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Votre société (prestataire)</label>
+                        <input type="text" name="provider_name" placeholder="RAMYA TECHNOLOGIE & INNOVATION">
+                    </div>
+                    <div class="form-group">
+                        <label>Tél & Email prestataire</label>
+                        <input type="text" name="provider_info" placeholder="Tél: 2722204498 | Email: techniqueramya@gmail.com">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Client enregistré</label>
+                    <select name="client_id" id="clientSelect" onchange="fillClientInfo(this)">
+                        <option value="">— Sélectionner ou saisir manuellement —</option>
+                        {% for c in clients %}
+                        <option value="{{ c.id }}" data-name="{{ c.name }}" data-tel="{{ c.tel or '' }}" data-email="{{ c.email or '' }}">{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="hint">Choisissez un client enregistré ou remplissez manuellement ci-dessous</div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Nom du client</label>
+                        <input type="text" name="client_name" id="clientInput" placeholder="Sera détecté du fichier">
+                    </div>
+                    <div class="form-group">
+                        <label>Tél du client</label>
+                        <input type="text" name="client_tel" id="clientTel" placeholder="Ex: 0768135568">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Email du client</label>
+                    <input type="email" name="client_email" id="clientEmail" placeholder="Ex: contact@client.ci">
+                </div>
+            </div>
+            
+            <!-- Step 5: Hours -->
+            <div class="step">
+                <div class="step-label">
+                    <span class="step-num">5</span>
+                    <span class="step-title">Heures obligatoires par jour</span>
+                </div>
+                <div class="g2">
+                    <div class="form-group">
+                        <label style="font-size:12px;font-weight:600">Jours ouvrables (Lun-Ven)</label>
+                        <input type="number" name="required_hours" min="0" step="0.5" value="0" style="width:120px">
+                    </div>
+                    <div class="form-group">
+                        <label style="font-size:12px;font-weight:600">Week-end (Sam-Dim)</label>
+                        <input type="number" name="required_hours_weekend" min="0" step="0.5" value="0" style="width:120px">
+                    </div>
+                </div>
+                <div class="hint">Ex: 8h en semaine, 4h le week-end. Mettez 0 pour utiliser l'emploi du temps du fichier.</div>
+            </div>
+            
+            <!-- Step 6: Coût horaire -->
+            <div class="step">
+                <div class="step-label">
+                    <span class="step-num">6</span>
+                    <span class="step-title">Coût horaire de travail (FCFA)</span>
+                </div>
+                <div class="form-group">
+                    <label style="font-size:12px;font-weight:600">Coût par défaut pour tous</label>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <input type="number" name="hourly_cost" id="defaultCost" min="0" step="1" value="0" style="width:160px" placeholder="Ex: 1500">
+                        <button type="button" class="btn btn-outline btn-sm" onclick="applyDefaultCost()">Appliquer à tous</button>
+                    </div>
+                </div>
+                <div id="empCostList" style="display:none;margin-top:8px;background:#f8faf9;padding:10px 14px;border-radius:8px;max-height:250px;overflow-y:auto">
+                    <div style="font-size:11px;font-weight:700;color:#1a3a5c;margin-bottom:6px">💰 Coût par employé (personnalisable) :</div>
+                    <!-- Filled dynamically by JS -->
+                </div>
+                <input type="hidden" name="employee_costs_json" id="empCostsJson" value="{}">
+                <div class="hint">Définissez un coût global ou personnalisez par employé. Le gain perdu sera calculé sur le rapport individuel.</div>
+            </div>
+            
+            <!-- Step 7: Jour de repos -->
+            <div class="step">
+                <div class="step-label">
+                    <span class="step-num">7</span>
+                    <span class="step-title">Jour(s) de repos</span>
+                </div>
+                <div class="form-group">
+                    <label style="font-size:12px;font-weight:600">Jour de repos global (appliqué à tous)</label>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+                        {% for d, label in [('lundi','Lun'),('mardi','Mar'),('mercredi','Mer'),('jeudi','Jeu'),('vendredi','Ven'),('samedi','Sam'),('dimanche','Dim')] %}
+                        <label style="display:flex;align-items:center;gap:4px;padding:6px 10px;background:#f5f7fa;border-radius:6px;font-size:12px;cursor:pointer;border:1.5px solid #e0e0e0">
+                            <input type="checkbox" name="rest_days" value="{{ d }}" {% if d == 'dimanche' %}checked{% endif %}> {{ label }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div style="margin-top:6px">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="toggleEmpRestDays()" style="font-size:10px">⚙️ Personnaliser par employé</button>
+                </div>
+                <div id="empRestList" style="display:none;margin-top:8px;background:#f8faf9;padding:10px 14px;border-radius:8px;max-height:250px;overflow-y:auto">
+                    <div style="font-size:11px;font-weight:700;color:#1a3a5c;margin-bottom:6px">🗓️ Jour de repos par employé :</div>
+                </div>
+                <input type="hidden" name="employee_rest_days_json" id="empRestJson" value="{}">
+                <div class="hint">Le dimanche est coché par défaut. Les jours de repos sont déduits du nombre de jours prévus. Personnalisez si certains employés ont un jour différent.</div>
+            </div>
+            
+            <!-- Step 7bis: Jours obligatoires (NOUVEAU v46) -->
+            <div class="step" style="background:linear-gradient(135deg,#fff8e0 0%,#ffeacc 100%);padding:14px;border-radius:10px;border-left:5px solid #f29f2f;margin-bottom:14px">
+                <div class="step-label">
+                    <span class="step-num" style="background:#f29f2f">⭐</span>
+                    <span class="step-title" style="color:#b8561f">Nombre de jours obligatoires (pour TOUS les employés)</span>
+                </div>
+                
+                <div class="g2">
+                    <div class="form-group">
+                        <label style="font-size:12px;font-weight:600;color:#b8561f">📅 Saisie manuelle directe (priorité maximum)</label>
+                        <input type="number" name="days_required" id="daysRequiredInput" min="0" max="31" placeholder="Ex: 22 (vide = calcul automatique)" style="width:100%;font-weight:600;border:2px solid #f29f2f">
+                        <p class="hint" style="margin:4px 0 0">Si renseigné, ce nombre s'applique à TOUS les employés. Sinon, le calcul auto basé sur le calendrier ci-dessous est utilisé.</p>
+                    </div>
+                    <div class="form-group">
+                        <label style="font-size:12px;font-weight:600;color:#b8561f">🤖 Auto-calculé depuis le calendrier</label>
+                        <div id="autoCalcDisplay" style="padding:10px;background:#fff;border:2px dashed #f29f2f;border-radius:6px;font-weight:700;color:#b8561f;text-align:center">
+                            <span id="autoCalcValue">— jours</span>
+                            <p style="font-size:11px;color:#666;margin:4px 0 0;font-weight:400">Sélectionnez d'abord un fichier puis cochez les jours non ouvrables</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top:12px">
+                    <label style="font-size:12px;font-weight:600;color:#b8561f">🗓️ Calendrier des jours non ouvrables (cliquez pour cocher fériés / jours non travaillés)</label>
+                    <p class="hint" style="margin:4px 0 8px">💡 Le système calculera automatiquement : <strong>Nb jours obligatoires = Jours uniques dans le fichier - Jours non ouvrables cochés</strong></p>
+                    <div id="calendarContainer" style="background:#fff;padding:14px;border-radius:8px;border:1.5px solid #f29f2f">
+                        <div style="text-align:center;color:#999;font-style:italic;font-size:13px" id="calendarPlaceholder">
+                            📂 Importez d'abord un fichier Excel pour afficher le calendrier de la période
+                        </div>
+                        <div id="calendarGrid"></div>
+                    </div>
+                    <input type="hidden" name="non_working_days" id="nonWorkingDaysInput" value="">
+                </div>
+                
+                <!-- NOUVEAU v50/v57 : Override individuel par employé (jours obligatoires + heures/jour) -->
+                <div style="margin-top:14px;padding:12px;background:#fff;border-radius:8px;border:1.5px dashed #f29f2f">
+                    <label style="font-size:12px;font-weight:600;color:#b8561f">👤 Personnalisation par employé (optionnel)</label>
+                    <p class="hint" style="margin:4px 0 8px">⭐ Saisissez ici un nombre de jours obligatoires <strong>OU/ET un nombre d'heures par jour</strong> spécifique pour certains employés (temps partiel, congés exceptionnels, etc.). Vide = utilise la valeur globale ci-dessus.<br>
+                    <strong>Priorité :</strong> Override individuel → Saisie manuelle globale → Auto-calcul calendrier</p>
+                    <div id="empDaysList" style="display:none;background:#f8faf9;padding:10px 14px;border-radius:6px;max-height:280px;overflow-y:auto">
+                        <div style="font-size:11px;color:#999;font-style:italic;text-align:center">📂 Importez d'abord un fichier Excel</div>
+                    </div>
+                    <input type="hidden" name="employee_days_required_json" id="empDaysJson" value="{}">
+                    <input type="hidden" name="employee_hours_json" id="empHoursJson" value="{}">
+                </div>
+            </div>
+            
+            <!-- Step 7ter: Personnalisation des emplois du temps (REFONTE TOTALE v61) -->
+            <div class="step" style="background:linear-gradient(135deg,#e3f2fd 0%,#bbdefb 100%);padding:14px;border-radius:10px;border-left:5px solid #1976d2;margin-bottom:14px">
+                <div class="step-label">
+                    <span class="step-num" style="background:#1976d2">🕒</span>
+                    <span class="step-title" style="color:#0d47a1">Personnalisation des emplois du temps</span>
+                </div>
+                <p class="hint" style="margin:0 0 12px;color:#0d47a1">
+                    Forcez les horaires de travail (heure début, heure fin, pause). 
+                    <strong>Priorité :</strong> Personne → Groupe → Toute la base → Horaire d'origine du fichier.
+                </p>
+                
+                <!-- v61 : Utilise des cases simples + JavaScript inline pour fiabilité maximale -->
+                <p style="font-weight:700;color:#0d47a1;margin:0 0 8px;font-size:13px">Cochez les cases ci-dessous pour activer la personnalisation :</p>
+                
+                <!-- 1. Toute la base -->
+                <div style="background:#fff;padding:12px;border-radius:6px;margin-bottom:8px;border:2px solid transparent" id="schedAllBox">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:13px">
+                        <input type="checkbox" id="schedAllEnable" style="width:18px;height:18px;cursor:pointer">
+                        <span>🌐 <strong>EDT global pour TOUS les employés</strong></span>
+                    </label>
+                    <div id="schedAllFields" style="display:none;margin-top:10px;padding:10px;background:#f0f8ff;border-radius:6px">
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end">
+                            <div><label style="font-size:11px;color:#666;font-weight:600">Heure début *</label>
+                                <input type="time" id="schedAllStart" value="08:00" style="width:100%;padding:8px;border:2px solid #1976d2;border-radius:5px;font-size:13px;font-weight:600"></div>
+                            <div><label style="font-size:11px;color:#666;font-weight:600">Heure fin *</label>
+                                <input type="time" id="schedAllEnd" value="17:00" style="width:100%;padding:8px;border:2px solid #1976d2;border-radius:5px;font-size:13px;font-weight:600"></div>
+                            <div>
+                                <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                                    <input type="checkbox" id="schedAllHasPause" checked> ☕ Avec pause
+                                </label>
+                            </div>
+                        </div>
+                        <div id="schedAllPauseFields" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+                            <div><label style="font-size:11px;color:#666">Pause début</label>
+                                <input type="time" id="schedAllPauseStart" value="12:00" style="width:100%;padding:6px;border:1.5px solid #ddd;border-radius:5px;font-size:12px"></div>
+                            <div><label style="font-size:11px;color:#666">Pause fin</label>
+                                <input type="time" id="schedAllPauseEnd" value="13:00" style="width:100%;padding:6px;border:1.5px solid #ddd;border-radius:5px;font-size:12px"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 2. Par groupe -->
+                <div style="background:#fff;padding:12px;border-radius:6px;margin-bottom:8px;border:2px solid transparent" id="schedGroupBox">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:13px">
+                        <input type="checkbox" id="schedGroupEnable" style="width:18px;height:18px;cursor:pointer">
+                        <span>👥 <strong>EDT par groupe</strong> (créer des groupes)</span>
+                    </label>
+                    <div id="schedGroupFields" style="display:none;margin-top:10px;padding:10px;background:#f0f8ff;border-radius:6px">
+                        <div id="schedGroupsList"></div>
+                        <button type="button" onclick="addSchedGroup()" class="btn btn-sm btn-outline" style="font-size:11px;margin-top:6px">+ Ajouter un groupe</button>
+                    </div>
+                </div>
+                
+                <!-- 3. Par personne -->
+                <div style="background:#fff;padding:12px;border-radius:6px;border:2px solid transparent" id="schedPersonBox">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:13px">
+                        <input type="checkbox" id="schedPersonEnable" style="width:18px;height:18px;cursor:pointer">
+                        <span>👤 <strong>EDT spécifique par personne</strong></span>
+                    </label>
+                    <div id="schedPersonList" style="display:none;margin-top:10px;padding:10px;background:#f0f8ff;border-radius:6px;max-height:300px;overflow-y:auto">
+                        <div style="font-size:11px;color:#999;font-style:italic;text-align:center">📂 Importez d'abord un fichier Excel</div>
+                    </div>
+                </div>
+                
+                <!-- 4. NOUVEAU v64 : Par jour de la semaine -->
+                <div style="background:#fff;padding:12px;border-radius:6px;margin-top:8px;border:2px solid transparent" id="schedDaysBox">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#0d47a1;font-size:13px">
+                        <input type="checkbox" id="schedDaysEnable" style="width:18px;height:18px;cursor:pointer">
+                        <span>📅 <strong>EDT par jour spécifique</strong> (lundi 6h, samedi 4h, etc.)</span>
+                    </label>
+                    <div id="schedDaysFields" style="display:none;margin-top:10px;padding:10px;background:#f0f8ff;border-radius:6px">
+                        <div style="font-size:11px;color:#0d47a1;margin-bottom:8px">Cochez les jours à personnaliser. Les jours non cochés gardent l'horaire d'origine (ou de la priorité supérieure : Personne / Groupe / Tous).</div>
+                        <div id="schedDaysList"></div>
+                    </div>
+                </div>
+                
+                <input type="hidden" name="schedule_override_json" id="schedOverrideJson" value="{}">
+                
+                <!-- v59 : Bouton aperçu avant génération -->
+                <div style="margin-top:14px;text-align:center">
+                    <button type="button" onclick="previewSchedOverride()" class="btn btn-orange btn-sm" style="font-size:12px;padding:8px 16px">🔍 Vérifier la personnalisation</button>
+                </div>
+                <div id="schedPreview" style="display:none;margin-top:10px;padding:10px;background:#e8f5e9;border-left:4px solid #2e7d32;border-radius:6px;font-size:12px"></div>
+                
+                <!-- v61 : Script INLINE et IMMÉDIAT pour les toggles — pas de dépendance externe -->
+                <script>
+                    // Toggle inline robuste : exécution garantie au clic, sans dépendance externe
+                    (function() {
+                        function setupToggle(checkboxId, fieldsId, displayValue) {
+                            var cb = document.getElementById(checkboxId);
+                            var fields = document.getElementById(fieldsId);
+                            if (!cb || !fields) { console.error('EDT setup error:', checkboxId, fieldsId); return; }
+                            cb.addEventListener('change', function() {
+                                fields.style.display = cb.checked ? displayValue : 'none';
+                                console.log('[EDT] ' + checkboxId + ' = ' + cb.checked + ' → ' + fields.style.display);
+                                // Pour personne : remplir la liste si activé
+                                if (checkboxId === 'schedPersonEnable' && cb.checked) {
+                                    if (typeof buildSchedPersonList === 'function') buildSchedPersonList();
+                                }
+                                // Pour groupe : ajouter premier groupe si activé
+                                if (checkboxId === 'schedGroupEnable' && cb.checked) {
+                                    if (typeof _schedGroups !== 'undefined' && _schedGroups.length === 0 && typeof addSchedGroup === 'function') {
+                                        addSchedGroup();
+                                    }
+                                }
+                                // v64 : Pour jours : construire la liste des jours
+                                if (checkboxId === 'schedDaysEnable' && cb.checked) {
+                                    if (typeof buildSchedDaysList === 'function') buildSchedDaysList();
+                                }
+                            });
+                        }
+                        // Setup au chargement immédiat (le script est juste après les éléments)
+                        setupToggle('schedAllEnable', 'schedAllFields', 'block');
+                        setupToggle('schedGroupEnable', 'schedGroupFields', 'block');
+                        setupToggle('schedPersonEnable', 'schedPersonList', 'block');
+                        setupToggle('schedDaysEnable', 'schedDaysFields', 'block');  // v64
+                        // Pause toggle
+                        var pauseCb = document.getElementById('schedAllHasPause');
+                        var pauseFields = document.getElementById('schedAllPauseFields');
+                        if (pauseCb && pauseFields) {
+                            pauseCb.addEventListener('change', function() {
+                                pauseFields.style.display = pauseCb.checked ? 'grid' : 'none';
+                            });
+                        }
+                        console.log('[EDT] Toggles initialized');
+                    })();
+                </script>
+            </div>
+            
+            <!-- Step 8: Logo -->
+            <div class="step" style="border-bottom:none">
+                <div class="step-label">
+                    <span class="step-num">8</span>
+                    <span class="step-title">Logo (optionnel)</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px">
+                    <label class="btn btn-outline btn-sm" for="logoFile" style="cursor:pointer">🖼️ Choisir un logo</label>
+                    <input type="file" id="logoFile" name="logo_file" accept=".png,.jpg,.jpeg" style="display:none">
+                    <span style="font-size:13px;color:#1a7a6d" id="logoName">Logo RAMYA par défaut</span>
+                </div>
+            </div>
+            
+            <!-- Submit -->
+            <div style="margin-top:20px">
+                <button type="submit" class="btn btn-orange btn-block" id="submitBtn" disabled style="padding:14px;font-size:16px">
+                    <span class="spinner" id="spinner"></span>
+                    <span id="btnText">📄 Générer le rapport PDF</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('excelFile');
+const fileName = document.getElementById('fileName');
+const submitBtn = document.getElementById('submitBtn');
+const previewBox = document.getElementById('previewBox');
+const enrFile = document.getElementById('enrFile');
+const transFile = document.getElementById('transFile');
+const mergeIdInput = document.getElementById('mergeId');
+
+// Fill client info from dropdown
+function fillClientInfo(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    if (opt.value) {
+        document.getElementById('clientInput').value = opt.dataset.name || '';
+        document.getElementById('clientTel').value = opt.dataset.tel || '';
+        document.getElementById('clientEmail').value = opt.dataset.email || '';
+    }
+}
+
+// Merge logic
+enrFile.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+        document.getElementById('enrFileName').textContent = '✅ ' + e.target.files[0].name;
+        document.getElementById('dropZoneEnr').classList.add('has-file');
+        tryMerge();
+    }
+});
+transFile.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+        document.getElementById('transFileName').textContent = '✅ ' + e.target.files[0].name;
+        document.getElementById('dropZoneTrans').classList.add('has-file');
+        tryMerge();
+    }
+});
+
+['dropZoneEnr', 'dropZoneTrans'].forEach(id => {
+    const zone = document.getElementById(id);
+    const input = id === 'dropZoneEnr' ? enrFile : transFile;
+    ['dragenter','dragover'].forEach(e => zone.addEventListener(e, ev => {ev.preventDefault();zone.classList.add('dragover')}));
+    ['dragleave','drop'].forEach(e => zone.addEventListener(e, ev => {ev.preventDefault();zone.classList.remove('dragover')}));
+    zone.addEventListener('drop', e => { if(e.dataTransfer.files.length){input.files=e.dataTransfer.files;input.dispatchEvent(new Event('change'))} });
+});
+
+function tryMerge() {
+    if (!enrFile.files.length || !transFile.files.length) return;
+    const status = document.getElementById('mergeStatus');
+    status.style.display = 'block';
+    status.className = 'merge-status loading';
+    status.textContent = '🔄 Fusion en cours...';
+    
+    const fd = new FormData();
+    fd.append('enr_file', enrFile.files[0]);
+    fd.append('trans_file', transFile.files[0]);
+    
+    fetch('/traitement/merge', {method:'POST', body:fd})
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { status.className='merge-status error'; status.textContent='❌ '+data.error; return; }
+            status.className = 'merge-status success';
+            status.innerHTML = `✅ Fusion réussie — ${Array.isArray(data.employees) ? data.employees.length : data.employees} employés, ${data.rows} enregistrements<br><a href="/traitement/merge/download/${data.merge_id}" class="merge-dl-btn">📥 Télécharger le fichier Présence fusionné (.xlsx)</a>`;
+            mergeIdInput.value = data.merge_id;
+            fileName.textContent = '✅ ' + data.filename + ' (généré automatiquement)';
+            dropZone.classList.add('merged');
+            document.getElementById('presenceText').innerHTML = '<strong>✅ Fichier de présence généré automatiquement</strong>';
+            submitBtn.disabled = false;
+            var empNames = Array.isArray(data.employees) ? data.employees : [];
+            var empServices = data.emp_services || {};
+            document.getElementById('empCount').textContent = empNames.length + ' employés';
+            document.getElementById('detectedClient').textContent = data.client;
+            previewBox.classList.add('visible');
+            if (empNames.length > 0) {
+                var empObjs = empNames.map(function(n) { return {name: n, ref: '', days: 0}; });
+                buildCostInputs(empObjs);
+                buildRestDayInputs(empObjs);
+                buildEmpDaysInputs(empObjs);
+                _employees = empObjs;
+                // Group by service for display
+                var grouped = {};
+                empNames.forEach(function(n) {
+                    var svc = empServices[n] || 'Non défini';
+                    if (!grouped[svc]) grouped[svc] = [];
+                    grouped[svc].push(n);
+                });
+                var html = '';
+                for (var svc in grouped) {
+                    html += '<div style="font-weight:700;font-size:11px;color:#1a7a6d;margin:6px 0 2px">🏢 ' + svc + '</div>';
+                    grouped[svc].forEach(function(n, i) { html += '<div style="padding-left:12px;font-size:11px">' + (i+1) + '. ' + n + '</div>'; });
+                }
+                document.getElementById('empList').innerHTML = html;
+            }
+        })
+        .catch(() => { status.className='merge-status error'; status.textContent='❌ Erreur de connexion'; });
+}
+
+// Direct upload
+['dragenter','dragover'].forEach(e => dropZone.addEventListener(e, ev => {ev.preventDefault();dropZone.classList.add('dragover')}));
+['dragleave','drop'].forEach(e => dropZone.addEventListener(e, ev => {ev.preventDefault();dropZone.classList.remove('dragover')}));
+dropZone.addEventListener('drop', e => {
+    if(mergeIdInput.value) return;
+    if(e.dataTransfer.files.length){fileInput.files=e.dataTransfer.files;handleFile(e.dataTransfer.files[0])}
+});
+fileInput.addEventListener('change', e => {
+    if(e.target.files.length){mergeIdInput.value='';dropZone.classList.remove('merged');document.getElementById('presenceText').innerHTML='<strong>Cliquez</strong> ou glissez votre fichier .xlsx';handleFile(e.target.files[0])}
+});
+document.getElementById('logoFile').addEventListener('change', e => {
+    if(e.target.files.length) document.getElementById('logoName').textContent='✅ '+e.target.files[0].name;
+});
+
+function handleFile(file) {
+    fileName.textContent = '✅ ' + file.name;
+    dropZone.classList.add('has-file');
+    submitBtn.disabled = false;
+    const fd = new FormData(); fd.append('excel_file', file);
+    fetch('/traitement/preview', {method:'POST',body:fd})
+        .then(r=>r.json())
+        .then(data => {
+            if(data.error) return;
+            document.getElementById('empCount').textContent = data.count + ' employés';
+            document.getElementById('detectedClient').textContent = data.client;
+            let html = '';
+            data.employees.forEach((e,i) => html += `<div>${i+1}. <strong>${e.name}</strong> (${e.ref}) — ${e.days} jours</div>`);
+            document.getElementById('empList').innerHTML = html;
+            previewBox.classList.add('visible');
+            buildCostInputs(data.employees);
+            buildRestDayInputs(data.employees);
+            buildEmpDaysInputs(data.employees);
+            buildCalendar(data.all_dates || []);
+            // NOUVEAU v54 : enregistrer les employés pour les widgets EDT
+            _employees = data.employees || [];
+            if (document.getElementById('schedGroupEnable').checked) renderSchedGroups();
+            if (document.getElementById('schedPersonEnable').checked) buildSchedPersonList();
+        }).catch(()=>{});
+}
+
+// === CALENDRIER DES JOURS NON OUVRABLES ===
+var _allDates = [];
+var _nonWorkingDays = new Set();
+
+function buildCalendar(allDates) {
+    _allDates = allDates;
+    _nonWorkingDays = new Set();
+    var ph = document.getElementById('calendarPlaceholder');
+    var grid = document.getElementById('calendarGrid');
+    if (!allDates || allDates.length === 0) {
+        ph.style.display = 'block';
+        grid.innerHTML = '';
+        updateAutoCalc();
+        return;
+    }
+    ph.style.display = 'none';
+    
+    // Grouper par mois (YYYY-MM)
+    var byMonth = {};
+    allDates.forEach(function(d) {
+        var ym = d.substring(0, 7);
+        if (!byMonth[ym]) byMonth[ym] = [];
+        byMonth[ym].push(d);
+    });
+    
+    var html = '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">' +
+        '<button type="button" onclick="toggleAllWeekends()" class="btn btn-sm btn-outline" style="font-size:10px">📅 Cocher tous les week-ends</button>' +
+        '<button type="button" onclick="addCIHolidays()" class="btn btn-sm btn-outline" style="font-size:10px">🇨🇮 Cocher les fériés CI</button>' +
+        '<button type="button" onclick="clearAllNonWorking()" class="btn btn-sm btn-outline" style="font-size:10px;color:#c53030">❌ Tout décocher</button>' +
+        '</div>';
+    
+    var moisNoms = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    var dowLabels = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+    
+    Object.keys(byMonth).sort().forEach(function(ym) {
+        var parts = ym.split('-');
+        var year = parseInt(parts[0]);
+        var month = parseInt(parts[1]);
+        html += '<div style="margin-bottom:14px">';
+        html += '<h4 style="margin:0 0 6px;color:#b8561f;font-size:13px">📅 ' + moisNoms[month] + ' ' + year + '</h4>';
+        
+        // Header DOW
+        html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px">';
+        dowLabels.forEach(function(d) {
+            html += '<div style="text-align:center;font-size:10px;font-weight:700;color:#888;padding:3px">' + d + '</div>';
+        });
+        html += '</div>';
+        
+        // Calendrier du mois
+        var firstDay = new Date(year, month - 1, 1);
+        var lastDay = new Date(year, month, 0);
+        var daysInMonth = lastDay.getDate();
+        // weekday Monday=0
+        var startDow = (firstDay.getDay() + 6) % 7;
+        
+        html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">';
+        // Cellules vides avant le 1er
+        for (var i = 0; i < startDow; i++) html += '<div></div>';
+        // Jours
+        for (var d = 1; d <= daysInMonth; d++) {
+            var dStr = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            var inFile = byMonth[ym].indexOf(dStr) !== -1;
+            var dow = (new Date(year, month - 1, d).getDay() + 6) % 7;  // 0=Lun, 6=Dim
+            var isWeekend = (dow >= 5);
+            
+            html += '<div onclick="toggleNonWorking(\'' + dStr + '\')" data-date="' + dStr + '" ' +
+                'class="cal-day' + (isWeekend ? ' weekend' : '') + (inFile ? ' in-file' : ' not-in-file') + '" ' +
+                'style="text-align:center;padding:6px 2px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;border:1.5px solid ' +
+                (isWeekend ? '#fdd' : '#e0e0e0') + ';background:' + (inFile ? '#fff' : '#f5f5f5') + ';color:' + (inFile ? '#333' : '#aaa') + '">' +
+                d + '</div>';
+        }
+        html += '</div></div>';
+    });
+    
+    grid.innerHTML = html;
+    
+    // Style CSS injecté
+    if (!document.getElementById('calStyle')) {
+        var style = document.createElement('style');
+        style.id = 'calStyle';
+        style.textContent = '.cal-day.checked{background:#f29f2f !important;color:#fff !important;border-color:#b8561f !important}' +
+            '.cal-day:hover{transform:scale(1.05)}';
+        document.head.appendChild(style);
+    }
+    updateAutoCalc();
+}
+
+function toggleNonWorking(dateStr) {
+    var el = document.querySelector('.cal-day[data-date="' + dateStr + '"]');
+    if (_nonWorkingDays.has(dateStr)) {
+        _nonWorkingDays.delete(dateStr);
+        if (el) el.classList.remove('checked');
+    } else {
+        _nonWorkingDays.add(dateStr);
+        if (el) el.classList.add('checked');
+    }
+    updateAutoCalc();
+}
+
+function toggleAllWeekends() {
+    _allDates.forEach(function(d) {
+        var dt = new Date(d + 'T00:00:00');
+        var dow = (dt.getDay() + 6) % 7;
+        if (dow >= 5) {
+            _nonWorkingDays.add(d);
+            var el = document.querySelector('.cal-day[data-date="' + d + '"]');
+            if (el) el.classList.add('checked');
+        }
+    });
+    updateAutoCalc();
+}
+
+function addCIHolidays() {
+    var feriesCI = ['01-01','05-01','08-07','11-15','12-25','12-31'];
+    _allDates.forEach(function(d) {
+        var mmdd = d.substring(5);
+        if (feriesCI.indexOf(mmdd) !== -1) {
+            _nonWorkingDays.add(d);
+            var el = document.querySelector('.cal-day[data-date="' + d + '"]');
+            if (el) el.classList.add('checked');
+        }
+    });
+    updateAutoCalc();
+}
+
+function clearAllNonWorking() {
+    _nonWorkingDays.clear();
+    document.querySelectorAll('.cal-day.checked').forEach(function(el) {
+        el.classList.remove('checked');
+    });
+    updateAutoCalc();
+}
+
+function updateAutoCalc() {
+    var totalUniqueDates = _allDates.length;
+    var nonWorking = _nonWorkingDays.size;
+    var auto = Math.max(totalUniqueDates - nonWorking, 0);
+    document.getElementById('autoCalcValue').textContent = auto + ' jours';
+    document.getElementById('nonWorkingDaysInput').value = Array.from(_nonWorkingDays).join(',');
+}
+
+var _employees = [];
+function buildCostInputs(employees) {
+    _employees = employees;
+    var box = document.getElementById('empCostList');
+    var html = '';
+    employees.forEach(function(e, i) {
+        html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">' +
+            '<span style="flex:1;font-size:11px;font-weight:600">' + e.name + '</span>' +
+            '<input type="number" id="cost_' + i + '" data-name="' + e.name + '" class="emp-cost-input" min="0" step="1" value="0" style="width:100px;padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:11px" placeholder="FCFA/h">' +
+            '</div>';
+    });
+    box.innerHTML = '<div style="font-size:11px;font-weight:700;color:#1a3a5c;margin-bottom:6px">💰 Coût par employé :</div>' + html;
+    box.style.display = 'block';
+}
+
+function applyDefaultCost() {
+    var val = document.getElementById('defaultCost').value || '0';
+    document.querySelectorAll('.emp-cost-input').forEach(function(inp) { inp.value = val; });
+}
+
+function collectCosts() {
+    var costs = {};
+    document.querySelectorAll('.emp-cost-input').forEach(function(inp) {
+        var name = inp.dataset.name;
+        var val = parseFloat(inp.value) || 0;
+        if (val > 0) costs[name] = val;
+    });
+    document.getElementById('empCostsJson').value = JSON.stringify(costs);
+}
+
+function buildRestDayInputs(employees) {
+    var box = document.getElementById('empRestList');
+    var days = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
+    var labels = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+    var html = '<div style="font-size:11px;font-weight:700;color:#1a3a5c;margin-bottom:6px">🗓️ Jour de repos par employé :</div>';
+    employees.forEach(function(e, i) {
+        html += '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;padding:4px 0;border-bottom:1px solid #eee">' +
+            '<span style="flex:1;font-size:11px;font-weight:600;min-width:120px">' + e.name + '</span>';
+        days.forEach(function(d, di) {
+            html += '<label style="font-size:9px;display:flex;align-items:center;gap:1px;cursor:pointer">' +
+                '<input type="checkbox" class="emp-rest-cb" data-name="' + e.name + '" value="' + d + '" ' + (d==='dimanche'?'checked':'') + '> ' + labels[di] + '</label>';
+        });
+        html += '</div>';
+    });
+    box.innerHTML = html;
+}
+
+function toggleEmpRestDays() {
+    var box = document.getElementById('empRestList');
+    box.style.display = box.style.display === 'none' ? 'block' : 'none';
+}
+
+function collectRestDays() {
+    var empRest = {};
+    document.querySelectorAll('.emp-rest-cb:checked').forEach(function(cb) {
+        var name = cb.dataset.name;
+        if (!empRest[name]) empRest[name] = [];
+        empRest[name].push(cb.value);
+    });
+    document.getElementById('empRestJson').value = JSON.stringify(empRest);
+}
+
+// NOUVEAU v50 : Override jours obligatoires par employé
+// NOUVEAU v57 : Override heures par jour par employé (en plus des jours)
+function buildEmpDaysInputs(employees) {
+    var box = document.getElementById('empDaysList');
+    var html = '<div style="display:flex;gap:8px;font-size:10px;color:#0d47a1;font-weight:700;margin-bottom:6px">' +
+        '<span style="flex:1">Employé</span>' +
+        '<span style="width:90px;text-align:center">Jours obligat.</span>' +
+        '<span style="width:90px;text-align:center">Heures/jour</span>' +
+        '</div>';
+    employees.forEach(function(e, i) {
+        html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">' +
+            '<span style="flex:1;font-size:11px;font-weight:600">' + e.name + '</span>' +
+            '<input type="number" id="emp_days_' + i + '" data-name="' + e.name + '" class="emp-days-input" min="0" max="31" placeholder="(défaut)" style="width:90px;padding:5px 8px;border:1.5px solid #ddd;border-radius:5px;font-size:11px;text-align:center">' +
+            '<input type="number" id="emp_hp_' + i + '" data-name="' + e.name + '" class="emp-hp-input" min="0" max="24" step="0.5" placeholder="(défaut)" style="width:90px;padding:5px 8px;border:1.5px solid #ddd;border-radius:5px;font-size:11px;text-align:center">' +
+            '</div>';
+    });
+    box.innerHTML = html;
+    box.style.display = 'block';
+}
+
+function collectEmpDays() {
+    var days = {};
+    document.querySelectorAll('.emp-days-input').forEach(function(inp) {
+        var name = inp.dataset.name;
+        var val = parseInt(inp.value);
+        if (!isNaN(val) && val > 0 && val <= 31) days[name] = val;
+    });
+    document.getElementById('empDaysJson').value = JSON.stringify(days);
+    // v57 : heures par jour par employé
+    var hours = {};
+    document.querySelectorAll('.emp-hp-input').forEach(function(inp) {
+        var name = inp.dataset.name;
+        var val = parseFloat(inp.value);
+        if (!isNaN(val) && val > 0 && val <= 24) hours[name] = val;
+    });
+    document.getElementById('empHoursJson').value = JSON.stringify(hours);
+}
+
+// === NOUVEAU v54 : Personnalisation EDT (personne / groupe / tous) ===
+// v60 : NE PAS redéclarer _employees ici (déjà déclaré ligne 590) sinon JS hoist & écrasement
+var _schedGroups = [];
+
+function toggleSchedAll() {
+    var on = document.getElementById('schedAllEnable').checked;
+    document.getElementById('schedAllFields').style.display = on ? 'block' : 'none';
+}
+function toggleSchedAllPause() {
+    var on = document.getElementById('schedAllHasPause').checked;
+    document.getElementById('schedAllPauseFields').style.display = on ? 'grid' : 'none';
+}
+function toggleSchedGroup() {
+    var on = document.getElementById('schedGroupEnable').checked;
+    document.getElementById('schedGroupFields').style.display = on ? 'block' : 'none';
+    if (on && _schedGroups.length === 0) addSchedGroup();
+}
+function toggleSchedPerson() {
+    var on = document.getElementById('schedPersonEnable').checked;
+    document.getElementById('schedPersonList').style.display = on ? 'block' : 'none';
+    if (on) buildSchedPersonList();
+}
+
+function addSchedGroup() {
+    var idx = _schedGroups.length;
+    _schedGroups.push({name: 'Groupe ' + (idx+1), members: [], start:'08:00', end:'17:00', has_pause:true, pause_start:'12:00', pause_end:'13:00'});
+    renderSchedGroups();
+}
+
+function removeSchedGroup(idx) {
+    _schedGroups.splice(idx, 1);
+    renderSchedGroups();
+}
+
+function toggleGroupMember(idx, name) {
+    var g = _schedGroups[idx];
+    var pos = g.members.indexOf(name);
+    if (pos === -1) g.members.push(name);
+    else g.members.splice(pos, 1);
+    renderSchedGroups();
+}
+
+function updateGroupField(idx, field, value) {
+    if (_schedGroups[idx]) _schedGroups[idx][field] = value;
+}
+
+function renderSchedGroups() {
+    var box = document.getElementById('schedGroupsList');
+    var html = '';
+    _schedGroups.forEach(function(g, idx) {
+        html += '<div style="border:1.5px dashed #1976d2;border-radius:6px;padding:10px;margin-bottom:8px;background:#f8faf9">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+        html += '<input type="text" value="' + g.name + '" onchange="updateGroupField(' + idx + ',\'name\', this.value)" style="font-weight:700;color:#0d47a1;background:transparent;border:none;border-bottom:1px solid #ddd;font-size:13px">';
+        html += '<button type="button" onclick="removeSchedGroup(' + idx + ')" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px">✕ Supprimer</button>';
+        html += '</div>';
+        // Horaires
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;margin-bottom:8px">';
+        html += '<div><label style="font-size:10px">Début</label><input type="time" value="' + g.start + '" onchange="updateGroupField(' + idx + ',\'start\', this.value)" style="width:100%;padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px"></div>';
+        html += '<div><label style="font-size:10px">Fin</label><input type="time" value="' + g.end + '" onchange="updateGroupField(' + idx + ',\'end\', this.value)" style="width:100%;padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px"></div>';
+        html += '<div style="display:flex;align-items:center"><label style="font-size:10px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox"' + (g.has_pause?' checked':'') + ' onchange="updateGroupField(' + idx + ',\'has_pause\',this.checked); renderSchedGroups()"> ☕ Pause</label></div>';
+        html += '</div>';
+        if (g.has_pause) {
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">';
+            html += '<div><label style="font-size:10px">Pause début</label><input type="time" value="' + g.pause_start + '" onchange="updateGroupField(' + idx + ',\'pause_start\', this.value)" style="width:100%;padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px"></div>';
+            html += '<div><label style="font-size:10px">Pause fin</label><input type="time" value="' + g.pause_end + '" onchange="updateGroupField(' + idx + ',\'pause_end\', this.value)" style="width:100%;padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px"></div>';
+            html += '</div>';
+        }
+        // Membres (checkboxes)
+        html += '<div style="font-size:11px;font-weight:700;color:#0d47a1;margin-bottom:4px">Membres (' + g.members.length + ') :</div>';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:3px;max-height:140px;overflow-y:auto;padding:4px;background:#fff;border-radius:4px;border:1px solid #eee">';
+        if (_employees.length === 0) {
+            html += '<div style="grid-column:1/-1;color:#999;font-style:italic;font-size:11px;padding:6px">📂 Importez d\'abord un fichier</div>';
+        } else {
+            _employees.forEach(function(e) {
+                var checked = g.members.indexOf(e.name) !== -1;
+                html += '<label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;padding:2px"><input type="checkbox"' + (checked?' checked':'') + ' onchange="toggleGroupMember(' + idx + ',\'' + e.name.replace(/'/g, "\\'") + '\')"> ' + e.name + '</label>';
+            });
+        }
+        html += '</div>';
+        html += '</div>';
+    });
+    box.innerHTML = html;
+}
+
+function buildSchedPersonList() {
+    var box = document.getElementById('schedPersonList');
+    var html = '';
+    _employees.forEach(function(e, i) {
+        // v58 : utiliser un index numérique plutôt que data-name pour éviter les bugs de sélecteur CSS
+        var safeName = e.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        html += '<div style="display:grid;grid-template-columns:1fr 80px 80px 30px 80px 80px;gap:5px;align-items:center;margin-bottom:4px;padding:5px;background:#f8faf9;border-radius:5px">';
+        html += '<span style="font-size:11px;font-weight:600">' + safeName + '</span>';
+        html += '<input type="time" class="sched-pers-start" data-idx="' + i + '" placeholder="(garder)" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<input type="time" class="sched-pers-end" data-idx="' + i + '" placeholder="(garder)" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<label style="font-size:10px;display:flex;align-items:center;gap:2px;cursor:pointer"><input type="checkbox" class="sched-pers-pause" data-idx="' + i + '" checked> ☕</label>';
+        html += '<input type="time" class="sched-pers-pstart" data-idx="' + i + '" placeholder="pause début" value="12:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<input type="time" class="sched-pers-pend" data-idx="' + i + '" placeholder="pause fin" value="13:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '</div>';
+    });
+    if (_employees.length === 0) {
+        html = '<div style="font-size:11px;color:#999;font-style:italic;text-align:center">📂 Importez d\'abord un fichier Excel</div>';
+    } else {
+        html = '<div style="display:grid;grid-template-columns:1fr 80px 80px 30px 80px 80px;gap:5px;font-size:10px;font-weight:700;color:#0d47a1;margin-bottom:4px"><span>Employé</span><span>Début</span><span>Fin</span><span>P</span><span>Pause début</span><span>Pause fin</span></div>' + html;
+    }
+    box.innerHTML = html;
+}
+
+function collectSchedOverride() {
+    var data = {all: null, groups: [], persons: {}, days: {}};  // v64 : ajout days
+    if (document.getElementById('schedAllEnable').checked) {
+        data.all = {
+            start: document.getElementById('schedAllStart').value,
+            end: document.getElementById('schedAllEnd').value,
+            has_pause: document.getElementById('schedAllHasPause').checked,
+            pause_start: document.getElementById('schedAllPauseStart').value,
+            pause_end: document.getElementById('schedAllPauseEnd').value
+        };
+    }
+    if (document.getElementById('schedGroupEnable').checked) {
+        data.groups = _schedGroups.filter(function(g) { return g.members && g.members.length > 0; });
+    }
+    if (document.getElementById('schedPersonEnable').checked) {
+        // v58 : utiliser data-idx (index dans _employees) au lieu de data-name pour éviter
+        // les bugs de sélecteur CSS avec apostrophes/caractères spéciaux dans les noms.
+        document.querySelectorAll('.sched-pers-start').forEach(function(inp) {
+            var idx = inp.dataset.idx;
+            if (idx === undefined) return;
+            var name = (_employees[idx] || {}).name;
+            if (!name) return;
+            var s = inp.value;
+            var endInp = document.querySelector('.sched-pers-end[data-idx="' + idx + '"]');
+            var pauseInp = document.querySelector('.sched-pers-pause[data-idx="' + idx + '"]');
+            var pStartInp = document.querySelector('.sched-pers-pstart[data-idx="' + idx + '"]');
+            var pEndInp = document.querySelector('.sched-pers-pend[data-idx="' + idx + '"]');
+            var e = endInp ? endInp.value : '';
+            // Garder seulement si au moins start et end sont remplis
+            if (s && e) {
+                data.persons[name] = {
+                    start: s, end: e,
+                    has_pause: pauseInp ? pauseInp.checked : false,
+                    pause_start: pStartInp ? pStartInp.value : '12:00',
+                    pause_end: pEndInp ? pEndInp.value : '13:00'
+                };
+            }
+        });
+    }
+    // v64 : Par jour de la semaine
+    if (document.getElementById('schedDaysEnable').checked) {
+        ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'].forEach(function(dn) {
+            var enable = document.getElementById('schedDay_' + dn + '_enable');
+            if (!enable || !enable.checked) return;
+            var s = document.getElementById('schedDay_' + dn + '_start').value;
+            var e = document.getElementById('schedDay_' + dn + '_end').value;
+            if (s && e) {
+                data.days[dn] = {
+                    start: s, end: e,
+                    has_pause: document.getElementById('schedDay_' + dn + '_haspause').checked,
+                    pause_start: document.getElementById('schedDay_' + dn + '_pstart').value || '12:00',
+                    pause_end: document.getElementById('schedDay_' + dn + '_pend').value || '13:00'
+                };
+            }
+        });
+    }
+    document.getElementById('schedOverrideJson').value = JSON.stringify(data);
+}
+
+// v64 : construire la liste des 7 jours de la semaine
+function buildSchedDaysList() {
+    var box = document.getElementById('schedDaysList');
+    if (box.dataset.built === '1') return;  // ne pas reconstruire
+    var days = [['lundi','Lundi'],['mardi','Mardi'],['mercredi','Mercredi'],['jeudi','Jeudi'],['vendredi','Vendredi'],['samedi','Samedi'],['dimanche','Dimanche']];
+    var html = '<div style="display:grid;grid-template-columns:90px 60px 80px 80px 30px 80px 80px;gap:5px;font-size:10px;font-weight:700;color:#0d47a1;margin-bottom:6px"><span>Jour</span><span>Activer</span><span>Début</span><span>Fin</span><span>P</span><span>Pause début</span><span>Pause fin</span></div>';
+    days.forEach(function(d) {
+        var dn = d[0], lbl = d[1];
+        html += '<div style="display:grid;grid-template-columns:90px 60px 80px 80px 30px 80px 80px;gap:5px;align-items:center;margin-bottom:4px;padding:5px;background:#f8faf9;border-radius:5px">';
+        html += '<span style="font-size:11px;font-weight:600">' + lbl + '</span>';
+        html += '<input type="checkbox" id="schedDay_' + dn + '_enable" style="width:18px;height:18px;cursor:pointer">';
+        html += '<input type="time" id="schedDay_' + dn + '_start" value="08:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<input type="time" id="schedDay_' + dn + '_end" value="17:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<label style="font-size:10px;display:flex;align-items:center;gap:2px;cursor:pointer"><input type="checkbox" id="schedDay_' + dn + '_haspause" checked> ☕</label>';
+        html += '<input type="time" id="schedDay_' + dn + '_pstart" value="12:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '<input type="time" id="schedDay_' + dn + '_pend" value="13:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
+        html += '</div>';
+    });
+    box.innerHTML = html;
+    box.dataset.built = '1';
+}
+
+// v59 : Aperçu de la personnalisation avant génération
+function previewSchedOverride() {
+    collectSchedOverride();
+    var data = JSON.parse(document.getElementById('schedOverrideJson').value);
+    var box = document.getElementById('schedPreview');
+    var html = '<strong style="color:#2e7d32">📋 Récapitulatif de la personnalisation :</strong><br><br>';
+    var hasAny = false;
+    
+    if (data.all && data.all.start && data.all.end) {
+        hasAny = true;
+        html += '🌐 <strong>TOUS les employés</strong> : <code>' + data.all.start + ' → ' + data.all.end + '</code>';
+        if (data.all.has_pause) html += ' (avec pause ' + data.all.pause_start + '-' + data.all.pause_end + ')';
+        html += '<br>';
+    }
+    
+    if (data.groups && data.groups.length > 0) {
+        data.groups.forEach(function(g) {
+            if (g.members && g.members.length > 0 && g.start && g.end) {
+                hasAny = true;
+                html += '👥 <strong>' + g.name + '</strong> (' + g.members.length + ' membres : ' + g.members.join(', ') + ') : <code>' + g.start + ' → ' + g.end + '</code><br>';
+            }
+        });
+    }
+    
+    if (data.persons && Object.keys(data.persons).length > 0) {
+        Object.keys(data.persons).forEach(function(name) {
+            var p = data.persons[name];
+            hasAny = true;
+            html += '👤 <strong>' + name + '</strong> : <code>' + p.start + ' → ' + p.end + '</code><br>';
+        });
+    }
+    
+    // v64 : days
+    if (data.days && Object.keys(data.days).length > 0) {
+        Object.keys(data.days).forEach(function(dn) {
+            var d = data.days[dn];
+            hasAny = true;
+            html += '📅 <strong>' + dn.charAt(0).toUpperCase() + dn.slice(1) + '</strong> : <code>' + d.start + ' → ' + d.end + '</code>';
+            if (d.has_pause) html += ' (pause ' + d.pause_start + '-' + d.pause_end + ')';
+            html += '<br>';
+        });
+    }
+    
+    if (!hasAny) {
+        html = '<strong style="color:#c53030">⚠️ Aucune personnalisation détectée.</strong><br>' +
+               '<span style="font-size:11px;color:#666">Cochez une option ci-dessus (🌐 / 👥 / 👤 / 📅) puis remplissez les champs.</span>';
+        box.style.borderLeftColor = '#c53030';
+        box.style.background = '#fde8e8';
+    } else {
+        html += '<br><span style="color:#2e7d32;font-weight:600">✓ Cette configuration sera appliquée à la génération du PDF.</span>';
+        box.style.borderLeftColor = '#2e7d32';
+        box.style.background = '#e8f5e9';
+    }
+    
+    box.innerHTML = html;
+    box.style.display = 'block';
+}
+
+document.getElementById('reportForm').addEventListener('submit', () => {
+    collectCosts();
+    collectRestDays();
+    collectEmpDays();
+    collectSchedOverride();
+    submitBtn.classList.add('loading');
+    document.getElementById('spinner').classList.add('active');
+    document.getElementById('btnText').textContent = 'Génération en cours...';
+});
+</script>
+{% endblock %}

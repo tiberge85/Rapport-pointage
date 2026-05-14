@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}WannyGest - Calcul Pharmacie{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}WannyGest - Calcul DPCI{% endblock %}{% block content %}
 <style>
 .dpci-drop{border:2.5px dashed #ccc;border-radius:14px;padding:30px;text-align:center;cursor:pointer;transition:all 0.3s;background:#fafbfc}
 .dpci-drop:hover,.dpci-drop.dragover{border-color:#1a7a6d;background:#f0faf8}
@@ -11,11 +11,11 @@
 .emp-cost-row:nth-child(even){background:#f5f6fa}
 </style>
 
-<div class="page-header"><h1>💊 Calcul d'heures Pharmacie</h1>
-<p>Importez le fichier Excel de pointage de votre pharmacie. Le système génère un rapport complet : rapports individuels, présence, classements, graphique et récap avec majorations (nuit / week-end / fériés).</p></div>
+<div class="page-header"><h1>🏢 Calcul d'heures DPCI</h1>
+<p>Traitement des fiches de présence avec 4 temps (arrivée, pause début, pause fin, départ)</p></div>
 
 <div class="card"><div class="card-body">
-<form method="post" action="/pharma/generate" enctype="multipart/form-data" id="dpciForm">
+<form method="post" action="/dpci/generate" enctype="multipart/form-data" id="dpciForm">
     
     <!-- Step 1: Upload -->
     <div class="step" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
@@ -40,7 +40,7 @@
     <div class="step" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="background:#1a7a6d;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">2</span><strong>Informations client, heures & période</strong></div>
         <div class="form-row">
-            <div class="form-group"><label>Nom de la pharmacie</label><input type="text" name="pharmacy_name" id="clientName" placeholder="PHARMACIE GNIMAH" value="PHARMACIE"></div>
+            <div class="form-group"><label>Nom du client / site</label><input type="text" name="client_name" id="clientName" placeholder="DPCI BOUAKE"></div>
             <div class="form-group"><label>Prestataire</label><input type="text" name="provider_name" value="RAMYA TECHNOLOGIE & INNOVATION" placeholder="Nom de l'entreprise"></div>
         </div>
         <div class="form-row">
@@ -85,38 +85,6 @@
             {% endfor %}
         </div>
         <div class="hint">Les jours de repos sont déduits du nombre de jours prévus.</div>
-    </div>
-    
-    <!-- Step 4b NOUVEAU v70 : Jours obligatoires personnalisés -->
-    <div class="step" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="background:#1a7a6d;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">5</span><strong>Nombre de jours obligatoires</strong></div>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-            <div class="form-group">
-                <label style="font-size:12px;font-weight:600">Jours obligatoires (laisser vide = calcul auto)</label>
-                <input type="number" name="days_required_default" id="daysRequiredDefault" min="0" max="31" step="1" placeholder="Auto" style="width:120px">
-            </div>
-            <div style="background:#fff3e0;padding:8px 12px;border-radius:6px;font-size:11px;color:#666;flex:1;min-width:200px">
-                💡 <strong>Calcul auto</strong> = (jours dans la période) − (jours de repos) − (jours non ouvrables).<br>
-                Personnalisez si la pharmacie a des règles spécifiques.
-            </div>
-        </div>
-    </div>
-    
-    <!-- Step 4c NOUVEAU v70 : Calendrier jours non ouvrables (fériés / vacances) -->
-    <div class="step" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="background:#1a7a6d;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">6</span><strong>Calendrier des jours non ouvrables</strong>
-            <span style="font-size:11px;color:#666;font-weight:normal">(cochez les fériés / jours fermés)</span>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-            <button type="button" class="btn btn-outline btn-sm" onclick="loadCISferies()" style="font-size:11px">📅 Charger les fériés CI 2026</button>
-            <button type="button" class="btn btn-outline btn-sm" onclick="clearNwd()" style="font-size:11px">🗑️ Vider</button>
-            <span style="font-size:11px;color:#666">Sélectionnés : <span id="nwdCount" style="font-weight:700;color:#7b1fa2">0</span> jour(s)</span>
-        </div>
-        <div id="nwdCalendar" style="background:#f8faf9;padding:10px;border-radius:8px;min-height:60px">
-            <div style="font-size:11px;color:#888;font-style:italic;text-align:center">📂 Importez d'abord le fichier Excel pour afficher le calendrier de la période</div>
-        </div>
-        <input type="hidden" name="non_working_days_json" id="nwdJson" value="[]">
-        <div class="hint">Les jours non ouvrables seront exclus du calcul. Cliquez sur une date du calendrier pour la cocher.</div>
     </div>
     
     <!-- v62 NOUVEAU : Step 5 - Personnalisation EDT pour DPCI -->
@@ -231,31 +199,10 @@
         </script>
     </div>
     
-    <!-- Step NOUVEAU v70 : Programmation manuelle des types de service (majorations) -->
-    <div class="step" style="background:linear-gradient(135deg,#faf4fc 0%,#f3e5f5 100%);padding:14px;border-radius:10px;border-left:5px solid #7b1fa2;margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="background:#7b1fa2;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">💊</span><strong style="color:#7b1fa2">Programmation des types de service (majorations Pharmacie)</strong></div>
-        <p class="hint" style="margin:0 0 10px;color:#7b1fa2">
-            <strong>Détection automatique :</strong> Jour férié → "Jour Férié" · Heure arrivée ≥ 18h → "Garde Nuit" · Samedi/Dimanche → "Garde Week-end" · Sinon → "Service Normal".
-            <br>Vous pouvez <strong>forcer</strong> un type spécifique pour des dates et un ou plusieurs pharmaciens ci-dessous.
-        </p>
-        
-        <div style="background:#fff;padding:12px;border-radius:6px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <strong style="font-size:13px;color:#7b1fa2">📋 Périodes personnalisées</strong>
-                <button type="button" class="btn btn-sm" style="background:#7b1fa2;color:#fff;font-size:11px" onclick="addClassifRow()">+ Ajouter une période</button>
-            </div>
-            <div id="classifContainer"></div>
-            <div id="classifEmpty" style="text-align:center;color:#888;font-size:11px;font-style:italic;padding:10px">
-                Aucune période programmée. La détection automatique sera utilisée pour tous les jours.
-            </div>
-            <input type="hidden" name="classif_json" id="classifJson" value="[]">
-        </div>
-    </div>
-    
     <!-- Submit -->
     <div style="margin-top:16px">
-        <button type="submit" class="btn btn-orange btn-block" id="submitBtn" disabled style="padding:14px;font-size:16px;background:#7b1fa2;color:#fff">
-            📄 Générer le rapport Pharmacie
+        <button type="submit" class="btn btn-orange btn-block" id="submitBtn" disabled style="padding:14px;font-size:16px">
+            📄 Générer le rapport DPCI
         </button>
     </div>
 </form>
@@ -280,7 +227,7 @@ function handleFile(file) {
     
     var fd = new FormData();
     fd.append('excel_file', file);
-    fetch('/pharma/preview', {method:'POST', body:fd})
+    fetch('/dpci/preview', {method:'POST', body:fd})
         .then(r => r.json())
         .then(data => {
             if (data.error) return;
@@ -297,10 +244,7 @@ function handleFile(file) {
             var html = '';
             var depts = {};
             data.employees.forEach(function(e) {
-                // v70 : pharmacie utilise 'service' et 'nb_jours' au lieu de 'dept' et 'days'
-                var d = e.service || e.dept || 'Non assigné';
-                e.dept = d;  // alias pour compat EDT widgets
-                e.days = e.nb_jours || e.days || 0;  // alias
+                var d = e.dept || 'Non assigné';
                 if (!depts[d]) depts[d] = [];
                 depts[d].push(e);
             });
@@ -308,15 +252,13 @@ function handleFile(file) {
             for (var dept in depts) {
                 html += '<div class="dept-group"><div class="dept-title">📁 ' + dept + ' (' + depts[dept].length + ')</div>';
                 depts[dept].forEach(function(e, i) {
-                    html += '<div style="font-size:11px;padding:2px 8px">' + e.name + ' <span style="color:#888">(' + (e.id || '—') + ') — ' + e.days + 'j</span></div>';
+                    html += '<div style="font-size:11px;padding:2px 8px">' + e.name + ' <span style="color:#888">(' + e.id + ') — ' + e.days + 'j</span></div>';
                 });
                 html += '</div>';
             }
             document.getElementById('deptList').innerHTML = html;
             document.getElementById('preview').classList.add('visible');
             buildCosts(data.employees);
-            // v70 : Render calendar of non-working days for the detected period
-            renderNwdCalendar();
         }).catch(function(){});
 }
 
@@ -561,146 +503,8 @@ document.getElementById('dpciForm').addEventListener('submit', function() {
     document.getElementById('costsJson').value = JSON.stringify(costs);
     // v62 : collecter l'override EDT
     dpciCollectSchedOverride();
-    
-    // v70 : collect classifications + jours non ouvrables
-    updateClassif();
-    updateNwd();
-    
     document.getElementById('submitBtn').textContent = '⏳ Génération en cours...';
     document.getElementById('submitBtn').disabled = true;
 });
-
-// ==============================================================
-// v70 : Programmation manuelle des types de service (majorations)
-// ==============================================================
-function addClassifRow() {
-    var c = document.getElementById('classifContainer');
-    document.getElementById('classifEmpty').style.display = 'none';
-    var row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:130px 130px 160px 1fr 30px;gap:6px;padding:6px;background:#f8faf9;border-radius:6px;margin-bottom:5px;align-items:center;font-size:12px';
-    var empOpts = '<option value="">— Tous les pharmaciens —</option>';
-    (allEmps || []).forEach(function(e) {
-        empOpts += '<option value="' + e.name + '">' + e.name + '</option>';
-    });
-    row.innerHTML =
-        '<input type="date" class="cl-from" oninput="updateClassif()" style="padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px">' +
-        '<input type="date" class="cl-to" oninput="updateClassif()" style="padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px">' +
-        '<select class="cl-type" onchange="updateClassif()" style="padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px">' +
-            '<option value="garde_nuit">🌙 Garde de Nuit (+50%)</option>' +
-            '<option value="garde_we">📅 Garde Week-end (+75%)</option>' +
-            '<option value="ferie">🎉 Jour Férié (+100%)</option>' +
-            '<option value="astreinte">⏰ Astreinte (+25%)</option>' +
-            '<option value="normal">📋 Service Normal (0%)</option>' +
-        '</select>' +
-        '<select class="cl-emp" onchange="updateClassif()" style="padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px">' + empOpts + '</select>' +
-        '<button type="button" onclick="removeClassifRow(this)" style="background:#c53030;color:#fff;border:none;border-radius:4px;cursor:pointer;width:24px;height:24px;font-weight:700">×</button>';
-    c.appendChild(row);
-    updateClassif();
-}
-
-function removeClassifRow(btn) {
-    btn.parentNode.remove();
-    if (document.querySelectorAll('#classifContainer > div').length === 0) {
-        document.getElementById('classifEmpty').style.display = 'block';
-    }
-    updateClassif();
-}
-
-function updateClassif() {
-    var arr = [];
-    document.querySelectorAll('#classifContainer > div').forEach(function(row) {
-        var d1 = row.querySelector('.cl-from').value;
-        var d2 = row.querySelector('.cl-to').value;
-        var typ = row.querySelector('.cl-type').value;
-        var emp = row.querySelector('.cl-emp').value;
-        if (d1 && typ) arr.push({from: d1, to: d2 || d1, type: typ, emp: emp || ''});
-    });
-    document.getElementById('classifJson').value = JSON.stringify(arr);
-}
-
-// ==============================================================
-// v70 : Calendrier des jours non ouvrables
-// ==============================================================
-var _nwdSelected = new Set();  // Set de YYYY-MM-DD
-
-function renderNwdCalendar() {
-    if (!allEmps || allEmps.length === 0) return;
-    // Récupérer la plage de dates depuis allEmps
-    var allDates = new Set();
-    allEmps.forEach(function(e) {
-        // les days dans preview sont juste le nombre, pas les dates → on déduit depuis previewPeriod
-    });
-    // Plus simple : générer un calendrier pour le mois détecté
-    var period = document.getElementById('previewPeriod').textContent || '';
-    // Format possible: "2026-04" ou "01/04/2026 - 30/04/2026"
-    var year = null, month = null;
-    var m = period.match(/(\d{4})-(\d{2})/);
-    if (m) { year = parseInt(m[1]); month = parseInt(m[2]); }
-    
-    var box = document.getElementById('nwdCalendar');
-    if (!year || !month) {
-        box.innerHTML = '<div style="font-size:11px;color:#888;font-style:italic;text-align:center">Impossible de détecter la période. Saisissez manuellement les dates non ouvrables ci-dessus.</div>';
-        return;
-    }
-    
-    // Construire le calendrier du mois
-    var firstDay = new Date(year, month - 1, 1);
-    var lastDay = new Date(year, month, 0);
-    var startWeekday = firstDay.getDay(); // 0=Dim, 1=Lun
-    if (startWeekday === 0) startWeekday = 7; // Dim = 7
-    
-    var html = '<div style="text-align:center;font-weight:700;color:#7b1fa2;margin-bottom:8px">📅 ' + 
-               ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'][month-1] +
-               ' ' + year + '</div>';
-    html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;font-size:11px">';
-    ['Lu','Ma','Me','Je','Ve','Sa','Di'].forEach(function(d) {
-        html += '<div style="text-align:center;font-weight:700;color:#888;padding:3px">' + d + '</div>';
-    });
-    // Cases vides avant
-    for (var i = 1; i < startWeekday; i++) {
-        html += '<div></div>';
-    }
-    for (var d = 1; d <= lastDay.getDate(); d++) {
-        var dateStr = year + '-' + String(month).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-        var sel = _nwdSelected.has(dateStr);
-        var dt = new Date(year, month - 1, d);
-        var isWeekend = (dt.getDay() === 0 || dt.getDay() === 6);
-        var bgColor = sel ? '#7b1fa2' : (isWeekend ? '#fff3e0' : '#fff');
-        var textColor = sel ? '#fff' : (isWeekend ? '#b8561f' : '#333');
-        html += '<div onclick="toggleNwd(\'' + dateStr + '\')" style="text-align:center;padding:6px 0;background:' + bgColor + ';color:' + textColor + ';border-radius:4px;cursor:pointer;font-weight:' + (sel ? '700' : '400') + ';border:1px solid #ddd" title="' + dateStr + '">' + d + '</div>';
-    }
-    html += '</div>';
-    box.innerHTML = html;
-    document.getElementById('nwdCount').textContent = _nwdSelected.size;
-}
-
-function toggleNwd(dateStr) {
-    if (_nwdSelected.has(dateStr)) _nwdSelected.delete(dateStr);
-    else _nwdSelected.add(dateStr);
-    updateNwd();
-    renderNwdCalendar();
-}
-
-function updateNwd() {
-    document.getElementById('nwdJson').value = JSON.stringify(Array.from(_nwdSelected));
-    document.getElementById('nwdCount').textContent = _nwdSelected.size;
-}
-
-function clearNwd() {
-    _nwdSelected.clear();
-    updateNwd();
-    renderNwdCalendar();
-}
-
-function loadCISferies() {
-    // Charger les jours fériés CI 2026 (codés en dur)
-    var feries = [
-        '2026-01-01', '2026-04-06', '2026-05-01', '2026-05-14', '2026-05-25',
-        '2026-08-07', '2026-08-15', '2026-11-01', '2026-11-15', '2026-12-07', '2026-12-25'
-    ];
-    feries.forEach(function(d) { _nwdSelected.add(d); });
-    updateNwd();
-    renderNwdCalendar();
-}
 </script>
 {% endblock %}

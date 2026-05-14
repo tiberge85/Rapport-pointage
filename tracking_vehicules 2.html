@@ -1,0 +1,66 @@
+{% extends "base.html" %}{% block title %}WannyGest - Véhicules{% endblock %}{% block content %}
+<div class="page-header"><h1>🚗 Véhicules suivis</h1>
+<button class="btn btn-primary btn-sm" onclick="document.getElementById('addV').classList.add('active')">+ Ajouter un véhicule</button></div>
+
+{% if vehicles %}
+<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher un véhicule..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><table id="dataTable">
+<thead><tr><th>Immat.</th><th>Véhicule</th><th>Propriétaire</th><th>Balise GPS</th><th>SIM / IMEI</th><th>Installation</th><th>Statut</th><th>Dernière pos.</th><th>Actions</th></tr></thead>
+<tbody>{% for v in vehicles %}<tr>
+<td><strong style="font-size:13px">{{ v.immatriculation }}</strong></td>
+<td style="font-size:11px">{{ v.marque }} {{ v.modele }}<br><span style="color:#888">{{ v.type }} {{ v.couleur }} {{ v.annee }}</span></td>
+<td>{{ v.proprietaire or '-' }}<br><span style="font-size:10px;color:#888">{{ v.tel_proprietaire or '' }}</span></td>
+<td style="font-size:10px"><strong>{{ v.gps_brand or '' }} {{ v.gps_model or '' }}</strong><br>ID: {{ v.gps_device_id or '-' }}</td>
+<td style="font-size:10px">SIM: {{ v.gps_sim or '-' }}<br>IMEI: {{ v.gps_imei or '-' }}</td>
+<td style="font-size:10px">{{ v.installation_date or '-' }}<br>{{ v.installation_tech or '' }}</td>
+<td><span class="badge-status {% if v.status=='actif' %}sent{% elif v.status=='inactif' %}{% else %}pending{% endif %}">{{ v.status }}</span></td>
+<td style="font-size:10px">{% if v.last_update %}{{ v.last_update[:16] }}<br><span style="color:#e8672a">{{ '%.0f'|format(v.last_speed or 0) }} km/h</span>{% else %}-{% endif %}</td>
+<td style="white-space:nowrap">
+    <a href="/tracking/vehicules/view/{{ v.id }}" class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 6px">👁️</a>
+    <a href="/tracking/vehicules/edit/{{ v.id }}" class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 6px">✏️</a>
+    <a href="/tracking/vehicules/delete/{{ v.id }}" class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:#c53030" onclick="return confirm('Supprimer ce véhicule ?')">🗑️</a>
+</td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:40px">Aucun véhicule. Ajoutez votre premier véhicule avec balise GPS.</div></div>{% endif %}
+
+<div class="modal-bg" id="addV"><div class="modal" style="max-width:700px"><h3>🚗 Ajouter un véhicule</h3>
+<form method="post" action="/tracking/vehicules/add">
+    <h4 style="font-size:12px;color:#1a7a6d;margin:10px 0 6px;border-bottom:1px solid #eee;padding-bottom:4px">Véhicule</h4>
+    <div class="rg" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="form-group"><label>Immatriculation *</label><input type="text" name="immatriculation" required placeholder="1234 AB 01"></div>
+        <div class="form-group"><label>Marque</label><input type="text" name="marque" placeholder="Toyota, Hyundai..."></div>
+        <div class="form-group"><label>Modèle</label><input type="text" name="modele" placeholder="Hilux, Tucson..."></div>
+    </div>
+    <div class="rg" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="form-group"><label>Type</label><select name="type"><option>voiture</option><option>camion</option><option>moto</option><option>engin</option><option>bus</option></select></div>
+        <div class="form-group"><label>Couleur</label><input type="text" name="couleur"></div>
+        <div class="form-group"><label>Année</label><input type="text" name="annee" placeholder="2024"></div>
+    </div>
+    <div class="rg" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="form-group"><label>Propriétaire</label><input type="text" name="proprietaire"></div>
+        <div class="form-group"><label>Tél propriétaire</label><input type="text" name="tel_proprietaire"></div>
+    </div>
+    
+    <h4 style="font-size:12px;color:#1a7a6d;margin:14px 0 6px;border-bottom:1px solid #eee;padding-bottom:4px">📡 Balise GPS</h4>
+    <div class="rg" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="form-group"><label>Marque balise</label><select name="gps_brand"><option>Concox</option><option>Coban</option><option>Queclink</option><option>Teltonika</option><option>Autre</option></select></div>
+        <div class="form-group"><label>Modèle</label><input type="text" name="gps_model" placeholder="GT06N, JM-VL01..."></div>
+        <div class="form-group"><label>Device ID</label><input type="text" name="gps_device_id" placeholder="ID unique balise"></div>
+    </div>
+    <div class="rg" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="form-group"><label>N° SIM</label><input type="text" name="gps_sim" placeholder="N° carte SIM"></div>
+        <div class="form-group"><label>IMEI</label><input type="text" name="gps_imei" placeholder="IMEI de la balise"></div>
+    </div>
+    
+    <h4 style="font-size:12px;color:#1a7a6d;margin:14px 0 6px;border-bottom:1px solid #eee;padding-bottom:4px">🔧 Installation</h4>
+    <div class="rg" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="form-group"><label>Date d'installation</label><input type="date" name="installation_date"></div>
+        <div class="form-group"><label>Technicien installateur</label><input type="text" name="installation_tech"></div>
+    </div>
+    <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:12px"></textarea></div>
+    
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
+        <button type="submit" class="btn btn-primary">🚗 Ajouter le véhicule</button>
+    </div>
+</form></div></div>
+{% endblock %}

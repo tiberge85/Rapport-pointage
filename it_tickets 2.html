@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% block title %}WannyGest - Helpdesk{% endblock %}{% block content %}
+<div class="page-header"><h1>🛠️ Helpdesk / Support</h1>
+<button class="btn btn-primary btn-sm" onclick="document.getElementById('addT').classList.add('active')">+ Ticket</button></div>
+
+<div style="display:flex;gap:6px;margin-bottom:14px">
+{% for key,label in [('ouvert','🔴 Ouverts'),('en_cours','🟡 En cours'),('resolu','🟢 Résolus'),('all','Tous')] %}
+<a href="/it/tickets?tab={{ key }}" class="btn {% if tab==key %}btn-primary{% else %}btn-outline{% endif %} btn-sm">{{ label }} {% if key != 'all' and stats.get(key) %}<span style="background:rgba(0,0,0,0.1);padding:1px 6px;border-radius:8px;font-size:10px">{{ stats[key] }}</span>{% endif %}</a>
+{% endfor %}
+</div>
+
+{% if tickets %}
+<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchInput" placeholder="🔍 Rechercher un ticket..." onkeyup="filterTable('searchInput','dataTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><table id="dataTable">
+<thead><tr><th>#</th><th>Titre</th><th>Catégorie</th><th>Priorité</th><th>Demandeur</th><th>Assigné</th><th>Statut</th><th>Date</th><th>Actions</th></tr></thead>
+<tbody>{% for t in tickets %}<tr>
+<td>{{ t.id }}</td><td><strong>{{ t.title }}</strong>{% if t.description %}<br><span style="font-size:10px;color:#888">{{ t.description[:50] }}</span>{% endif %}</td>
+<td style="font-size:11px">{{ t.category }}</td>
+<td><span class="k-tag {{ t.priority }}">{{ t.priority }}</span></td>
+<td style="font-size:11px">{{ t.requester or '-' }}</td><td style="font-size:11px">{{ t.assignee or '-' }}</td>
+<td><span class="badge-status {% if t.status=='resolu' %}sent{% elif t.status=='en_cours' %}pending{% endif %}">{{ t.status }}</span></td>
+<td style="font-size:10px">{{ (t.created_at or '')[:10] }}</td>
+<td style="white-space:nowrap">
+{% if t.status=='ouvert' %}<a href="/it/tickets/{{ t.id }}/status/en_cours" class="btn btn-sm" style="font-size:10px;padding:2px 6px;background:#fff3e0;color:#e8672a">🟡 En cours</a>{% endif %}
+{% if t.status in ('ouvert','en_cours') %}<a href="/it/tickets/{{ t.id }}/status/resolu" class="btn btn-sm" style="font-size:10px;padding:2px 6px;background:#e8f5e9;color:#2e7d32">✅ Résolu</a>{% endif %}
+</td></tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:30px">Aucun ticket</div></div>{% endif %}
+
+<div class="modal-bg" id="addT"><div class="modal"><h3>+ Nouveau ticket</h3>
+<form method="post" action="/it/tickets/add">
+    <div class="form-group"><label>Titre *</label><input type="text" name="title" required></div>
+    <div class="form-group"><label>Description</label><textarea name="description" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px"></textarea></div>
+    <div class="form-row"><div class="form-group"><label>Catégorie</label><select name="category"><option>incident</option><option>demande</option><option>maintenance</option><option>installation</option></select></div>
+    <div class="form-group"><label>Priorité</label><select name="priority"><option>basse</option><option selected>normal</option><option>haute</option><option>urgente</option></select></div></div>
+    <div class="form-row"><div class="form-group"><label>Assigné à</label><select name="assigned_to"><option value="">—</option>{% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Équipement</label><select name="equipment_id"><option value="">—</option>{% for e in equipment %}<option value="{{ e.id }}">{{ e.name }}</option>{% endfor %}</select></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Créer le ticket</button></div>
+</form></div></div>
+{% endblock %}

@@ -1,0 +1,164 @@
+{% extends "base.html" %}{% block title %}WannyGest - Pièce {{ s.reference }}{% endblock %}{% block content %}
+<style>
+.piece{max-width:720px;margin:0 auto;background:#fff;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,0.1);overflow:hidden}
+.piece-head{background:#1e1e2d;color:#fff;padding:16px 20px;display:flex;justify-content:space-between;align-items:center}
+.piece-head h2{font-size:18px;margin:0}.piece-ref{font-size:13px;color:#ff9f43;font-weight:700}
+.piece-body{padding:24px}
+.piece-date{text-align:center;font-size:14px;margin-bottom:16px;color:#666}
+.piece-info{display:grid;grid-template-columns:120px 1fr;gap:0;border:1px solid #ddd;border-radius:8px;overflow:hidden;margin-bottom:14px;font-size:13px}
+.pi-label{padding:10px 12px;background:#f8faf9;font-weight:600;border-bottom:1px solid #eee}
+.pi-val{padding:10px 12px;border-bottom:1px solid #eee}
+.pi-amount{font-size:22px;font-weight:800;color:#c53030}
+.piece-status{text-align:center;margin:14px 0;font-size:14px;padding:10px;border-radius:8px}
+.sig-area{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:20px}
+.sig-box{border:1px solid #ddd;border-radius:10px;padding:12px;text-align:center;background:#fafafa}
+.sig-box h4{font-size:12px;color:#666;margin-bottom:8px;text-decoration:underline}
+.sig-box img{max-width:100%;max-height:90px;border-radius:4px}
+.sig-canvas{width:100%;height:90px;border:2px dashed #ccc;border-radius:6px;cursor:crosshair;touch-action:none;background:#fff}
+.sig-canvas.has-sig{border-color:#2e7d32;border-style:solid}
+.sig-actions{display:flex;gap:4px;margin-top:6px;justify-content:center}
+.actions-bar{display:flex;gap:8px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+.btn{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:4px;border:none;cursor:pointer}
+.btn-primary{background:#1e1e2d;color:#fff}.btn-orange{background:#e8672a;color:#fff}
+.btn-green{background:#2e7d32;color:#fff}.btn-outline{background:#fff;border:1.5px solid #ddd;color:#666}
+.btn-red{background:#c53030;color:#fff}
+@media print{.actions-bar,.sig-actions,.btn{display:none!important}.piece{box-shadow:none;border-radius:0}.sig-canvas{display:none}}
+</style>
+
+<div class="actions-bar">
+    <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimer</button>
+    <a href="/caisse-sortie/{{ s.id }}/pdf" class="btn btn-orange">📥 PDF</a>
+    {% if current_user.role in ('admin','dg','directeur') %}
+    <a href="/caisse-sortie/{{ s.id }}/edit" class="btn btn-outline">✏️ Modifier</a>
+    <a href="/caisse-sortie/{{ s.id }}/delete" class="btn btn-red" onclick="return confirm('Supprimer cette pièce ?')">🗑️ Supprimer</a>
+    {% endif %}
+</div>
+
+<div class="piece">
+<div class="piece-head"><h2>PIÈCE DE CAISSE SORTIE</h2><div class="piece-ref">N° {{ s.reference }}</div></div>
+<div class="piece-body">
+    <div class="piece-date">ABIDJAN le {{ s.date or '' }}</div>
+    
+    <div class="piece-info">
+        <div class="pi-label">A l'ordre de</div><div class="pi-val"><strong>{{ s.beneficiaire }}</strong></div>
+        <div class="pi-label">Type</div><div class="pi-val">{% if s.type_beneficiaire=='entreprise' %}☑ Entreprise{% else %}☐ Entreprise{% endif %} · {% if s.type_beneficiaire=='particulier' %}☑ Particulier{% else %}☐ Particulier{% endif %} · {% if s.type_beneficiaire not in ('entreprise','particulier') %}☑ Autres{% else %}☐ Autres{% endif %}</div>
+        <div class="pi-label">MONTANT</div><div class="pi-val pi-amount">{{ '{:,.0f}'.format(s.montant) }} FCFA</div>
+        <div class="pi-label">NATURE</div><div class="pi-val">{% if s.nature=='cheque' %}☑ Chèque{% else %}☐ Chèque{% endif %} · {% if s.nature=='virement' %}☑ Virement{% else %}☐ Virement{% endif %} · {% if s.nature=='espece' %}☑ Espèce{% else %}☐ Espèce{% endif %}</div>
+        <div class="pi-label">MOTIF</div><div class="pi-val">{{ s.motif or '-' }}</div>
+        <div class="pi-label">Demandeur</div><div class="pi-val">{{ s.demandeur_name or '-' }}</div>
+    </div>
+    
+    {% if s.status == 'valide' %}
+    <div class="piece-status" style="background:#e8f5e9;color:#2e7d32">✅ Validé par {{ s.valideur_name or '' }} le {{ (s.validated_at or '')[:10] }}</div>
+    {% elif s.status == 'refuse' %}
+    <div class="piece-status" style="background:#fde8e8;color:#c53030">❌ Refusé par {{ s.valideur_name or '' }}</div>
+    {% else %}
+    <div class="piece-status" style="background:#fff3e0;color:#e8672a">⏳ En attente de validation DG</div>
+    {% endif %}
+    
+    <!-- SIGNATURES -->
+    <div style="margin-top:16px;padding-top:14px;border-top:2px solid #eee">
+        <h3 style="font-size:14px;color:#1e1e2d;margin-bottom:12px;text-align:center">SIGNATURES</h3>
+    </div>
+    <div class="sig-area">
+        <!-- Bénéficiaire -->
+        <div class="sig-box">
+            <h4>Bénéficiaire</h4>
+            {% if s.sig_beneficiaire %}
+                <img src="{{ s.sig_beneficiaire }}" alt="Signature bénéficiaire">
+                <div style="font-size:10px;color:#2e7d32;margin-top:4px">✅ Signé</div>
+            {% else %}
+                <canvas class="sig-canvas" id="sigBen"></canvas>
+                <div class="sig-actions">
+                    <button class="btn btn-outline btn-sm" style="font-size:10px" onclick="clearCanvas('sigBen')">Effacer</button>
+                    <button class="btn btn-green btn-sm" style="font-size:10px" onclick="submitSig('beneficiaire','sigBen')">✍️ Signer</button>
+                </div>
+            {% endif %}
+        </div>
+        
+        <!-- Caisse -->
+        <div class="sig-box">
+            <h4>Caisse</h4>
+            {% if s.sig_caisse %}
+                <img src="{{ s.sig_caisse }}" alt="Signature caisse">
+                <div style="font-size:10px;color:#2e7d32;margin-top:4px">✅ Signé</div>
+            {% else %}
+                <canvas class="sig-canvas" id="sigCaisse"></canvas>
+                <div class="sig-actions">
+                    <button class="btn btn-outline btn-sm" style="font-size:10px" onclick="clearCanvas('sigCaisse')">Effacer</button>
+                    <button class="btn btn-green btn-sm" style="font-size:10px" onclick="submitSig('caisse','sigCaisse')">✍️ Signer</button>
+                </div>
+            {% endif %}
+        </div>
+        
+        <!-- Autorisation (DG) -->
+        <div class="sig-box">
+            <h4>Autorisation (DG)</h4>
+            {% if s.sig_autorisation %}
+                <img src="{{ s.sig_autorisation }}" alt="Signature autorisation">
+                <div style="font-size:10px;color:#2e7d32;margin-top:4px">✅ Signé</div>
+            {% else %}
+                <canvas class="sig-canvas" id="sigAuth"></canvas>
+                <div class="sig-actions">
+                    <button class="btn btn-outline btn-sm" style="font-size:10px" onclick="clearCanvas('sigAuth')">Effacer</button>
+                    <button class="btn btn-green btn-sm" style="font-size:10px" onclick="submitSig('autorisation','sigAuth')">✍️ Signer</button>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+</div>
+
+<script>
+// Init all signature canvases
+document.querySelectorAll('.sig-canvas').forEach(function(canvas){
+    var ctx = canvas.getContext('2d');
+    canvas.width = canvas.offsetWidth || 200;
+    canvas.height = 90;
+    var drawing = false, lastX, lastY;
+    
+    function getPos(e){
+        var rect = canvas.getBoundingClientRect();
+        var t = e.touches ? e.touches[0] : e;
+        return {x: t.clientX - rect.left, y: t.clientY - rect.top};
+    }
+    canvas.addEventListener('mousedown', function(e){ drawing=true; var p=getPos(e); lastX=p.x; lastY=p.y; });
+    canvas.addEventListener('touchstart', function(e){ e.preventDefault(); drawing=true; var p=getPos(e); lastX=p.x; lastY=p.y; });
+    canvas.addEventListener('mousemove', function(e){
+        if(!drawing) return; var p=getPos(e);
+        ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(p.x,p.y);
+        ctx.strokeStyle='#1e1e2d'; ctx.lineWidth=2; ctx.lineCap='round'; ctx.stroke();
+        lastX=p.x; lastY=p.y;
+    });
+    canvas.addEventListener('touchmove', function(e){
+        e.preventDefault(); if(!drawing) return; var p=getPos(e);
+        ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(p.x,p.y);
+        ctx.strokeStyle='#1e1e2d'; ctx.lineWidth=2; ctx.lineCap='round'; ctx.stroke();
+        lastX=p.x; lastY=p.y;
+    });
+    canvas.addEventListener('mouseup', function(){ drawing=false; });
+    canvas.addEventListener('touchend', function(){ drawing=false; });
+});
+
+function clearCanvas(id){
+    var c = document.getElementById(id);
+    c.getContext('2d').clearRect(0,0,c.width,c.height);
+}
+
+function submitSig(type, canvasId){
+    var canvas = document.getElementById(canvasId);
+    var data = canvas.toDataURL('image/png');
+    // Check if canvas has actual drawing
+    var blank = document.createElement('canvas');
+    blank.width = canvas.width; blank.height = canvas.height;
+    if(canvas.toDataURL() === blank.toDataURL()){
+        alert('Veuillez signer avant de valider'); return;
+    }
+    var form = document.createElement('form');
+    form.method = 'POST'; form.action = '/caisse-sortie/{{ s.id }}/signer';
+    var i1 = document.createElement('input'); i1.type='hidden'; i1.name='type'; i1.value=type; form.appendChild(i1);
+    var i2 = document.createElement('input'); i2.type='hidden'; i2.name='signature'; i2.value=data; form.appendChild(i2);
+    document.body.appendChild(form); form.submit();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}{% block title %}WannyGest - Modifier article{% endblock %}{% block content %}
+<div class="page-header">
+    <h1>✏️ Modifier l'article</h1>
+    <a href="/achats?tab=stock" class="btn btn-outline btn-sm">← Retour</a>
+</div>
+
+<div class="card"><div class="card-body">
+<form method="post">
+    <div class="form-row">
+        <div class="form-group"><label>Nom *</label><input type="text" name="name" value="{{ item.name }}" required></div>
+        <div class="form-group"><label>Référence</label><input type="text" name="reference" value="{{ item.reference or '' }}"></div>
+    </div>
+    <div class="form-row">
+        <div class="form-group"><label>Catégorie</label><input type="text" name="category" value="{{ item.category or '' }}"></div>
+        <div class="form-group"><label>Prix unitaire (F)</label><input type="number" name="unit_price" value="{{ item.unit_price or 0 }}" step="0.01"></div>
+        <div class="form-group"><label>Stock minimum (alerte)</label><input type="number" name="min_stock" value="{{ item.min_stock or 0 }}" step="1"></div>
+    </div>
+    <div class="form-group">
+        <label>Quantité actuelle (lecture seule — utiliser les mouvements pour modifier)</label>
+        <input type="number" value="{{ item.quantity or 0 }}" readonly style="background:#f5f5f5">
+        <p class="hint">Pour modifier la quantité, utilisez "📥 Entrée stock" ou "📤 Sortie stock" depuis la liste.</p>
+    </div>
+    <div class="form-group"><label>Emplacement</label><input type="text" name="location" value="{{ item.location or '' }}" placeholder="Ex: Magasin A étagère 3"></div>
+    <div class="form-group">
+        <label>Notes</label>
+        <textarea name="notes" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px">{{ item.notes or '' }}</textarea>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+        <a href="/achats?tab=stock" class="btn btn-outline">Annuler</a>
+        <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
+    </div>
+</form>
+</div></div>
+
+{% endblock %}

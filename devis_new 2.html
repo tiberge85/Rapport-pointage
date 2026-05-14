@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}WannyGest - Nouveau devis{% endblock %}
+{% block content %}
+<div class="page-header"><h1>📝 Nouveau devis / proforma</h1></div>
+<div class="card"><div class="card-body">
+<form method="post" id="devisForm">
+    <div class="form-row">
+        <div class="form-group"><label>Type de document</label>
+            <select name="doc_type">
+                <option value="devis">Devis</option>
+                <option value="proforma">Proforma</option>
+            </select></div>
+        <div class="form-group"><label>Contact commercial <span style="font-size:10px;color:#888">(émis par vous)</span></label>
+            <input type="text" name="contact_commercial" id="contactCom" value="{{ default_commercial or '' }}" placeholder="Nom du commercial"></div>
+    </div>
+
+    <!-- Sélection client enregistré avec auto-remplissage complet -->
+    <div class="form-group">
+        <label>Client enregistré <span style="font-size:10px;color:#888">(sélectionnez pour auto-remplir)</span></label>
+        <select name="client_id" id="clientSel" onchange="fillClient()">
+            <option value="">— Saisir manuellement —</option>
+            {% for c in clients|sort(attribute='name') %}
+                <option value="{{ c.id }}"
+                    data-name="{{ c.name }}"
+                    data-code="{{ c.client_code or '' }}"
+                    data-contact="{{ c.contact_name or '' }}"
+                    data-tel="{{ c.tel or '' }}"
+                    data-email="{{ c.email or '' }}"
+                    data-address="{{ c.address or '' }}">
+                    {% if c.client_code %}[{{ c.client_code }}] {% endif %}{{ c.name }}{% if c.contact_name %} — {{ c.contact_name }}{% endif %}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Info client récupérée automatiquement -->
+    <div id="clientInfo" style="display:none;margin-bottom:12px;padding:10px 12px;background:#f0fff4;border:1px solid #c8e6c9;border-radius:8px;font-size:12px">
+        <div style="font-weight:700;color:#2e7d32;margin-bottom:4px">✅ Informations client récupérées</div>
+        <div id="cInfoText" style="color:#555"></div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group" style="flex:2"><label>Nom du client *</label>
+            <input type="text" name="client_name" id="cn" required></div>
+        <div class="form-group"><label>Code client</label>
+            <input type="text" name="client_code" id="cc" placeholder="C XXX" style="font-family:monospace;font-weight:700;color:#1a7a6d"></div>
+    </div>
+    <div class="form-row">
+        <div class="form-group"><label>Téléphone</label><input type="text" name="client_tel" id="cTel" placeholder="(récupéré)"></div>
+        <div class="form-group"><label>Email</label><input type="email" name="client_email" id="cEmail" placeholder="(récupéré)"></div>
+    </div>
+    <div class="form-group"><label>Adresse</label><input type="text" name="client_address" id="cAddr" placeholder="(récupérée)"></div>
+
+    <div class="form-group"><label>Objet *</label><input type="text" name="objet" required placeholder="Ex: FOURNITURE ET INSTALLATION DE VIDEO-SURVEILLANCE"></div>
+
+    <h3 style="color:#1a3a5c;margin:16px 0 10px;font-size:15px">📦 Articles</h3>
+    {% if stock_items %}
+    <div style="margin-bottom:10px;background:#f8faf9;padding:8px 12px;border-radius:8px;font-size:12px">
+        <strong>📋 Sélection rapide depuis le stock :</strong>
+        <select id="stockSelect" onchange="fillFromStock()" style="padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;margin-left:6px">
+            <option value="">— Choisir un article du stock —</option>
+            {% for s in stock_items %}<option value="{{ s.name }}" data-price="{{ s.unit_price or 0 }}" data-ref="{{ s.reference or '' }}">{{ s.name }} {% if s.reference %}({{ s.reference }}){% endif %} — {{ '{:,.0f}'.format(s.unit_price or 0) }} F</option>{% endfor %}
+        </select>
+    </div>
+    {% endif %}
+    <div id="items">
+        <div class="item-row" style="display:flex;gap:6px;margin-bottom:8px;align-items:end;flex-wrap:wrap">
+            <div style="flex:3"><label style="font-size:11px">Désignation</label><input type="text" name="item_1_designation" id="desig_1" required placeholder="Ex: CAMERA FIXE ANALOGIQUE" list="stockList"></div>
+            <div style="flex:2"><label style="font-size:11px">Détail</label><input type="text" name="item_1_detail" id="detail_1" placeholder="HYBRID LIGHT"></div>
+            <div style="flex:0 0 60px"><label style="font-size:11px">Qté</label><input type="number" name="item_1_qty" value="1" min="1"></div>
+            <div style="flex:0 0 100px"><label style="font-size:11px">Prix unit.</label><input type="number" name="item_1_prix" id="prix_1" step="500" value="0"></div>
+            <div style="flex:0 0 80px"><label style="font-size:11px">Remise</label><input type="number" name="item_1_remise" value="0"></div>
+        </div>
+    </div>
+    <datalist id="stockList">{% for s in stock_items %}<option value="{{ s.name }}">{% endfor %}</datalist>
+    <button type="button" class="btn btn-outline btn-sm" onclick="addItem()" style="margin-bottom:14px">+ Ajouter une ligne</button>
+
+    <div class="form-row">
+        <div class="form-group"><label>Main d'œuvre (FCFA)</label><input type="number" name="main_oeuvre" step="1" value="0"></div>
+        <div class="form-group"><label>Petites fournitures</label><input type="number" name="petites_fournitures" step="1" value="0"></div>
+        <div class="form-group"><label>Remise globale</label><input type="number" name="remise" step="1" value="0"></div>
+    </div>
+    <div class="form-row" style="align-items:end;background:#fff8ed;padding:10px;border-radius:8px;border:1px solid #ffe4b5">
+        <div class="form-group" style="flex:0 0 auto">
+            <label style="display:flex;gap:6px;align-items:center;cursor:pointer;font-weight:700;color:#e8672a">
+                <input type="checkbox" name="tva_active" value="1" id="tvaCheck" onchange="document.getElementById('tvaRateWrap').style.display=this.checked?'':'none'">
+                Appliquer la TVA
+            </label>
+        </div>
+        <div class="form-group" id="tvaRateWrap" style="display:none;flex:0 0 140px">
+            <label>Taux TVA (%)</label>
+            <input type="number" name="tva_rate" value="18" step="0.5" min="0" max="50">
+        </div>
+        <div class="form-group" style="flex:1;font-size:11px;color:#888">
+            💡 En Côte d'Ivoire, la TVA s'applique à 18%. Cochez la case pour l'ajouter automatiquement au Total TTC.
+        </div>
+    </div>
+    <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px 11px;border:1.5px solid #ddd;border-radius:7px;font-size:13px" placeholder="Conditions, délais..."></textarea></div>
+
+    <div style="display:flex;gap:10px;margin-top:16px">
+        <a href="/devis" class="btn btn-outline">Annuler</a>
+        <button type="submit" class="btn btn-orange" style="flex:1">📝 Créer le devis</button>
+    </div>
+</form></div></div>
+<script>
+let itemCount = 1;
+function addItem() {
+    itemCount++;
+    const html = `<div class="item-row" style="display:flex;gap:6px;margin-bottom:8px;align-items:end;flex-wrap:wrap">
+        <div style="flex:3"><input type="text" name="item_${itemCount}_designation" id="desig_${itemCount}" required placeholder="Désignation" list="stockList"></div>
+        <div style="flex:2"><input type="text" name="item_${itemCount}_detail" id="detail_${itemCount}" placeholder="Détail"></div>
+        <div style="flex:0 0 60px"><input type="number" name="item_${itemCount}_qty" value="1" min="1"></div>
+        <div style="flex:0 0 100px"><input type="number" name="item_${itemCount}_prix" id="prix_${itemCount}" step="500" value="0"></div>
+        <div style="flex:0 0 80px"><input type="number" name="item_${itemCount}_remise" value="0"></div>
+        <button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;color:#c53030;cursor:pointer;font-size:18px;padding:4px">×</button>
+    </div>`;
+    document.getElementById('items').insertAdjacentHTML('beforeend', html);
+}
+function fillFromStock() {
+    var sel = document.getElementById('stockSelect');
+    if (!sel || !sel.value) return;
+    var opt = sel.options[sel.selectedIndex];
+    var name = sel.value;
+    var price = parseFloat(opt.dataset.price || 0);
+    var ref = opt.dataset.ref || '';
+    var lastDesig = document.getElementById('desig_' + itemCount);
+    if (lastDesig && lastDesig.value) {
+        addItem();
+        lastDesig = document.getElementById('desig_' + itemCount);
+    }
+    if (lastDesig) {
+        lastDesig.value = name;
+        var detail = document.getElementById('detail_' + itemCount);
+        if (detail && ref) detail.value = ref;
+        var prix = document.getElementById('prix_' + itemCount);
+        if (prix && price) prix.value = price;
+    }
+    sel.value = '';
+}
+
+// ==== Auto-remplissage complet quand un client est sélectionné ====
+function fillClient() {
+    var sel = document.getElementById('clientSel');
+    var info = document.getElementById('clientInfo');
+    var infoText = document.getElementById('cInfoText');
+    if (!sel || !sel.value) {
+        // Reset (but don't clear already-typed manual values aggressively)
+        if (info) info.style.display = 'none';
+        return;
+    }
+    var opt = sel.options[sel.selectedIndex];
+    var name = opt.dataset.name || '';
+    var code = opt.dataset.code || '';
+    var contact = opt.dataset.contact || '';
+    var tel = opt.dataset.tel || '';
+    var email = opt.dataset.email || '';
+    var address = opt.dataset.address || '';
+
+    document.getElementById('cn').value = name;
+    document.getElementById('cc').value = code;
+    document.getElementById('cTel').value = tel;
+    document.getElementById('cEmail').value = email;
+    document.getElementById('cAddr').value = address;
+
+    // Feedback visuel
+    var parts = [];
+    if (code) parts.push('<b>Code:</b> ' + code);
+    if (contact) parts.push('<b>Contact:</b> ' + contact);
+    if (tel) parts.push('📞 ' + tel);
+    if (email) parts.push('✉️ ' + email);
+    if (address) parts.push('📍 ' + address);
+    infoText.innerHTML = parts.join(' &nbsp;·&nbsp; ') || '<i>Aucune info complémentaire enregistrée</i>';
+    info.style.display = '';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,155 @@
+{% extends "base.html" %}{% block title %}WannyGest - Prospects{% endblock %}{% block content %}
+<style>
+
+</style>
+
+<div class="page-header"><h1>🎯 Prospects</h1></div>
+
+<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+{% for s, label, color in [('nouveau','Nouveau','#1A7A6D'),('contacte','Contacté','#e8672a'),('qualifie','Qualifié','#7b1fa2'),('proposition','Proposition','#B8860B'),('gagne','Gagné','#2e7d32'),('perdu','Perdu','#c53030')] %}
+    <span style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid {{ color }};color:{{ color }}">{{ stats.get(s, 0) }} {{ label }}</span>
+{% endfor %}
+</div>
+
+<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Ajouter un prospect</button>
+    <div style="margin-left:auto"><input type="text" id="searchBox" placeholder="🔍 Rechercher..." onkeyup="filterTable()" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:200px"></div>
+</div>
+
+<div class="card"><div class="card-body" style="padding:0">
+{% if prospects %}<div class="table-wrap"><table id="pTable">
+<thead><tr><th>#</th><th>Nom</th><th>Email</th><th>Téléphone</th><th>Valeur</th><th>Statut</th><th>Source</th><th>Dernier contact</th></tr></thead>
+<tbody>{% for p in prospects %}<tr>
+<td>{{ p.id }}</td>
+<td><strong>{{ p.contact_name or p.company }}</strong>{% if p.company %}<br><span style="font-size:10px;color:#888">{{ p.company }}</span>{% endif %}
+<br><a href="#" style="font-size:10px;color:#1a7a6d" onclick="viewProspect({{ p.id }});return false">Voir</a> | <a href="#" style="font-size:10px;color:#1A7A6D" onclick="editProspect({{ p.id }});return false">Editer</a> | <a href="/prospects/delete/{{ p.id }}" style="font-size:10px;color:#c53030" onclick="return confirm('Supprimer ?')">Supprimer</a></td>
+<td style="font-size:11px">{{ p.email or '-' }}</td>
+<td>{{ p.tel or '-' }}</td>
+<td style="font-weight:600">{% if p.estimated_value %}{{ '{:,.0f}'.format(p.estimated_value) }}{% else %}-{% endif %}</td>
+<td><span class="badge-status {% if p.status=='gagne' %}sent{% elif p.status=='perdu' %}{% else %}pending{% endif %}" style="font-size:10px">{{ p.status }}</span></td>
+<td style="font-size:11px">{{ p.source or '-' }}</td>
+<td style="font-size:11px">{{ p.last_contact or (p.created_at[:10] if p.created_at else '-') }}</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun prospect</p>{% endif %}
+</div></div>
+
+<!-- VIEW MODAL -->
+<div class="modal-bg" id="viewModal"><div class="modal" style="max-width:550px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 id="vm_title" style="margin:0">👤 Prospect</h3>
+        <button type="button" onclick="this.closest('.modal-bg').classList.remove('active')" style="border:none;background:none;font-size:20px;cursor:pointer;color:#888">✕</button>
+    </div>
+    <div class="g2" style="gap:0 20px">
+        <div>
+            <div style="font-weight:700;font-size:11px;color:#1a3a5c;border-bottom:1px solid #eee;padding-bottom:3px;margin-bottom:6px">Contact & Entreprise</div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Position</div><div class="val" id="vm_position" style="font-size:12px"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Email</div><div class="val" id="vm_email" style="font-size:12px"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Entreprise</div><div class="val" id="vm_company" style="font-size:12px"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Téléphone</div><div class="val" id="vm_tel" style="font-size:12px;color:#1a7a6d"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Valeur estimée</div><div class="val" id="vm_value" style="font-size:12px"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Adresse</div><div class="val" id="vm_address" style="font-size:12px"></div></div>
+        </div>
+        <div>
+            <div style="font-weight:700;font-size:11px;color:#1a3a5c;border-bottom:1px solid #eee;padding-bottom:3px;margin-bottom:6px">Informations Générales</div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Statut</div><div class="val" id="vm_status" style="font-size:12px"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Source</div><div class="val" id="vm_source" style="font-size:12px"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Attribuer à</div><div class="val" id="vm_assigned" style="font-size:12px"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Créé le</div><div class="val" id="vm_created" style="font-size:12px"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Dernier contact</div><div class="val" id="vm_lastcontact" style="font-size:12px"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Ville</div><div class="val" id="vm_city" style="font-size:12px"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Région</div><div class="val" id="vm_region" style="font-size:12px"></div></div>
+            <div class="pm-field"><div class="lbl" style="font-size:10px;color:#999">Pays</div><div class="val" id="vm_country" style="font-size:12px"></div></div>
+        </div>
+    </div>
+    <div id="vm_desc_block" style="margin-top:10px;padding:10px;background:#f8faf9;border-radius:8px;display:none">
+        <div style="font-size:10px;color:#888">Description</div>
+        <div style="font-size:12px" id="vm_description"></div>
+    </div>
+</div></div>
+
+<!-- EDIT MODAL -->
+<div class="modal-bg" id="editModal"><div class="modal" style="max-width:550px">
+<h3 id="em_title">✏️ Modifier le prospect</h3>
+<form method="post" id="editForm">
+<div class="form-row"><div class="form-group"><label>Nom du contact *</label><input type="text" name="contact_name" id="em_name" required></div><div class="form-group"><label>Entreprise</label><input type="text" name="company" id="em_company"></div></div>
+<div class="form-row"><div class="form-group"><label>Email</label><input type="email" name="email" id="em_email"></div><div class="form-group"><label>Téléphone</label><input type="text" name="tel" id="em_tel"></div></div>
+<div class="form-row"><div class="form-group"><label>Position</label><input type="text" name="position" id="em_position"></div><div class="form-group"><label>Valeur estimée</label><input type="number" name="estimated_value" id="em_value" step="1" min="0"></div></div>
+<div class="form-row"><div class="form-group"><label>Source</label><select name="source" id="em_source"><option>APPEL TELEPHONIQUE</option><option>Facebook</option><option>Site web</option><option>Recommandation</option><option>Salon</option><option>Autre</option></select></div>
+<div class="form-group"><label>Statut</label><select name="status" id="em_status"><option value="nouveau">Nouveau</option><option value="contacte">Contacté</option><option value="qualifie">Qualifié</option><option value="proposition">Proposition</option><option value="gagne">Gagné</option><option value="perdu">Perdu</option></select></div></div>
+<div class="form-row"><div class="form-group"><label>Ville</label><input type="text" name="city" id="em_city"></div><div class="form-group"><label>Région</label><input type="text" name="region" id="em_region"></div></div>
+<div class="form-group"><label>Attribuer à</label><select name="assigned_to" id="em_assigned"><option value="">—</option>{% for u in users %}<option value="{{ u.full_name }}">{{ u.full_name }}</option>{% endfor %}</select></div>
+<div class="form-group"><label>Description</label><textarea name="description" id="em_desc" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div>
+</form></div></div>
+
+<!-- ADD MODAL -->
+<div class="modal-bg" id="addM"><div class="modal" style="max-width:550px"><h3>🎯 Nouveau prospect</h3><form method="post" action="/prospects/add">
+<div class="form-row"><div class="form-group"><label>Nom du contact *</label><input type="text" name="contact_name" required></div><div class="form-group"><label>Entreprise / Code *</label><input type="text" name="company" required></div></div>
+<div class="form-row"><div class="form-group"><label>Email</label><input type="email" name="email"></div><div class="form-group"><label>Téléphone</label><input type="text" name="tel"></div></div>
+<div class="form-row"><div class="form-group"><label>Position</label><input type="text" name="position"></div><div class="form-group"><label>Valeur estimée</label><input type="number" name="estimated_value" step="1" min="0"></div></div>
+<div class="form-row"><div class="form-group"><label>Source</label><select name="source"><option>APPEL TELEPHONIQUE</option><option>Facebook</option><option>Site web</option><option>Recommandation</option><option>Salon</option><option>Autre</option></select></div>
+<div class="form-group"><label>Attribuer à</label><select name="assigned_to"><option value="">—</option>{% for u in users %}<option value="{{ u.full_name }}">{{ u.full_name }}</option>{% endfor %}</select></div></div>
+<div class="form-row"><div class="form-group"><label>Ville</label><input type="text" name="city" value="ABIDJAN"></div><div class="form-group"><label>Région</label><input type="text" name="region"></div></div>
+<div class="form-group"><label>Description</label><textarea name="description" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Ajouter</button></div></form></div></div>
+
+<!-- Store prospect data for JS -->
+<script>
+var _prospects = {
+{% for p in prospects %}
+{{ p.id }}: {
+    id: {{ p.id }}, name: "{{ (p.contact_name or '')|replace('"','') }}", company: "{{ (p.company or '')|replace('"','') }}",
+    email: "{{ p.email or '' }}", tel: "{{ p.tel or '' }}", position: "{{ p.position or '' }}",
+    value: {{ p.estimated_value or 0 }}, source: "{{ p.source or '' }}", status: "{{ p.status or 'nouveau' }}",
+    assigned: "{{ p.assigned_to or '' }}", city: "{{ p.city or '' }}", region: "{{ p.region or '' }}",
+    country: "{{ p.country or 'CI' }}", address: "{{ p.address or '' }}",
+    description: "{{ (p.description or '')|replace('"','') }}", created: "{{ p.created_at or '' }}",
+    last_contact: "{{ p.last_contact or '' }}"
+},
+{% endfor %}
+};
+
+function viewProspect(id) {
+    var p = _prospects[id]; if (!p) return;
+    document.getElementById('vm_title').textContent = '👤 ' + (p.name || p.company);
+    document.getElementById('vm_position').textContent = p.position || '-';
+    document.getElementById('vm_email').textContent = p.email || '-';
+    document.getElementById('vm_company').textContent = p.company || '-';
+    document.getElementById('vm_tel').textContent = p.tel || '-';
+    document.getElementById('vm_value').textContent = p.value ? p.value.toLocaleString() + ' FCFA' : '-';
+    document.getElementById('vm_address').textContent = p.address || '-';
+    document.getElementById('vm_status').textContent = p.status || '-';
+    document.getElementById('vm_source').textContent = p.source || '-';
+    document.getElementById('vm_assigned').textContent = p.assigned || '-';
+    document.getElementById('vm_created').textContent = p.created ? p.created.substring(0,10) : '-';
+    document.getElementById('vm_lastcontact').textContent = p.last_contact || '-';
+    document.getElementById('vm_city').textContent = p.city || '-';
+    document.getElementById('vm_region').textContent = p.region || '-';
+    document.getElementById('vm_country').textContent = p.country || 'CI';
+    if (p.description) { document.getElementById('vm_desc_block').style.display='block'; document.getElementById('vm_description').textContent=p.description; }
+    else { document.getElementById('vm_desc_block').style.display='none'; }
+    document.getElementById('viewModal').classList.add('active');
+}
+
+function editProspect(id) {
+    var p = _prospects[id]; if (!p) return;
+    document.getElementById('editForm').action = '/prospects/edit/' + id;
+    document.getElementById('em_title').textContent = '✏️ Modifier — ' + (p.name || p.company);
+    document.getElementById('em_name').value = p.name;
+    document.getElementById('em_company').value = p.company;
+    document.getElementById('em_email').value = p.email;
+    document.getElementById('em_tel').value = p.tel;
+    document.getElementById('em_position').value = p.position;
+    document.getElementById('em_value').value = p.value || '';
+    document.getElementById('em_source').value = p.source;
+    document.getElementById('em_status').value = p.status;
+    document.getElementById('em_city').value = p.city;
+    document.getElementById('em_region').value = p.region;
+    document.getElementById('em_assigned').value = p.assigned;
+    document.getElementById('em_desc').value = p.description;
+    document.getElementById('editModal').classList.add('active');
+}
+
+function filterTable(){var f=document.getElementById('searchBox').value.toLowerCase();document.querySelectorAll('#pTable tbody tr').forEach(r=>{r.style.display=r.textContent.toLowerCase().includes(f)?'':'none'})}
+</script>
+{% endblock %}

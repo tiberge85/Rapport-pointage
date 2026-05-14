@@ -15716,19 +15716,12 @@ def mg_fournisseur_details(fid):
 @permission_required('traitement')
 def pharma_page():
     """Page d'accueil Pharmacie — formulaire d'upload Excel."""
-    from models import pharma_list_types_service, pharma_list_jours_feries, get_db
+    from models import pharma_list_types_service, pharma_list_jours_feries
     types_service = pharma_list_types_service()
     feries_2026 = pharma_list_jours_feries(year=2026)
-    # v70 : liste des clients pour le select pharmacie
-    conn = get_db()
-    try:
-        clients = [dict(r) for r in conn.execute("SELECT * FROM clients ORDER BY name").fetchall()]
-    except: clients = []
-    conn.close()
     return render_template('pharma_form.html', page='pharma',
                           types_service=types_service,
-                          feries=feries_2026,
-                          clients=clients)
+                          feries=feries_2026)
 
 
 @app.route('/pharma/preview', methods=['POST'])
@@ -15752,27 +15745,17 @@ def pharma_preview():
         for e in emps:
             recs = e.get('records', [])
             nb_present = sum(1 for r in recs if r.get('arrival') and r.get('arrival') != '-')
-            # Extraire la pharmacie du service (ex: "All Departments>PHARMACIE GNIMAH" → "PHARMACIE GNIMAH")
-            dept = e.get('service', '') or e.get('department', '')
-            if '>' in dept:
-                dept = dept.split('>')[-1].strip()
             result_emps.append({
                 "name": e['name'],
                 "id": e.get('id', ''),
                 "service": e.get('service', ''),
-                "dept": dept or 'PHARMACIE',
-                "days": len(recs),       # alias compat dpci.html
-                "nb_jours": len(recs),   # ancien nom
+                "nb_jours": len(recs),
                 "days_present": nb_present,
             })
-        
-        # Pharmacie déduite du premier employé
-        first_dept = result_emps[0]['dept'] if result_emps else ''
         
         return jsonify({
             "count": len(emps),
             "period": period,
-            "client": first_dept,
             "employees": result_emps,
         })
     except Exception as e:
@@ -15786,18 +15769,7 @@ def pharma_preview():
 @app.route('/pharma/generate', methods=['POST'])
 @permission_required('traitement')
 def pharma_generate():
-    """Génère le PDF rapport Pharmacie — calqué sur le rapport DPCI/traitement standard.
-    
-    Sections du PDF générées (via generate_full_pdf) :
-      1. Rapports individuels (1 page par pharmacien)
-      2. Rapport de présence
-      3. Classement (retards + absences)
-      4. Graphique d'assiduité
-      5. Page Pharmacie spécifique (récap paie estimée avec majorations)
-    """
-    from rapport_core import parse_pharma_excel, generate_full_pdf, generate_pharma_recap_page
-    from models import pharma_list_types_service, pharma_list_jours_feries
-    
+    """Génère le PDF rapport de présence Pharmacie à partir d'un fichier Excel."""
     if 'excel_file' not in request.files:
         flash("Fichier requis", "error")
         return redirect('/pharma')
@@ -15806,87 +15778,51 @@ def pharma_generate():
         flash("Fichier vide", "error")
         return redirect('/pharma')
     
-    # === Paramètres généraux ===
-    pharmacy_name = (request.form.get('pharmacy_name') or request.form.get('client_name') or 'PHARMACIE').strip()
+    # Paramètres
+    pharmacy_name = (request.form.get('pharmacy_name') or 'PHARMACIE').strip()
     period_label = (request.form.get('period_label') or '').strip()
-    # v70 : accepter aussi 'default_cost' (compat dpci.html style)
-    default_hourly_rate = float(request.form.get('default_hourly_rate', request.form.get('default_cost', '0')) or 0)
+    default_hourly_rate = float(request.form.get('default_hourly_rate', '0') or 0)
+    hp_default = float(request.form.get('hp_default', '8') or 8)
     
-    # Heures obligatoires (priorité : formulaire > sched du fichier)
-    try: hp = float(request.form.get('required_hours', '0') or 0)
-    except: hp = 0
-    try: hp_weekend = float(request.form.get('required_hours_weekend', '0') or 0)
-    except: hp_weekend = 0
-    
-    # Taux par pharmacien (v70 : accepter aussi employee_costs_json)
+    # Taux par pharmacien
     employee_rates = {}
     try:
-        rates_json = request.form.get('rates_json', '') or request.form.get('employee_costs_json', '{}')
+        rates_json = request.form.get('rates_json', '{}')
         rates_data = json.loads(rates_json) if rates_json else {}
         if isinstance(rates_data, dict):
             employee_rates = {k: float(v) for k, v in rates_data.items() if v}
-    except: pass
-    
-    # Jours de repos sélectionnés (0=lundi..6=dimanche)
-    rest_days_form = request.form.getlist('rest_days')
-    
-    # Jours obligatoires (configuration manuelle, sinon auto)
-    days_required_default = None
-    try:
-        drd = request.form.get('days_required_default', '').strip()
-        if drd:
-            days_required_default = int(drd)
-    except: pass
-    
-    # Jours non ouvrables (calendrier coché)
-    non_working_days = []
-    try:
-        nwd_json = request.form.get('non_working_days_json', '[]')
-        nwd_data = json.loads(nwd_json) if nwd_json else []
-        if isinstance(nwd_data, list):
-            non_working_days = [d for d in nwd_data if isinstance(d, str)]
-    except: pass
-    
-    # === Schedule override (EDT) ===
-    try:
-        schedule_override = json.loads(request.form.get('schedule_override_json', '{}'))
-        if not isinstance(schedule_override, dict):
-            schedule_override = {}
     except:
-        schedule_override = {}
+        pass
     
-    # === Classifications manuelles (par date+emp pour majorations Pharmacie) ===
-    manual_classifications_global = {}
-    manual_classifications_emp = {}
+    # Classifications manuelles : [{from, to, type, emp}]
+    # → on les transforme en {(emp_name|''): {date: type_code}} et {'all': {date: type_code}}
+    manual_classifications_global = {}  # date -> type_code (s'applique à tout le monde)
+    manual_classifications_emp = {}     # emp_name -> {date -> type_code}
     try:
         classif_json = request.form.get('classif_json', '[]')
         classif_data = json.loads(classif_json) if classif_json else []
-        from datetime import datetime as _dt2, timedelta as _td2
+        from datetime import datetime as _dt, timedelta as _td
         for c in classif_data:
             try:
-                d1 = _dt2.strptime(c.get('from','')[:10], '%Y-%m-%d')
-                d2 = _dt2.strptime((c.get('to') or c.get('from',''))[:10], '%Y-%m-%d')
+                d1 = _dt.strptime(c.get('from','')[:10], '%Y-%m-%d')
+                d2 = _dt.strptime((c.get('to') or c.get('from',''))[:10], '%Y-%m-%d')
                 typ = (c.get('type') or '').strip()
-                emp_target = (c.get('emp') or '').strip()
-                emp_targets = []
-                if emp_target:
-                    # Peut être plusieurs noms séparés par virgule
-                    emp_targets = [e.strip() for e in emp_target.split(',') if e.strip()]
+                emp = (c.get('emp') or '').strip()
                 if not typ: continue
                 cur = d1
                 while cur <= d2:
                     ds = cur.strftime('%Y-%m-%d')
-                    if emp_targets:
-                        for et in emp_targets:
-                            if et not in manual_classifications_emp:
-                                manual_classifications_emp[et] = {}
-                            manual_classifications_emp[et][ds] = typ
+                    if emp:
+                        if emp not in manual_classifications_emp:
+                            manual_classifications_emp[emp] = {}
+                        manual_classifications_emp[emp][ds] = typ
                     else:
                         manual_classifications_global[ds] = typ
-                    cur += _td2(days=1)
+                    cur += _td(days=1)
             except:
                 continue
-    except: pass
+    except:
+        pass
     
     import tempfile
     tmp_in = os.path.join(tempfile.gettempdir(), f'pharma_in_{uuid.uuid4().hex[:8]}.xlsx')
@@ -15894,260 +15830,84 @@ def pharma_generate():
     f.save(tmp_in)
     
     try:
+        from rapport_core import parse_pharma_excel, generate_pharma_pdf, calc_pharma_employee_stats
+        from models import pharma_list_types_service, pharma_list_jours_feries
+        
         emps, period = parse_pharma_excel(tmp_in)
         if not emps:
             flash("Aucun pharmacien trouvé dans le fichier", "error")
             return redirect('/pharma')
         
-        # === Filtre période (optionnel) ===
-        period_mode = request.form.get('period_mode', 'all')
-        period_start = (request.form.get('period_start') or '').strip()
-        period_end = (request.form.get('period_end') or '').strip()
-        if period_mode == 'day' and period_start:
-            period_end = period_start
-        elif period_mode == 'week' and period_start:
-            try:
-                from datetime import datetime as _dt3, timedelta as _td3
-                d = _dt3.strptime(period_start, '%Y-%m-%d')
-                period_end = (d + _td3(days=6)).strftime('%Y-%m-%d')
-            except: pass
-        if period_start or period_end:
-            for emp in emps:
-                emp['records'] = [r for r in emp['records']
-                                  if (not period_start or r['date'] >= period_start)
-                                  and (not period_end or r['date'] <= period_end)]
-            emps = [e for e in emps if e['records']]
-            if not emps:
-                flash("Aucun enregistrement pour la période sélectionnée", "error")
-                return redirect('/pharma')
+        types_service = pharma_list_types_service()
+        # Indexer par code ET par libellé (matching tolérant)
+        types_by_key = {}
+        for t in types_service:
+            t_dict = dict(t)
+            code = (t_dict.get('code') or '').lower()
+            lib = (t_dict.get('libelle') or '').lower()
+            if code: types_by_key[code] = t_dict
+            if lib: types_by_key[lib] = t_dict
+            # Variantes
+            if code == 'garde_nuit':
+                types_by_key['garde nuit'] = t_dict
+                types_by_key['nuit'] = t_dict
+            if code == 'garde_we':
+                types_by_key['garde we'] = t_dict
+                types_by_key['week-end'] = t_dict
+            if code == 'normal':
+                types_by_key['service normal'] = t_dict
         
-        # === Construire schedules_map et schedules_per_day_map à partir de l'override ===
-        schedules_map = {}
-        schedules_per_day_map = {}
-        if schedule_override:
-            sched_all = schedule_override.get('all')
-            sched_groups = schedule_override.get('groups') or []
-            sched_persons = schedule_override.get('persons') or {}
-            sched_days = schedule_override.get('days') or {}
-            sched_person_days = schedule_override.get('person_days') or {}
-            
-            def _norm_pn(s): return ''.join((s or '').strip().upper().split())
-            
-            for emp in emps:
-                norm_key = _norm_pn(emp['name'])
-                
-                # Personne (avec matching tolérant + alternative prénom/nom inversé)
-                pers_sch = None
-                pers_days_dict = None
-                for pname, psched in sched_persons.items():
-                    if _norm_pn(pname) == norm_key and isinstance(psched, dict) and psched.get('start') and psched.get('end'):
-                        pers_sch = psched; break
-                for pname, pdays in sched_person_days.items():
-                    if _norm_pn(pname) == norm_key and isinstance(pdays, dict):
-                        pers_days_dict = pdays; break
-                
-                # Groupe
-                grp_sch = None
-                grp_days_dict = None
-                for grp in sched_groups:
-                    if not isinstance(grp, dict): continue
-                    members = grp.get('members') or []
-                    if any(_norm_pn(m) == norm_key for m in members):
-                        if grp.get('start') and grp.get('end'):
-                            grp_sch = grp
-                        if isinstance(grp.get('days'), dict):
-                            grp_days_dict = grp['days']
-                        break
-                
-                # Final schedule (priorité Personne > Groupe > Tous)
-                final_sched = pers_sch or grp_sch or (sched_all if (sched_all and isinstance(sched_all,dict) and sched_all.get('start') and sched_all.get('end')) else None)
-                if final_sched:
-                    schedules_map[emp['name']] = {
-                        'employee_name': emp['name'],
-                        'start_time': final_sched.get('start'),
-                        'end_time': final_sched.get('end'),
-                        'break_start': final_sched.get('pause_start', '12:00') if final_sched.get('has_pause', True) else None,
-                        'break_end': final_sched.get('pause_end', '13:00') if final_sched.get('has_pause', True) else None,
-                    }
-                
-                # Per-day
-                per_day = {}
-                _DAYS = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche']
-                for dn in _DAYS:
-                    chosen_d = None
-                    if pers_days_dict and pers_days_dict.get(dn) and pers_days_dict[dn].get('start') and pers_days_dict[dn].get('end'):
-                        chosen_d = pers_days_dict[dn]
-                    elif grp_days_dict and grp_days_dict.get(dn) and grp_days_dict[dn].get('start') and grp_days_dict[dn].get('end'):
-                        chosen_d = grp_days_dict[dn]
-                    elif sched_days and sched_days.get(dn) and sched_days[dn].get('start') and sched_days[dn].get('end'):
-                        chosen_d = sched_days[dn]
-                    if chosen_d:
-                        per_day[dn] = {
-                            'start_time': chosen_d.get('start'),
-                            'end_time': chosen_d.get('end'),
-                            'break_start': chosen_d.get('pause_start', '12:00') if chosen_d.get('has_pause', True) else None,
-                            'break_end': chosen_d.get('pause_end', '13:00') if chosen_d.get('has_pause', True) else None,
-                        }
-                if per_day:
-                    schedules_per_day_map[emp['name']] = per_day
+        # Jours fériés
+        feries_set = set(f['date'] for f in pharma_list_jours_feries(year=None))
         
-        # Si pas d'override : utiliser les sched_start/sched_end du fichier source
-        for emp in emps:
-            if emp['name'] not in schedules_map:
-                # Trouver le sched le plus commun dans les records de cet emp
-                from collections import Counter
-                schs = [(r.get('sched_start',''), r.get('sched_end','')) for r in emp['records']
-                        if r.get('sched_start') and r.get('sched_end')]
-                if schs:
-                    most = Counter(schs).most_common(1)[0][0]
-                    schedules_map[emp['name']] = {
-                        'employee_name': emp['name'],
-                        'start_time': most[0],
-                        'end_time': most[1],
-                        'break_start': None,
-                        'break_end': None,
-                    }
-        
-        # === Build period_str ===
-        all_dates = sorted([r['date'] for e in emps for r in e['records']])
-        if all_dates:
-            period_str = period_label or f"Débuté le {all_dates[0]} au {all_dates[-1]}"
-        else:
-            period_str = period_label or period or "Rapport Pharmacie"
-        
-        # === Logo ===
+        # Logo
         logo_path = os.path.join(BASE_DIR, 'logo_ramya.png')
         if not os.path.exists(logo_path):
             logo_path = None
         
-        # === Convertir rest_days (noms français) en liste de int (0=lundi..6=dimanche) ===
-        _JOUR_TO_INT = {
-            'lundi': 0, 'mardi': 1, 'mercredi': 2, 'jeudi': 3,
-            'vendredi': 4, 'samedi': 5, 'dimanche': 6,
-        }
-        rest_days_int = []
-        for d in rest_days_form:
-            ds = str(d).strip().lower()
-            if ds in _JOUR_TO_INT:
-                rest_days_int.append(_JOUR_TO_INT[ds])
-            else:
-                try: rest_days_int.append(int(ds))
-                except: pass
+        # Fusionner classifications : per-emp prend priorité sur global
+        # generate_pharma_pdf attend un dict {date: type} pour TOUS les emps
+        # → on construit un mapping global qui dépendra de l'emp à l'intérieur
+        # SIMPLE : on appelle calc_pharma_employee_stats nous-mêmes pour chaque emp
+        # avec sa classification fusionnée. Mais c'est déjà appelé dedans...
+        # → on stocke par emp_name dans un dict spécial et on passe au generator
         
-        # === Pour DPCI : injecter les jours non ouvrables comme jours de repos individuels ===
-        # generate_full_pdf accepte employee_rest_days mais c'est par jour-de-semaine.
-        # Les jours non ouvrables (dates spécifiques) sont à exclure du calcul.
-        # → On enrichit chaque record avec _non_working_day flag, et on les retirera des emps.records
-        non_working_set = set(non_working_days)
-        if non_working_set:
-            for emp in emps:
-                emp['records'] = [r for r in emp['records'] if r['date'] not in non_working_set]
-            emps = [e for e in emps if e['records']]
-            if not emps:
-                flash("Tous les jours sont marqués comme non ouvrables — aucune donnée à traiter", "error")
-                return redirect('/pharma')
+        # Pour rester compatible : on construit custom_classifications par emp avant l'appel
+        emps_classifications = {}
+        for emp in emps:
+            merged = dict(manual_classifications_global)
+            if emp['name'] in manual_classifications_emp:
+                merged.update(manual_classifications_emp[emp['name']])
+            emps_classifications[emp['name']] = merged
         
-        # === Apply EDT per-day override directly to records' sched_start/sched_end ===
-        # generate_full_pdf utilise les sched_start/sched_end des records pour calc_employee_stats
-        if schedule_override and schedules_per_day_map:
-            from datetime import datetime as _dt4
-            _DAYS_FR = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche']
-            for emp in emps:
-                per_day = schedules_per_day_map.get(emp['name'])
-                if not per_day: continue
-                for rec in emp['records']:
-                    try:
-                        d = _dt4.strptime(rec['date'][:10], '%Y-%m-%d')
-                        dn = _DAYS_FR[d.weekday()]
-                        if per_day.get(dn):
-                            rec['sched_start'] = per_day[dn].get('start_time') or rec.get('sched_start','')
-                            rec['sched_end'] = per_day[dn].get('end_time') or rec.get('sched_end','')
-                    except: pass
+        # Note : generate_pharma_pdf accepte une seule custom_classifications
+        # → on doit faire les calculs nous-mêmes, ou enrichir generate_pharma_pdf
+        # SOLUTION : passer un dict spécial qui sera lu par employé dans calc
+        # Plus simple : on monkey-patch en passant un wrapper
+        # → ACTUEL : custom_classifications est passé tel quel à calc dans generate
+        # → on doit modifier generate_pharma_pdf pour accepter un dict par-emp
+        # Pour l'instant : si UNE seule classification globale, on l'utilise
+        # Sinon, on enrichit chaque emp['records'] avec le type_code forcé
         
-        # Si override global ou par personne : forcer sched_start/sched_end de chaque record
-        if schedule_override:
-            from datetime import datetime as _dt5
-            _DAYS_FR2 = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche']
-            for emp in emps:
-                sched = schedules_map.get(emp['name'])
-                if not sched: continue
-                for rec in emp['records']:
-                    # Si déjà overridé par per-day, ne pas écraser
-                    try:
-                        d = _dt5.strptime(rec['date'][:10], '%Y-%m-%d')
-                        dn = _DAYS_FR2[d.weekday()]
-                        per_day = schedules_per_day_map.get(emp['name'], {})
-                        if per_day.get(dn): continue  # déjà appliqué par-jour
-                    except: pass
-                    if sched.get('start_time'):
-                        rec['sched_start'] = sched['start_time']
-                    if sched.get('end_time'):
-                        rec['sched_end'] = sched['end_time']
+        # ✅ Approche pragmatique : enrichir chaque record avec _forced_type
+        for emp in emps:
+            classif = emps_classifications.get(emp['name'], {})
+            for rec in emp['records']:
+                if rec['date'] in classif:
+                    rec['_forced_type'] = classif[rec['date']]
         
-        # === Coût par employé (taux horaire) ===
-        employee_costs = dict(employee_rates) if employee_rates else {}
-        
-        # === GÉNÉRATION DU PDF DPCI (rapports individuels + présence + classements + graphique) ===
-        provider_name = 'RAMYA TECHNOLOGIE & INNOVATION'
-        provider_info = ''
-        client_info = ''
-        
-        generate_full_pdf(
-            emps, tmp_out, provider_name, provider_info,
-            pharmacy_name, period_str,
+        generate_pharma_pdf(
+            emps, tmp_out,
+            pharmacy_name=pharmacy_name,
+            period=period_label or period,
+            types_by_key=types_by_key,
+            feries_set=feries_set,
+            default_hourly_rate=default_hourly_rate,
+            employee_rates=employee_rates,
+            custom_classifications={},  # déjà appliqué via _forced_type
             logo_path=logo_path,
-            hp=hp, hp_weekend=hp_weekend, hourly_cost=default_hourly_rate,
-            employee_costs=employee_costs,
-            rest_days=rest_days_int,
-            days_required_default=days_required_default,
+            hp=hp_default,
         )
-        
-        # === AJOUT : page Pharmacie spécifique (paie estimée avec majorations) ===
-        try:
-            types_service = pharma_list_types_service()
-            types_by_key = {}
-            for t in types_service:
-                t_dict = dict(t)
-                code = (t_dict.get('code') or '').lower()
-                lib = (t_dict.get('libelle') or '').lower()
-                if code: types_by_key[code] = t_dict
-                if lib: types_by_key[lib] = t_dict
-                # Variantes
-                if code == 'garde_nuit':
-                    types_by_key['garde nuit'] = t_dict
-                    types_by_key['nuit'] = t_dict
-                if code == 'garde_we':
-                    types_by_key['garde we'] = t_dict
-                    types_by_key['week-end'] = t_dict
-                if code == 'normal':
-                    types_by_key['service normal'] = t_dict
-            
-            feries_set = set(fr['date'] for fr in pharma_list_jours_feries(year=None))
-            
-            # Fusionner classifications
-            emps_classifications = {}
-            for emp in emps:
-                merged = dict(manual_classifications_global)
-                if emp['name'] in manual_classifications_emp:
-                    merged.update(manual_classifications_emp[emp['name']])
-                emps_classifications[emp['name']] = merged
-            
-            # Générer page Pharmacie en append
-            generate_pharma_recap_page(
-                tmp_out, emps,
-                pharmacy_name=pharmacy_name,
-                period=period_str,
-                types_by_key=types_by_key,
-                feries_set=feries_set,
-                default_hourly_rate=default_hourly_rate,
-                employee_rates=employee_rates,
-                emps_classifications=emps_classifications,
-                logo_path=logo_path,
-            )
-        except Exception as ex_pharma:
-            import traceback
-            traceback.print_exc()
-            print(f"[pharma_generate] Avertissement : page Pharmacie non ajoutée : {ex_pharma}", flush=True)
         
         if not os.path.exists(tmp_out):
             flash("Erreur génération PDF", "error")
@@ -16156,7 +15916,7 @@ def pharma_generate():
         with open(tmp_out, 'rb') as fp:
             pdf_data = fp.read()
         
-        fname = f"Rapport_Pharmacie_{(period_label or period or 'rapport').replace(' ','_').replace('/','-')}.pdf"
+        fname = f"Rapport_Presence_Pharmacie_{(period_label or period or 'rapport').replace(' ','_').replace('/','-')}.pdf"
         from flask import Response
         return Response(pdf_data, mimetype='application/pdf',
                        headers={'Content-Disposition': f'attachment; filename="{fname}"'})
