@@ -169,7 +169,8 @@ def extract_from_excel(xlsx_path):
 # ======================== CALCULS ========================
 
 def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0, rest_days=None,
-                         days_required_override=None, period_total_days=None):
+                         days_required_override=None, period_total_days=None,
+                         pause_minutes=0):
     """Calcule les statistiques complètes d'un employé. 
     rest_days=liste des jours de repos (0=lundi..6=dimanche).
     days_required_override : si fourni, force le nombre de jours obligatoires (sinon calcul auto).
@@ -224,6 +225,9 @@ def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0, rest_days=None,
             required = hm
         else:
             required = se - ss if se > ss else 0
+            # v72 : appliquer la pause globale si demandée (sur sched du fichier source uniquement)
+            if pause_minutes > 0 and required > pause_minutes:
+                required -= pause_minutes
         
         if not is_rest_day:
             total_required += required
@@ -1271,7 +1275,7 @@ def gen_simple_pages(story, emps, all_stats, S, provider_name, provider_info, cl
 
 # ======================== GENERATION PDF COMPLETE ========================
 
-def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0, hourly_cost=0, employee_costs=None, rest_days=None, employee_rest_days=None, days_required_default=None, employee_days_required=None, employee_hours=None):
+def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0, hourly_cost=0, employee_costs=None, rest_days=None, employee_rest_days=None, days_required_default=None, employee_days_required=None, employee_hours=None, pause_minutes=0):
     if not employee_costs: employee_costs = {}
     if rest_days is None: rest_days = []
     if employee_rest_days is None: employee_rest_days = {}
@@ -1316,7 +1320,8 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
         emp_hp = employee_hours_norm.get(norm_key, hp)
         all_stats.append(calc_employee_stats(emp, emp_hp, hp_weekend, emp_cost, rest_days=emp_rest,
                                              days_required_override=emp_days_req,
-                                             period_total_days=period_total_days))
+                                             period_total_days=period_total_days,
+                                             pause_minutes=pause_minutes))
     
     # 1. Rapports individuels
     gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now)

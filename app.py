@@ -15818,6 +15818,19 @@ def pharma_generate():
     try: hp_weekend = float(request.form.get('required_hours_weekend', '0') or 0)
     except: hp_weekend = 0
     
+    # v72 : Pause globale optionnelle (soustraite des heures obligatoires)
+    global_has_pause = request.form.get('global_has_pause') == '1'
+    global_pause_minutes = 0
+    if global_has_pause:
+        try:
+            gps = request.form.get('global_pause_start', '12:00')
+            gpe = request.form.get('global_pause_end', '13:00')
+            sh, sm = map(int, gps.split(':'))
+            eh, em = map(int, gpe.split(':'))
+            global_pause_minutes = max(0, (eh*60 + em) - (sh*60 + sm))
+        except:
+            global_pause_minutes = 60  # default 1h
+    
     # Taux par pharmacien (v70 : accepter aussi employee_costs_json)
     employee_rates = {}
     try:
@@ -15855,7 +15868,9 @@ def pharma_generate():
     except:
         schedule_override = {}
     
-    # === Classifications manuelles (par date+emp pour majorations Pharmacie) ===
+    # === Classifications manuelles (v72 : nouvelle structure scope/emps) ===
+    # Structure attendue : [{from, to, type, scope: 'all'|'group'|'individual', emps: [...]}]
+    # Rétrocompat : ancien format {from, to, type, emp: 'nom'}
     manual_classifications_global = {}
     manual_classifications_emp = {}
     try:
@@ -15867,12 +15882,26 @@ def pharma_generate():
                 d1 = _dt2.strptime(c.get('from','')[:10], '%Y-%m-%d')
                 d2 = _dt2.strptime((c.get('to') or c.get('from',''))[:10], '%Y-%m-%d')
                 typ = (c.get('type') or '').strip()
-                emp_target = (c.get('emp') or '').strip()
-                emp_targets = []
-                if emp_target:
-                    # Peut être plusieurs noms séparés par virgule
-                    emp_targets = [e.strip() for e in emp_target.split(',') if e.strip()]
                 if not typ: continue
+                
+                # v72 : déterminer la portée
+                scope = (c.get('scope') or '').strip()
+                emp_targets = []
+                
+                if scope == 'all':
+                    # Tous les pharmaciens → classification globale
+                    pass  # emp_targets reste vide
+                elif scope in ('group', 'individual'):
+                    # Liste des emps cochés
+                    emps_list = c.get('emps') or []
+                    if isinstance(emps_list, list):
+                        emp_targets = [str(e).strip() for e in emps_list if e]
+                else:
+                    # Rétrocompat ancien format : emp = 'nom' ou 'nom1,nom2'
+                    emp_target = (c.get('emp') or '').strip()
+                    if emp_target:
+                        emp_targets = [e.strip() for e in emp_target.split(',') if e.strip()]
+                
                 cur = d1
                 while cur <= d2:
                     ds = cur.strftime('%Y-%m-%d')
@@ -15882,6 +15911,7 @@ def pharma_generate():
                                 manual_classifications_emp[et] = {}
                             manual_classifications_emp[et][ds] = typ
                     else:
+                        # scope=='all' OU rétrocompat avec emp vide
                         manual_classifications_global[ds] = typ
                     cur += _td2(days=1)
             except:
@@ -16100,6 +16130,7 @@ def pharma_generate():
             employee_costs=employee_costs,
             rest_days=rest_days_int,
             days_required_default=days_required_default,
+            pause_minutes=global_pause_minutes,
         )
         
         # === AJOUT : page Pharmacie spécifique (paie estimée avec majorations) ===
@@ -16153,13 +16184,51 @@ def pharma_generate():
             flash("Erreur génération PDF", "error")
             return redirect('/pharma')
         
+        # === v72 : sauvegarder dans la liste "Fichiers à envoyer" (RH) ===
+        job_id = str(uuid.uuid4())[:8]
+        pdf_name = f"Pharmacie_{pharmacy_name.replace(' ', '_').replace('/','-')}_{job_id}.pdf"
+        try:
+            files_dir = os.path.join(app.config['FILES_FOLDER'], job_id)
+            os.makedirs(files_dir, exist_ok=True)
+            # Copier le PDF
+            shutil.copy2(tmp_out, os.path.join(files_dir, pdf_name))
+            # Copier aussi le fichier source Excel
+            xlsx_name = secure_filename(f.filename or 'pharmacie.xlsx')
+            shutil.copy2(tmp_in, os.path.join(files_dir, xlsx_name))
+            
+            # Enregistrer dans la BDD pour apparaître dans "Fichiers à envoyer"
+            hp_text = f"{hp}h/j" if hp > 0 else "Auto"
+            create_job(job_id, session.get('user_id'),
+                       pharmacy_name,   # client_name (la pharmacie)
+                       'RAMYA TECHNOLOGIE & INNOVATION',  # provider_name
+                       xlsx_name,       # filename_source
+                       pdf_name,        # filename_pdf
+                       None,            # filename_xlsx (pas de fichier xlsx généré)
+                       len(emps),       # employee_count
+                       period_str,      # period
+                       hp_text,         # hp
+                       None)            # client_id (pas de client RH lié)
+            
+            # Log d'activité
+            user_obj = get_user_by_id(session['user_id']) if session.get('user_id') else None
+            try:
+                log_activity(session.get('user_id'),
+                            user_obj['full_name'] if user_obj else '?',
+                            'Pharmacie',
+                            f"Rapport pharmacie {pharmacy_name} — {len(emps)} pharmacien(s)",
+                            request.remote_addr)
+            except: pass
+        except Exception as ex_save:
+            import traceback
+            traceback.print_exc()
+            print(f"[pharma_generate] Avertissement : sauvegarde RH échouée : {ex_save}", flush=True)
+        
         with open(tmp_out, 'rb') as fp:
             pdf_data = fp.read()
         
-        fname = f"Rapport_Pharmacie_{(period_label or period or 'rapport').replace(' ','_').replace('/','-')}.pdf"
         from flask import Response
         return Response(pdf_data, mimetype='application/pdf',
-                       headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+                       headers={'Content-Disposition': f'attachment; filename="{pdf_name}"'})
     
     except Exception as e:
         import traceback

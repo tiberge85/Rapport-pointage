@@ -3494,12 +3494,12 @@ function filterRecent() {
             <input type="time" name="heure_fin" value="17:00" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
         <div style="grid-column:1/-1;background:#f8faf9;padding:10px;border-radius:6px;border-left:3px solid #1976d2">
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;font-weight:600;color:#1976d2">
-                <input type="checkbox" name="has_pause" id="edtHasPause" value="1" checked onchange="onEdtHasPauseChange()">
+                <input type="checkbox" name="has_pause" id="edtHasPause" value="1" onchange="onEdtHasPauseChange()">
                 <span>☕ Cet horaire inclut une pause</span>
             </label>
             <p style="font-size:10px;color:#666;margin:3px 0 0">Décochez pour les horaires continus sans pause (ex: équipes terrain, agents de sécurité 8h consécutives)</p>
         </div>
-        <div id="edtPauseFields" style="display:contents">
+        <div id="edtPauseFields" style="display:none">
             <div><label style="font-size:11px;color:#888">Pause début</label>
                 <input type="time" name="pause_debut" value="12:00" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px"></div>
             <div><label style="font-size:11px;color:#888">Pause fin</label>

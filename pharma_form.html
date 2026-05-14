@@ -47,6 +47,34 @@
             <div class="form-group"><label style="font-size:12px;font-weight:600">Heures obligatoires (Lun-Ven)</label><input type="number" name="required_hours" min="0" step="0.5" value="0" style="width:120px"></div>
             <div class="form-group"><label style="font-size:12px;font-weight:600">Heures obligatoires (Week-end)</label><input type="number" name="required_hours_weekend" min="0" step="0.5" value="0" style="width:120px"></div>
         </div>
+        
+        <!-- v72 : Option globale Pause directement visible -->
+        <div style="background:#fff3e0;border-left:4px solid #f29f2f;padding:10px;border-radius:6px;margin-top:10px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:13px;color:#b8561f">
+                <input type="checkbox" id="globalHasPause" name="global_has_pause" value="1" style="width:18px;height:18px;cursor:pointer" onchange="toggleGlobalPause()">
+                <span>☕ Appliquer une pause aux horaires obligatoires</span>
+            </label>
+            <p style="font-size:11px;color:#666;margin:6px 0 0 26px">
+                <strong>Décoché par défaut.</strong> Si coché, la durée de pause sera <strong>soustraite des heures obligatoires</strong> pour chaque jour 
+                (ex: planning 08:00-17:00 = 9h, avec pause 1h → 8h obligatoires).
+            </p>
+            <div id="globalPauseFields" style="display:none;margin-top:8px;padding-left:26px;display:none">
+                <div style="display:grid;grid-template-columns:140px 140px 140px;gap:10px">
+                    <div><label style="font-size:11px;color:#888;font-weight:600">Pause début</label>
+                        <input type="time" name="global_pause_start" value="12:00" style="width:100%;padding:6px;border:1.5px solid #f29f2f;border-radius:5px;font-size:12px"></div>
+                    <div><label style="font-size:11px;color:#888;font-weight:600">Pause fin</label>
+                        <input type="time" name="global_pause_end" value="13:00" style="width:100%;padding:6px;border:1.5px solid #f29f2f;border-radius:5px;font-size:12px"></div>
+                    <div><label style="font-size:11px;color:#888;font-weight:600">Durée (auto)</label>
+                        <input type="text" id="globalPauseDuration" value="01:00" readonly style="width:100%;padding:6px;border:1.5px solid #ddd;border-radius:5px;font-size:12px;background:#f5f5f5"></div>
+                </div>
+            </div>
+            <script>
+            function toggleGlobalPause() {
+                var on = document.getElementById('globalHasPause').checked;
+                document.getElementById('globalPauseFields').style.display = on ? 'block' : 'none';
+            }
+            </script>
+        </div>
         <div class="form-row">
             <div class="form-group"><label style="font-size:12px;font-weight:600">Période du rapport</label>
                 <select name="period_mode" style="width:180px">
@@ -576,30 +604,89 @@ document.getElementById('dpciForm').addEventListener('submit', function() {
 function addClassifRow() {
     var c = document.getElementById('classifContainer');
     document.getElementById('classifEmpty').style.display = 'none';
+    var rowId = 'cl_' + Date.now() + '_' + Math.floor(Math.random()*1000);
     var row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:130px 130px 160px 1fr 30px;gap:6px;padding:6px;background:#f8faf9;border-radius:6px;margin-bottom:5px;align-items:center;font-size:12px';
-    var empOpts = '<option value="">— Tous les pharmaciens —</option>';
-    (allEmps || []).forEach(function(e) {
-        empOpts += '<option value="' + e.name + '">' + e.name + '</option>';
+    row.id = rowId;
+    row.style.cssText = 'background:#f8faf9;border:1px solid #e0e0e0;border-radius:6px;padding:10px;margin-bottom:8px;font-size:12px';
+    
+    // Liste pour multi-select des pharmaciens
+    var checkboxes = '';
+    (allEmps || []).forEach(function(e, idx) {
+        checkboxes += '<label style="display:inline-flex;align-items:center;gap:3px;padding:3px 6px;background:#fff;border:1px solid #ddd;border-radius:4px;cursor:pointer;font-size:11px;margin:2px"><input type="checkbox" class="cl-emp-cb" value="' + e.name + '" onchange="updateClassif()" disabled> ' + e.name + '</label>';
     });
+    
     row.innerHTML =
-        '<input type="date" class="cl-from" oninput="updateClassif()" style="padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px">' +
-        '<input type="date" class="cl-to" oninput="updateClassif()" style="padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px">' +
-        '<select class="cl-type" onchange="updateClassif()" style="padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px">' +
-            '<option value="garde_nuit">🌙 Garde de Nuit (+50%)</option>' +
-            '<option value="garde_we">📅 Garde Week-end (+75%)</option>' +
-            '<option value="ferie">🎉 Jour Férié (+100%)</option>' +
-            '<option value="astreinte">⏰ Astreinte (+25%)</option>' +
-            '<option value="normal">📋 Service Normal (0%)</option>' +
-        '</select>' +
-        '<select class="cl-emp" onchange="updateClassif()" style="padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px">' + empOpts + '</select>' +
-        '<button type="button" onclick="removeClassifRow(this)" style="background:#c53030;color:#fff;border:none;border-radius:4px;cursor:pointer;width:24px;height:24px;font-weight:700">×</button>';
+        // Ligne 1 : dates et type
+        '<div style="display:grid;grid-template-columns:130px 130px 1fr 30px;gap:6px;align-items:center;margin-bottom:8px">' +
+            '<div><label style="font-size:10px;color:#888;font-weight:600">Du</label>' +
+            '<input type="date" class="cl-from" oninput="updateClassif()" style="width:100%;padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px"></div>' +
+            '<div><label style="font-size:10px;color:#888;font-weight:600">Au</label>' +
+            '<input type="date" class="cl-to" oninput="updateClassif()" style="width:100%;padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px"></div>' +
+            '<div><label style="font-size:10px;color:#888;font-weight:600">Type de service</label>' +
+            '<select class="cl-type" onchange="updateClassif()" style="width:100%;padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px">' +
+                '<option value="garde_nuit">🌙 Garde de Nuit (+50%)</option>' +
+                '<option value="garde_we">📅 Garde Week-end (+75%)</option>' +
+                '<option value="ferie">🎉 Jour Férié (+100%)</option>' +
+                '<option value="astreinte">⏰ Astreinte (+25%)</option>' +
+                '<option value="normal">📋 Service Normal (0%)</option>' +
+            '</select></div>' +
+            '<button type="button" onclick="removeClassifRow(\'' + rowId + '\')" style="background:#c53030;color:#fff;border:none;border-radius:4px;cursor:pointer;width:28px;height:28px;font-weight:700;margin-top:14px">×</button>' +
+        '</div>' +
+        // Ligne 2 : portée
+        '<div style="margin-top:6px">' +
+            '<label style="font-size:10px;color:#888;font-weight:600;display:block;margin-bottom:4px">Appliquer à :</label>' +
+            '<div style="display:flex;gap:12px;margin-bottom:6px;flex-wrap:wrap">' +
+                '<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;font-weight:600">' +
+                '<input type="radio" name="scope_' + rowId + '" class="cl-scope" value="all" checked onchange="onScopeChange(\'' + rowId + '\')"> 🌐 Tous les pharmaciens</label>' +
+                '<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;font-weight:600">' +
+                '<input type="radio" name="scope_' + rowId + '" class="cl-scope" value="group" onchange="onScopeChange(\'' + rowId + '\')"> 👥 Groupe (plusieurs)</label>' +
+                '<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;font-weight:600">' +
+                '<input type="radio" name="scope_' + rowId + '" class="cl-scope" value="individual" onchange="onScopeChange(\'' + rowId + '\')"> 👤 Individu</label>' +
+            '</div>' +
+            '<div class="cl-emp-zone" style="display:none;padding:8px;background:#fff;border:1px solid #e0e0e0;border-radius:4px;max-height:160px;overflow-y:auto">' +
+                '<div class="cl-group-actions" style="display:none;margin-bottom:6px">' +
+                    '<button type="button" onclick="cbAll(\'' + rowId + '\', true)" style="background:#1976d2;color:#fff;border:none;border-radius:3px;padding:3px 8px;cursor:pointer;font-size:10px;margin-right:4px">Tout cocher</button>' +
+                    '<button type="button" onclick="cbAll(\'' + rowId + '\', false)" style="background:#888;color:#fff;border:none;border-radius:3px;padding:3px 8px;cursor:pointer;font-size:10px">Tout décocher</button>' +
+                '</div>' +
+                checkboxes +
+            '</div>' +
+        '</div>';
     c.appendChild(row);
     updateClassif();
 }
 
-function removeClassifRow(btn) {
-    btn.parentNode.remove();
+function onScopeChange(rowId) {
+    var row = document.getElementById(rowId);
+    if (!row) return;
+    var scope = row.querySelector('input.cl-scope:checked').value;
+    var zone = row.querySelector('.cl-emp-zone');
+    var actions = row.querySelector('.cl-group-actions');
+    var cbs = row.querySelectorAll('.cl-emp-cb');
+    if (scope === 'all') {
+        zone.style.display = 'none';
+        cbs.forEach(function(c) { c.disabled = true; c.checked = false; });
+    } else if (scope === 'group') {
+        zone.style.display = 'block';
+        actions.style.display = 'block';
+        cbs.forEach(function(c) { c.disabled = false; });
+    } else {  // individual
+        zone.style.display = 'block';
+        actions.style.display = 'none';
+        cbs.forEach(function(c) { c.disabled = false; c.checked = false; });
+    }
+    updateClassif();
+}
+
+function cbAll(rowId, val) {
+    var row = document.getElementById(rowId);
+    if (!row) return;
+    row.querySelectorAll('.cl-emp-cb').forEach(function(c) { c.checked = val; });
+    updateClassif();
+}
+
+function removeClassifRow(rowId) {
+    var row = document.getElementById(rowId);
+    if (row) row.remove();
     if (document.querySelectorAll('#classifContainer > div').length === 0) {
         document.getElementById('classifEmpty').style.display = 'block';
     }
@@ -612,8 +699,21 @@ function updateClassif() {
         var d1 = row.querySelector('.cl-from').value;
         var d2 = row.querySelector('.cl-to').value;
         var typ = row.querySelector('.cl-type').value;
-        var emp = row.querySelector('.cl-emp').value;
-        if (d1 && typ) arr.push({from: d1, to: d2 || d1, type: typ, emp: emp || ''});
+        var scopeInp = row.querySelector('input.cl-scope:checked');
+        var scope = scopeInp ? scopeInp.value : 'all';
+        var emps = [];
+        if (scope === 'group' || scope === 'individual') {
+            row.querySelectorAll('.cl-emp-cb:checked').forEach(function(c) { emps.push(c.value); });
+        }
+        if (d1 && typ) {
+            arr.push({
+                from: d1,
+                to: d2 || d1,
+                type: typ,
+                scope: scope,
+                emps: emps,
+            });
+        }
     });
     document.getElementById('classifJson').value = JSON.stringify(arr);
 }
