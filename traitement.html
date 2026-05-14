@@ -245,11 +245,11 @@
                                 <input type="time" id="schedAllEnd" value="17:00" style="width:100%;padding:8px;border:2px solid #1976d2;border-radius:5px;font-size:13px;font-weight:600"></div>
                             <div>
                                 <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                                    <input type="checkbox" id="schedAllHasPause" checked> ☕ Avec pause
+                                    <input type="checkbox" id="schedAllHasPause"> ☕ Avec pause
                                 </label>
                             </div>
                         </div>
-                        <div id="schedAllPauseFields" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+                        <div id="schedAllPauseFields" style="display:none;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
                             <div><label style="font-size:11px;color:#666">Pause début</label>
                                 <input type="time" id="schedAllPauseStart" value="12:00" style="width:100%;padding:6px;border:1.5px solid #ddd;border-radius:5px;font-size:12px"></div>
                             <div><label style="font-size:11px;color:#666">Pause fin</label>
@@ -840,7 +840,7 @@ function buildSchedPersonList() {
         html += '<span style="font-size:11px;font-weight:600">' + safeName + '</span>';
         html += '<input type="time" class="sched-pers-start" data-idx="' + i + '" placeholder="(garder)" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
         html += '<input type="time" class="sched-pers-end" data-idx="' + i + '" placeholder="(garder)" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
-        html += '<label style="font-size:10px;display:flex;align-items:center;gap:2px;cursor:pointer"><input type="checkbox" class="sched-pers-pause" data-idx="' + i + '" checked> ☕</label>';
+        html += '<label style="font-size:10px;display:flex;align-items:center;gap:2px;cursor:pointer"><input type="checkbox" class="sched-pers-pause" data-idx="' + i + '"> ☕</label>';
         html += '<input type="time" class="sched-pers-pstart" data-idx="' + i + '" placeholder="pause début" value="12:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
         html += '<input type="time" class="sched-pers-pend" data-idx="' + i + '" placeholder="pause fin" value="13:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
         html += '</div>';
@@ -925,7 +925,7 @@ function buildSchedDaysList() {
         html += '<input type="checkbox" id="schedDay_' + dn + '_enable" style="width:18px;height:18px;cursor:pointer">';
         html += '<input type="time" id="schedDay_' + dn + '_start" value="08:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
         html += '<input type="time" id="schedDay_' + dn + '_end" value="17:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
-        html += '<label style="font-size:10px;display:flex;align-items:center;gap:2px;cursor:pointer"><input type="checkbox" id="schedDay_' + dn + '_haspause" checked> ☕</label>';
+        html += '<label style="font-size:10px;display:flex;align-items:center;gap:2px;cursor:pointer"><input type="checkbox" id="schedDay_' + dn + '_haspause"> ☕</label>';
         html += '<input type="time" id="schedDay_' + dn + '_pstart" value="12:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
         html += '<input type="time" id="schedDay_' + dn + '_pend" value="13:00" style="padding:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">';
         html += '</div>';

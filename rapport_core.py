@@ -1983,10 +1983,14 @@ def calc_dpci_stats(emp, schedule=None, hourly_cost=0, hp=0, hp_weekend=0, sched
     days_absent = 0
 
     # Default schedule from DB or fallback
+    # v71 : pause optionnelle — si break_start/break_end est None, pas de pause appliquée
     default_sched_start = t2m(schedule.get('start_time', '07:00')) if schedule else t2m('07:00')
     default_sched_end = t2m(schedule.get('end_time', '17:00')) if schedule else t2m('17:00')
-    default_sched_break_start = t2m(schedule.get('break_start', '12:00')) if schedule else t2m('12:00')
-    default_sched_break_end = t2m(schedule.get('break_end', '13:00')) if schedule else t2m('13:00')
+    _def_bs = schedule.get('break_start') if schedule else None
+    _def_be = schedule.get('break_end') if schedule else None
+    default_sched_break_start = t2m(_def_bs) if _def_bs else 0
+    default_sched_break_end = t2m(_def_be) if _def_be else 0
+    default_has_pause = bool(_def_bs and _def_be)
     
     hm = hp * 60  # heures obligatoires semaine en minutes
     hm_we = hp_weekend * 60
@@ -2012,25 +2016,34 @@ def calc_dpci_stats(emp, schedule=None, hourly_cost=0, hp=0, hp_weekend=0, sched
             pass
         
         # v64 : choisir le schedule du jour si disponible
+        # v71 : pause optionnelle (None = pas de pause)
         if schedules_per_day and day_name and schedules_per_day.get(day_name):
             day_s = schedules_per_day[day_name]
             sched_start = t2m(day_s.get('start_time') or day_s.get('start') or '07:00')
             sched_end = t2m(day_s.get('end_time') or day_s.get('end') or '17:00')
-            sched_break_start = t2m(day_s.get('break_start') or day_s.get('pause_start') or '12:00')
-            sched_break_end = t2m(day_s.get('break_end') or day_s.get('pause_end') or '13:00')
+            _bs = day_s.get('break_start') or day_s.get('pause_start')
+            _be = day_s.get('break_end') or day_s.get('pause_end')
+            sched_break_start = t2m(_bs) if _bs else 0
+            sched_break_end = t2m(_be) if _be else 0
+            has_pause = bool(_bs and _be)
         else:
             sched_start = default_sched_start
             sched_end = default_sched_end
             sched_break_start = default_sched_break_start
             sched_break_end = default_sched_break_end
+            has_pause = default_has_pause
 
         # Determine required hours for this day
+        # v71 : ne soustrait la pause QUE si elle est définie
         if is_weekend and hp_weekend > 0:
             required = hm_we
         elif not is_weekend and hp > 0:
             required = hm
         else:
-            required = (sched_end - sched_start) - (sched_break_end - sched_break_start)
+            base = sched_end - sched_start
+            if has_pause:
+                base -= (sched_break_end - sched_break_start)
+            required = base
         
         total_required += required
 

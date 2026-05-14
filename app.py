@@ -3082,8 +3082,8 @@ def dpci_generate():
                         'employee_name': emp['name'],
                         'start_time': final_sched.get('start'),
                         'end_time': final_sched.get('end'),
-                        'break_start': final_sched.get('pause_start', '12:00') if final_sched.get('has_pause', True) else None,
-                        'break_end': final_sched.get('pause_end', '13:00') if final_sched.get('has_pause', True) else None,
+                        'break_start': final_sched.get('pause_start', '12:00') if final_sched.get('has_pause', False) else None,
+                        'break_end': final_sched.get('pause_end', '13:00') if final_sched.get('has_pause', False) else None,
                     }
                     override_count += 1
                 
@@ -3102,8 +3102,8 @@ def dpci_generate():
                         per_day[dn] = {
                             'start_time': chosen_d.get('start'),
                             'end_time': chosen_d.get('end'),
-                            'break_start': chosen_d.get('pause_start', '12:00') if chosen_d.get('has_pause', True) else None,
-                            'break_end': chosen_d.get('pause_end', '13:00') if chosen_d.get('has_pause', True) else None,
+                            'break_start': chosen_d.get('pause_start', '12:00') if chosen_d.get('has_pause', False) else None,
+                            'break_end': chosen_d.get('pause_end', '13:00') if chosen_d.get('has_pause', False) else None,
                         }
                 if per_day:
                     schedules_per_day_map[emp['name']] = per_day
@@ -15966,8 +15966,8 @@ def pharma_generate():
                         'employee_name': emp['name'],
                         'start_time': final_sched.get('start'),
                         'end_time': final_sched.get('end'),
-                        'break_start': final_sched.get('pause_start', '12:00') if final_sched.get('has_pause', True) else None,
-                        'break_end': final_sched.get('pause_end', '13:00') if final_sched.get('has_pause', True) else None,
+                        'break_start': final_sched.get('pause_start', '12:00') if final_sched.get('has_pause', False) else None,
+                        'break_end': final_sched.get('pause_end', '13:00') if final_sched.get('has_pause', False) else None,
                     }
                 
                 # Per-day
@@ -15985,8 +15985,8 @@ def pharma_generate():
                         per_day[dn] = {
                             'start_time': chosen_d.get('start'),
                             'end_time': chosen_d.get('end'),
-                            'break_start': chosen_d.get('pause_start', '12:00') if chosen_d.get('has_pause', True) else None,
-                            'break_end': chosen_d.get('pause_end', '13:00') if chosen_d.get('has_pause', True) else None,
+                            'break_start': chosen_d.get('pause_start', '12:00') if chosen_d.get('has_pause', False) else None,
+                            'break_end': chosen_d.get('pause_end', '13:00') if chosen_d.get('has_pause', False) else None,
                         }
                 if per_day:
                     schedules_per_day_map[emp['name']] = per_day
